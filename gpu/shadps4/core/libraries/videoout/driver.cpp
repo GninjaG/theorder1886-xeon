@@ -301,6 +301,15 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 }
 
 void VideoOutDriver::Flip(const Request& req) {
+    static uint64_t flip_count = 0;
+    if (++flip_count <= 30 || flip_count % 60 == 0) {
+        std::printf("VideoOut: Flip #%llu index=%d arg=%lld prev=%d pending=%d\n",
+                    (unsigned long long)flip_count, req.index, (long long)req.flip_arg,
+                    req.port ? req.port->prev_index : -1,
+                    req.port ? req.port->flip_status.flip_pending_num : -1);
+        std::fflush(stdout);
+    }
+
     // Update HDR status before presenting, then present the frame (gow3: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
         presenter->SetHDR(hdr);
@@ -310,7 +319,7 @@ void VideoOutDriver::Flip(const Request& req) {
                                                 : 0);
 
     // gow3: GOW3_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
-    static const bool frame_stats = EmulatorSettingsImpl::Flag("GOW3_FRAME_STATS", false);
+    static const bool frame_stats = EmulatorSettingsImpl::Flag("GOW3_FRAME_STATS", true);
     if (frame_stats) {
         using Clock = std::chrono::steady_clock;
         static Clock::time_point window_start = Clock::now(), last = window_start;
@@ -601,6 +610,8 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
     {
         std::unique_lock lock{port->port_mutex};
         if (index != -1 && port->flip_status.flip_pending_num > 16) {
+            std::printf("VideoOut: SubmitFlip rejected: queue full (pending=%d)\n", port->flip_status.flip_pending_num);
+            std::fflush(stdout);
             LOG_ERROR(Lib_VideoOut, "Flip queue is full");
             return false;
         }

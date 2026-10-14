@@ -752,6 +752,9 @@ public:
             func(current_cmdbuf);
             return;
         }
+        if (!record_chunk) {
+            record_chunk = AcquireChunk();
+        }
         if (!record_chunk->Push(std::forward<Func>(func))) {
             full_chunks.push_back(std::move(record_chunk));
             record_chunk = AcquireChunk();
@@ -777,6 +780,9 @@ public:
                          bytes, RecordChunk::Capacity);
         }
         ASSERT(bytes + 1024 <= RecordChunk::Capacity);
+        if (!record_chunk) {
+            record_chunk = AcquireChunk();
+        }
         if (RecordChunk::Capacity - record_chunk->Size() < bytes + 1024) {
             full_chunks.push_back(std::move(record_chunk));
             record_chunk = AcquireChunk();
@@ -793,6 +799,9 @@ public:
         // Room for the data and the command that follows it, so both stay in one chunk.
         const size_t bytes = data.size_bytes();
         ReserveRecordData(bytes + alignof(T));
+        if (!record_chunk) {
+            record_chunk = AcquireChunk();
+        }
         auto* dst = static_cast<T*>(record_chunk->Allocate(bytes, alignof(T)));
         std::memcpy(dst, data.data(), bytes);
         return {dst, data.size()};

@@ -154,10 +154,19 @@ static ABI __attribute__((noreturn)) void raise_exception(uint32_t code,uint64_t
     runtime_report();
     exit(23);
 }
-/* The process was started without arguments other than its own name. */
-static const char *guest_argv[]={"eboot.bin",NULL};
-static ABI int32_t get_argc(void) { return 1; }
-static ABI const char **get_argv(void) { return guest_argv; }
+static const char *guest_argv_storage[64] = {"eboot.bin", NULL};
+static int guest_argc_storage = 1;
+void runtime_set_guest_args(int argc, const char **argv) {
+    if (argc > 0 && argv) {
+        guest_argc_storage = argc < 63 ? argc : 63;
+        for (int i = 0; i < guest_argc_storage; ++i) {
+            guest_argv_storage[i] = argv[i];
+        }
+        guest_argv_storage[guest_argc_storage] = NULL;
+    }
+}
+static ABI int32_t get_argc(void) { return guest_argc_storage; }
+static ABI const char **get_argv(void) { return guest_argv_storage; }
 /* Only the game and its bundled modules exist; nothing was loaded at run time. */
 static ABI int32_t stop_unload_module(int32_t handle,uint64_t args,const void *argp,uint32_t flags,const void *opt,int32_t *result) {
     (void)args; (void)argp; (void)flags; (void)opt; (void)result;

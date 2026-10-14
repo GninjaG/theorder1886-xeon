@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+    <TitleID>
+        <ID>CUSA00035</ID>
+        <ID>CUSA00070</ID>
+        <ID>CUSA00076</ID>
+        <ID>CUSA00100</ID>
+        <ID>CUSA00670</ID>
+        <ID>CUSA00785</ID>
+    </TitleID>
+    <Metadata Title="The Order 1886"
+              Name="Frame Rate Patch - 60 FPS"
+              Note="Unlocks engine simulation and presentation clock from 30 FPS to 60 FPS (16.67ms frametime clamp)."
+              Author="theorder1886-port"
+              PatchVer="2.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="true">
+        <PatchList>
+            <Line Type="bytes" Address="0x00486a93" Value="1b410000"/>
+            <Line Type="bytes" Address="0x00345ca7" Value="1b410000"/>
+            <Line Type="bytes" Address="0x00345eb5" Value="1b410000"/>
+            <Line Type="bytes" Address="0x0044904c" Value="1b410000"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Skip Intro Logos"
+              Note="Skips the Sony Santa Monica and Ready At Dawn intro logos directly to the title screen."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="true">
+        <PatchList>
+            <Line Type="bytes" Address="0x0044a66c" Value="e9e7010000909090"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Skip Prologue Cutscene (Start at Westminster)"
+              Note="Skips the long prologue catacombs torture cutscene and starts New Game directly at Westminster gameplay."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="true">
+        <PatchList>
+            <Line Type="bytes" Address="0x0044acc1" Value="2b070401"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Skip Prologue to Chapter 1"
+              Note="Starts New Game directly at Chapter 1: Embassy Tunnels."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="bytes" Address="0x0044acc1" Value="cd0e0401"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Auto-Dismiss Title Screen (Instant Gameplay Start)"
+              Note="Automatically transitions from the title screen into level load without waiting for Cross button."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="true">
+        <PatchList>
+            <Line Type="bytes" Address="0x0044a93b" Value="e9b111000090909090"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Resolution Patch (900p - 1600x900)"
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="bytes32" Address="0x00a57cdd" Value="0x00000640"/>
+            <Line Type="bytes32" Address="0x00a57ce3" Value="0x00000384"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Resolution Patch (720p - 1280x720)"
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="bytes32" Address="0x00a57cdd" Value="0x00000500"/>
+            <Line Type="bytes32" Address="0x00a57ce3" Value="0x000002d0"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Resolution Patch (1080p Full Height - 1920x1080)"
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="bytes32" Address="0x00a57ce3" Value="0x00000438"/>
+        </PatchList>
+    </Metadata>
+</Patch>

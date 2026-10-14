@@ -172,6 +172,11 @@ public:
         return depth_range_unrestricted;
     }
 
+    /// Returns true when VK_EXT_dynamic_rendering_unused_attachments is supported.
+    bool IsDynamicRenderingUnusedAttachmentsSupported() const {
+        return dynamic_rendering_unused_attachments;
+    }
+
     /// Returns true when VK_EXT_extended_dynamic_state3 is supported
     bool IsExtendedDynamicState3Supported() const {
         return dynamic_state_3;
@@ -565,6 +570,7 @@ private:
     bool depth_clip_enable{};
     bool dynamic_state_3{};
     bool depth_range_unrestricted{};
+    bool dynamic_rendering_unused_attachments{};
     bool vertex_input_dynamic_state{};
     bool list_restart{};
     bool provoking_vertex{};

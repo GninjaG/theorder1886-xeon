@@ -41,6 +41,8 @@ static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResourc
 
 namespace Vulkan {
 
+extern std::atomic<u64> g_gow3_pipeline_driver_ns;
+
 namespace {
 // gow3: the test knobs that change recompiled SPIR-V (GOW3_LIGHTING_TEST=dref,
 // GOW3_AMD_PATHS_OFF=shaderext) get their own shader binary cache version.
@@ -264,20 +266,21 @@ void ReportPipelineBinaryCache() {
                 binary_compile_ns.load() / 1e6 / std::max(u64{1}, binary_compile_calls.load()));
 }
 
-vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
-    vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info,
-    const GraphicsPipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
-    const std::filesystem::path& directory) {
+namespace {
+template <typename PipelineCreateInfo, typename KeyType, typename Creator>
+vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
+    vk::Device device, vk::PipelineCache cache, const PipelineCreateInfo& info,
+    const KeyType& key, const vk::PipelineBinaryKeyKHR& global_key,
+    const std::filesystem::path& directory, Creator&& creator) {
     using namespace PipelineBinaryCache;
     const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
     const bool enabled = global_key.keySize && EmulatorSettings.IsPipelineCacheEnabled();
     const auto create = [&](vk::PipelineCache used_cache, const auto& used_info, bool restored) {
         const auto started = std::chrono::steady_clock::now();
-        auto result = device.createGraphicsPipelineUnique(used_cache, used_info);
+        auto result = creator(used_cache, used_info);
         const auto ns = u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 std::chrono::steady_clock::now() - started)
                                 .count());
-        extern std::atomic<u64> g_gow3_pipeline_driver_ns;
         g_gow3_pipeline_driver_ns += ns;
         if (enabled) {
             (restored ? binary_restore_ns : binary_compile_ns) += ns;
@@ -456,6 +459,27 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
         ++binary_errors;
     }
     return result;
+}
+} // namespace
+
+vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
+    vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info,
+    const GraphicsPipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
+    const std::filesystem::path& directory) {
+    return CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
+        [&](vk::PipelineCache c, const vk::GraphicsPipelineCreateInfo& i) {
+            return device.createGraphicsPipelineUnique(c, i);
+        });
+}
+
+vk::ResultValue<vk::UniquePipeline> CreateCachedComputePipeline(
+    vk::Device device, vk::PipelineCache cache, const vk::ComputePipelineCreateInfo& info,
+    const ComputePipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
+    const std::filesystem::path& directory) {
+    return CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
+        [&](vk::PipelineCache c, const vk::ComputePipelineCreateInfo& i) {
+            return device.createComputePipelineUnique(c, i);
+        });
 }
 
 // gow3: GOW3_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in

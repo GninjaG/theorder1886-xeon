@@ -1537,8 +1537,8 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
-            !memory->IsValidGpuMapping(tsharp.Address(), 0) ||
+        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+            !memory->IsValidGpuMapping(tsharp.Address(), 1) ||
             !IsKnownFormat(data_fmt, num_fmt)) {
             continue; // null descriptor
         }
@@ -2186,7 +2186,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                                      reinterpret_cast<const void*>(vsharp.base_address),
                                      memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize()));
             }
-            if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+            if (vsharp.base_address < 0x10000ULL || vsharp.GetSize() == 0 ||
+                !memory->IsValidGpuMapping(vsharp.base_address, 1)) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
@@ -2311,7 +2312,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2319,11 +2320,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             continue;
         }
 
-        if (!memory->IsValidGpuMapping(tsharp.Address(), 0) ||
+        if (!memory->IsValidGpuMapping(tsharp.Address(), 1) ||
             !IsKnownFormat(data_fmt, num_fmt) ||
             tsharp.width >= 8192 || tsharp.height >= 8192 ||
+            tsharp.NumLayers() > 2048 ||
+            ((u64)tsharp.width * tsharp.height * tsharp.NumLayers() > 256 * 1024 * 1024) ||
             (tsharp.NumLayers() > 16 && (tsharp.width >= 2048 || tsharp.height >= 2048))) {
-            LOG_WARNING(Render_Vulkan,
+            LOG_DEBUG(Render_Vulkan,
                         "Rejecting invalid T# address={:#x}, pitch={}, width={}, height={}, layers={}, "
                         "data_format={}, num_format={}",
                         tsharp.Address(), tsharp.pitch, tsharp.width, tsharp.height, tsharp.NumLayers(),

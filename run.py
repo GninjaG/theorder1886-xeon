@@ -148,6 +148,22 @@ def main():
     if len(args) >= 2 and args[0] == '--after':
         wait_for(int(args[1]))
         args = args[2:]
+    translated_args = []
+    i = 0
+    while i < len(args):
+        if args[i] == '--startlevel' and i + 1 < len(args):
+            translated_args.extend(['--guest-arg', '-startlevel', '--guest-arg', args[i + 1]])
+            i += 2
+        elif args[i] == '--startcheckpoint' and i + 1 < len(args):
+            translated_args.extend(['--guest-arg', '-startcheckpoint', '--guest-arg', args[i + 1]])
+            i += 2
+        elif args[i] == '--frontend':
+            translated_args.extend(['--guest-arg', '-frontend'])
+            i += 1
+        else:
+            translated_args.append(args[i])
+            i += 1
+    args = translated_args
     # As run.sh: relative paths (GOW3_GAME_DIR, GOW3_DATA_DIR, fsr4_shaders/) are from the port.
     os.chdir(PORT)
     env = os.environ
@@ -186,7 +202,19 @@ def main():
         sys.exit(20)
     missing = parse_cpu_features(features.stdout)
 
-    game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA01623'))
+    candidates = [
+        env.get('GOW3_GAME_DIR'),
+        r'C:\Users\Mateus\Downloads\games\CUSA00035',
+        PORT.parent / 'CUSA00035',
+        PORT.parent / 'CUSA01623',
+    ]
+    game = None
+    for c in candidates:
+        if c and (Path(c) / 'eboot.bin').is_file():
+            game = Path(c)
+            break
+    if not game:
+        game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA00035'))
     if not (game / 'eboot.bin').is_file():
         fail(f'No eboot.bin in {game} (set GOW3_GAME_DIR).')
     update_view = None

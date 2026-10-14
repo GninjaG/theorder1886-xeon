@@ -98,9 +98,20 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     for (u32 i = 0; i < effective_color_attachments; ++i) {
         const auto& cb = render_state.color_attachments[i];
         if (!cb.image_view) {
+            vk::ImageView fallback_view = VK_NULL_HANDLE;
+            vk::ImageLayout fallback_layout = vk::ImageLayout::eUndefined;
+            if (!instance.IsDynamicRenderingUnusedAttachmentsSupported()) {
+                for (u32 j = 0; j < effective_color_attachments; ++j) {
+                    if (render_state.color_attachments[j].image_view) {
+                        fallback_view = render_state.color_attachments[j].image_view;
+                        fallback_layout = render_state.color_attachments[j].image_layout;
+                        break;
+                    }
+                }
+            }
             color_attachments[i] = vk::RenderingAttachmentInfo{
-                .imageView = VK_NULL_HANDLE,
-                .imageLayout = vk::ImageLayout::eUndefined,
+                .imageView = fallback_view,
+                .imageLayout = fallback_layout,
                 .loadOp = vk::AttachmentLoadOp::eDontCare,
                 .storeOp = vk::AttachmentStoreOp::eDontCare,
             };
@@ -116,13 +127,16 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     }
 
     const auto& db = render_state.depth_stencil_attachment;
-    const bool valid_depth = db.has_depth && db.image_view != VK_NULL_HANDLE;
-    const bool valid_stencil = db.has_stencil && db.image_view != VK_NULL_HANDLE;
+    const bool has_ds = db.image_view != VK_NULL_HANDLE && (db.has_depth || db.has_stencil);
+    const bool valid_depth = has_ds;
+    const bool valid_stencil = has_ds;
     const vk::RenderingAttachmentInfo depth_attachment = {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
-        .loadOp = db.depth_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .loadOp = db.has_depth && db.depth_clear ? vk::AttachmentLoadOp::eClear
+                : db.has_depth                  ? vk::AttachmentLoadOp::eLoad
+                                                : vk::AttachmentLoadOp::eDontCare,
+        .storeOp = db.has_depth ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
         .clearValue =
             vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = std::bit_cast<float>(
                                                                           db.clear_value[0])}},
@@ -130,8 +144,10 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     const vk::RenderingAttachmentInfo stencil_attachment = {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
-        .loadOp = db.stencil_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .loadOp = db.has_stencil && db.stencil_clear ? vk::AttachmentLoadOp::eClear
+                : db.has_stencil                    ? vk::AttachmentLoadOp::eLoad
+                                                    : vk::AttachmentLoadOp::eDontCare,
+        .storeOp = db.has_stencil ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
         .clearValue = vk::ClearValue{.depthStencil =
                                          vk::ClearDepthStencilValue{.stencil = db.clear_value[1]}},
     };

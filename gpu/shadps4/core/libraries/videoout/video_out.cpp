@@ -39,6 +39,8 @@ void PS4_SYSV_ABI sceVideoOutSetBufferAttribute(BufferAttribute* attribute, Pixe
 }
 
 s32 PS4_SYSV_ABI sceVideoOutAddFlipEvent(Kernel::OrbisKernelEqueue eq, s32 handle, void* udata) {
+    std::printf("VideoOut: sceVideoOutAddFlipEvent(eq=%d, handle=%d, udata=%p)\n", (int)eq, handle, udata);
+    std::fflush(stdout);
     LOG_INFO(Lib_VideoOut, "handle = {}", handle);
 
     auto* port = driver->GetPort(handle);
@@ -124,6 +126,10 @@ s32 PS4_SYSV_ABI sceVideoOutDeleteVblankEvent(Kernel::OrbisKernelEqueue eq, s32 
 
 s32 PS4_SYSV_ABI sceVideoOutRegisterBuffers(s32 handle, s32 startIndex, void* const* addresses,
                                             s32 bufferNum, const BufferAttribute* attribute) {
+    std::printf("VideoOut: sceVideoOutRegisterBuffers(handle=%d, start=%d, num=%d, w=%u, h=%u, pixelFormat=%d)\n",
+                handle, startIndex, bufferNum, attribute ? attribute->width : 0, attribute ? attribute->height : 0,
+                attribute ? (int)attribute->pixel_format : -1);
+    std::fflush(stdout);
     if (!addresses || !attribute) {
         LOG_ERROR(Lib_VideoOut, "Addresses are null");
         return ORBIS_VIDEO_OUT_ERROR_INVALID_ADDRESS;
@@ -139,6 +145,8 @@ s32 PS4_SYSV_ABI sceVideoOutRegisterBuffers(s32 handle, s32 startIndex, void* co
 }
 
 s32 PS4_SYSV_ABI sceVideoOutSetFlipRate(s32 handle, s32 rate) {
+    std::printf("VideoOut: sceVideoOutSetFlipRate(handle=%d, rate=%d)\n", handle, rate);
+    std::fflush(stdout);
     LOG_TRACE(Lib_VideoOut, "called");
     driver->GetPort(handle)->flip_rate = rate;
     return ORBIS_OK;
@@ -157,6 +165,13 @@ s32 PS4_SYSV_ABI sceVideoOutSubmitFlip(s32 handle, s32 bufferIndex, s32 flipMode
     if (!port) {
         LOG_ERROR(Lib_VideoOut, "Invalid handle = {}", handle);
         return ORBIS_VIDEO_OUT_ERROR_INVALID_HANDLE;
+    }
+
+    static uint64_t submit_count = 0;
+    if (++submit_count <= 30 || submit_count % 60 == 0) {
+        std::printf("VideoOut: sceVideoOutSubmitFlip #%llu (handle=%d, buf=%d, mode=%d, arg=%lld)\n",
+                    (unsigned long long)submit_count, handle, bufferIndex, flipMode, (long long)flipArg);
+        std::fflush(stdout);
     }
 
     if (flipMode != 1) {
@@ -181,6 +196,8 @@ s32 PS4_SYSV_ABI sceVideoOutSubmitFlip(s32 handle, s32 bufferIndex, s32 flipMode
               flipArg);
 
     if (!driver->SubmitFlip(port, bufferIndex, flipArg)) {
+        std::printf("VideoOut: sceVideoOutSubmitFlip rejected! Flip queue full!\n");
+        std::fflush(stdout);
         LOG_ERROR(Lib_VideoOut, "Flip queue is full");
         return ORBIS_VIDEO_OUT_ERROR_FLIP_QUEUE_FULL;
     }
@@ -260,6 +277,14 @@ s32 PS4_SYSV_ABI sceVideoOutGetFlipStatus(s32 handle, FlipStatus* status) {
     {
         std::unique_lock lock{port->port_mutex};
         *status = port->flip_status;
+    }
+
+    static uint64_t get_status_count = 0;
+    if (++get_status_count <= 10 || get_status_count % 300 == 0) {
+        std::printf("VideoOut: sceVideoOutGetFlipStatus #%llu (handle=%d count=%llu pending=%d current=%d)\n",
+                    (unsigned long long)get_status_count, handle, (unsigned long long)status->count,
+                    status->flip_pending_num, status->current_buffer);
+        std::fflush(stdout);
     }
 
     LOG_TRACE(Lib_VideoOut,

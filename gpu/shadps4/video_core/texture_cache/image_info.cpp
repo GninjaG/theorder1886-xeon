@@ -135,7 +135,7 @@ ImageInfo::ImageInfo(const AmdGpu::Image& image, const Shader::ImageResource& de
     size.depth = props.is_volume ? image.depth + 1 : 1;
     pitch = image.Pitch();
     resources.levels = image.NumLevels();
-    resources.layers = image.NumLayers();
+    resources.layers = std::min(image.NumLayers(), 2048u);
     num_samples = image.NumSamples();
     guest_samples = image.GuestNumSamples();
     num_bits = NumBitsPerBlock(image.GetDataFmt());
@@ -184,7 +184,6 @@ void ImageInfo::UpdateSize() {
             const u32 thickness = AmdGpu::GetMicroTileThickness(array_mode);
             mip_d += (-mip_d) & (thickness - 1);
             if (AmdGpu::IsMacroTiled(array_mode)) {
-                ASSERT(!props.is_block);
                 std::tie(mip_info.pitch, mip_info.height, mip_info.size) = ImageSizeMacroTiled(
                     mip_w, mip_h, thickness, num_bits, guest_samples, tile_mode, mip, alt_tile);
             } else {

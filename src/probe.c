@@ -18,6 +18,7 @@
 #endif
 #ifdef _WIN32
 #include <windows.h>
+#include <timeapi.h>
 #else
 #include <sys/mman.h>
 #include <malloc.h>
@@ -240,6 +241,14 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
             if (at[0]==0x65 && !memcmp(at,load,sizeof(load))) { memcpy(at+5,&displacement,4); ++patched; at+=sizeof(load)-1; }
     }
     return patched;
+}
+static DWORD WINAPI win_watchdog_thread(LPVOID param) {
+    DWORD sec = (DWORD)(uintptr_t)param;
+    Sleep(sec * 1000);
+    fprintf(stderr, "\nSTOP: watchdog timeout after %u seconds\n", (unsigned)sec);
+    fflush(stderr);
+    ExitProcess(0);
+    return 0;
 }
 #endif
 #ifndef _WIN32
@@ -929,6 +938,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 #ifdef _WIN32
+    timeBeginPeriod(1);
     /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
      * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
     runtime_memory_reserve();
@@ -938,6 +948,9 @@ int main(int argc, char **argv) {
     unsigned timeout_seconds = 10;
     const char *content_profile=NULL, *app0=NULL, *user_dir=NULL, *patch_file=NULL, *isa_file=NULL;
     const char *mounts[8]; int mount_count=0;
+    static const char *guest_args[64];
+    int guest_arg_count = 0;
+    guest_args[guest_arg_count++] = "/app0/eboot.bin";
     for (int i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--cpu-only")) cpu_only = 1;
         else if (!strcmp(argv[i], "--strict-imports")) strict_imports = 1;
@@ -954,7 +967,20 @@ int main(int argc, char **argv) {
             mounts[mount_count++]=spec;
         }
         else if (!strcmp(argv[i], "--timeout") && i+1<argc) timeout_seconds=(unsigned)strtoul(argv[++i],NULL,10);
+        else if (!strcmp(argv[i], "--guest-arg") && i+1<argc) {
+            if (guest_arg_count < 63) guest_args[guest_arg_count++] = argv[++i];
+        }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
+    }
+    const char *env_guest_args = getenv("THEORDER_ARGS");
+    if (!env_guest_args) env_guest_args = getenv("GOW3_GUEST_ARGS");
+    if (env_guest_args && *env_guest_args) {
+        char *dup = strdup(env_guest_args);
+        char *tok = strtok(dup, " ");
+        while (tok && guest_arg_count < 63) {
+            guest_args[guest_arg_count++] = tok;
+            tok = strtok(NULL, " ");
+        }
     }
     if (argc < 2) {
         fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir] [--user dir] [--patches file] [--isa-rewrite file] [--mount guest=host]... [--timeout seconds] | --vulkan-only | --cpu-features | --gamepad\n", argv[0]);
@@ -1014,7 +1040,10 @@ int main(int argc, char **argv) {
         if (!SetProcessMitigationPolicy(ProcessStrictHandleCheckPolicy,&strict,sizeof(strict)))
             fprintf(stderr,"GOW3_STRICT_HANDLES: policy not set (%lu)\n",GetLastError());
     }
-    (void)timeout_seconds; /* no watchdog on Windows */
+    if (timeout_seconds > 0) {
+        HANDLE th = CreateThread(NULL, 0, win_watchdog_thread, (LPVOID)(uintptr_t)timeout_seconds, 0, NULL);
+        if (th) CloseHandle(th);
+    }
 #else
     page_size = (size_t)sysconf(_SC_PAGESIZE);
     struct sigaction sa = {0}; sa.sa_sigaction = fault; sa.sa_flags = SA_SIGINFO;
@@ -1263,8 +1292,16 @@ int main(int argc, char **argv) {
         printf("Main executable initializer finished\n");
     }
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
-    entered_game=1;
-    struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};
+    guest_args[guest_arg_count] = NULL;
+    runtime_set_guest_args(guest_arg_count, guest_args);
+    struct { uint64_t argc; const char *argv[64]; } params;
+    params.argc = (uint64_t)guest_arg_count;
+    for (int a = 0; a <= guest_arg_count; ++a) params.argv[a] = guest_args[a];
+    if (guest_arg_count > 1) {
+        printf("Forwarding %d arguments to guest:\n", guest_arg_count);
+        for (int a = 0; a < guest_arg_count; ++a) printf("  argv[%d] = %s\n", a, guest_args[a]);
+    }
+    entered_game = 1;
 #ifdef _WIN32
     typedef void (ABI *Entry)(void *, void (ABI *)(void));
     ((Entry)(image + entry))(&params, guest_exit);

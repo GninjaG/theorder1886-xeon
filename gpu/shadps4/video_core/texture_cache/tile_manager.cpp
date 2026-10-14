@@ -232,7 +232,8 @@ void TileManager::RecordTilingDispatch(vk::Pipeline pipeline, const vk::Descript
 
 std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* in_buffer,
                                                        u64 in_offset, const ImageInfo& info) {
-    if (!info.props.is_tiled) {
+    if (!info.props.is_tiled || !in_buffer || info.guest_size == 0 ||
+        info.guest_size > 512 * 1024 * 1024ULL) {
         return {in_buffer, in_offset};
     }
 
@@ -255,7 +256,16 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
         .range = sizeof(params),
     };
 
+    if (info.guest_size == 0 || info.guest_size > 256 * 1024 * 1024) {
+        LOG_ERROR(Render, "TileManager: invalid guest_size {} for untile", info.guest_size);
+        return {in_buffer, in_offset};
+    }
+
     const auto staging = runtime.GetStagingPool().Request(info.guest_size, MemoryType::DeviceLocal);
+    if (!staging.buffer || !staging.buffer->Handle()) {
+        LOG_ERROR(Render, "TileManager: failed to allocate staging buffer size={}", info.guest_size);
+        return {in_buffer, in_offset};
+    }
 
     scheduler.EndRendering();
     runtime.FlushBarriers();
@@ -285,11 +295,14 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
 void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
                             const VideoCore::Buffer* out_buffer, u64 out_offset) {
     const auto& info = in_image.info;
-    if (!info.props.is_tiled) {
+    if (!info.props.is_tiled || !out_buffer || info.guest_size == 0 ||
+        info.guest_size > 512 * 1024 * 1024ULL) {
         for (auto& copy : buffer_copies) {
             copy.bufferOffset += out_offset;
         }
-        runtime.DownloadImage(&in_image, out_buffer, buffer_copies);
+        if (out_buffer) {
+            runtime.DownloadImage(&in_image, out_buffer, buffer_copies);
+        }
         return;
     }
 
@@ -312,7 +325,16 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
         .range = sizeof(params),
     };
 
+    if (info.guest_size == 0 || info.guest_size > 256 * 1024 * 1024) {
+        LOG_ERROR(Render, "TileManager: invalid guest_size {} for tile", info.guest_size);
+        return;
+    }
+
     const auto staging = runtime.GetStagingPool().Request(info.guest_size, MemoryType::DeviceLocal);
+    if (!staging.buffer || !staging.buffer->Handle()) {
+        LOG_ERROR(Render, "TileManager: failed to allocate staging buffer size={}", info.guest_size);
+        return;
+    }
     for (auto& copy : buffer_copies) {
         copy.bufferOffset += staging.offset;
     }

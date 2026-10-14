@@ -269,7 +269,11 @@ static int replay_armed;      /* 1 while a GOW3_PAD_REPLAY recording plays, 2 on
 static uint64_t replay_start; /* 0: (re)start at the next sample */
 static void read_inject(void) {
     static const char *path; static int checked; static uint64_t last_check; static struct timespec mtime;
-    if (!checked) { path=getenv("GOW3_PAD_FILE"); checked=1; }
+    if (!checked) {
+        path=getenv("THEORDER_PAD_FILE");
+        if (!path || !*path) path=getenv("GOW3_PAD_FILE");
+        checked=1;
+    }
     if (!path || !*path) return;
     uint64_t now=now_us();
     if (now-last_check<20000) return;
@@ -411,9 +415,10 @@ static ABI int32_t pad_read_state(int32_t handle, PadData *data) {
     if (!data) return ERR_INVALID_ARG;
     pthread_mutex_lock(&lock);
     sample(data);
-    if (++reads == 1 || (data->buttons != 0 && reads % 60 == 0)) {
+    if (++reads <= 30 || (data->buttons != 0) || reads % 120 == 0) {
         printf("Runtime: pad read #%zu: buttons=0x%x lx=%u ly=%u rx=%u ry=%u\n",
                reads, data->buttons, data->left_x, data->left_y, data->right_x, data->right_y);
+        fflush(stdout);
     }
     pthread_mutex_unlock(&lock);
     return 0;

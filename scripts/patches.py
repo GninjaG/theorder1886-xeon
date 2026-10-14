@@ -114,6 +114,7 @@ def fill(value, at, targets):
 def encode(line):
     kind,value=line.get('Type'),line.get('Value')
     if kind=='bytes': return bytes.fromhex(value.replace(' ',''))
+    if kind=='byte': return int(value,0).to_bytes(1,'little')
     if kind in ('bytes16','bytes32','bytes64'):
         return int(value,0).to_bytes(int(kind[5:])//8,'little')
     if kind=='float32': return struct.pack('<f',float(value))
@@ -160,8 +161,12 @@ PATCHES_DIR=Path(__file__).resolve().parent.parent/'patches'
 # Built-in patch file per game: its title IDs, the AppVer its metadata is tagged with and the
 # title that also recognizes a release under an ID not listed. The signatures find the sites in
 # any region or version whose code matches, so the eboot.bin build is not checked.
-GAMES=[({'CUSA01623','CUSA01715','CUSA01720'},PATCHES_DIR/'God_of_War_III_Remastered.xml','01.02',
-        'God of War III')]
+GAMES=[
+    ({'CUSA00035','CUSA00070','CUSA00076','CUSA00100','CUSA00670','CUSA00785'},
+     PATCHES_DIR/'TheOrder1886-Orbis.xml','01.02','The Order 1886'),
+    ({'CUSA01623','CUSA01715','CUSA01720'},
+     PATCHES_DIR/'God_of_War_III_Remastered.xml','01.02','God of War III'),
+]
 # The build the built-in Address values and third-party patch files are written for.
 REFERENCE_SHA256='d85c8135d330c3b601bf5dc3f1dd86bd6119fb8a9fce372bed2c9785f9a79299'
 DMEM_RETAIL_MB=5056  # runtime_memory.c POOL_SIZE default
@@ -341,6 +346,9 @@ def main():
     names=selected_patches(xml,tag,a.extra,os.environ.get('GOW3_PATCHES_ONLY')=='1')
     elf=(a.out/'eboot.elf').read_bytes()
     segments=eboot_segments(elf)
+    global EBOOT_BASE
+    if segments:
+        EBOOT_BASE = min(start for start, _ in segments)
     skipped={}
     writes=compile_patches(xml,names,None,segments,eboot_image(elf),skipped)
     for name,reason in skipped.items():

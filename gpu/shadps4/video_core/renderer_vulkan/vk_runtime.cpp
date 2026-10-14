@@ -920,8 +920,13 @@ void Runtime::FlushBarriers() {
         dep_info.memoryBarrierCount = 1U;
     }
     if (!image_barriers.empty()) {
-        dep_info.pImageMemoryBarriers = image_barriers.data();
-        dep_info.imageMemoryBarrierCount = static_cast<u32>(image_barriers.size());
+        image_barriers.erase(std::remove_if(image_barriers.begin(), image_barriers.end(), [](const vk::ImageMemoryBarrier2& b) {
+            return !b.image;
+        }), image_barriers.end());
+        if (!image_barriers.empty()) {
+            dep_info.pImageMemoryBarriers = image_barriers.data();
+            dep_info.imageMemoryBarrierCount = static_cast<u32>(image_barriers.size());
+        }
     }
 
     if (!dep_info.memoryBarrierCount && !dep_info.imageMemoryBarrierCount) {

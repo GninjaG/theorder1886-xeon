@@ -367,8 +367,11 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
                              vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                                  .imageExtent = {w, h, 1}});
     const char* dir = std::getenv("GOW3_DUMP_DIR");
+    const std::string dump_dir = (dir && *dir) ? dir : "out/dump";
+    std::error_code ec;
+    std::filesystem::create_directories(dump_dir, ec);
     char path[512];
-    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
+    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dump_dir.c_str(), name,
                   index, w, h);
     scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
                                       size = buffer_ci.size, file = std::string{path}] {
@@ -388,7 +391,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
     static const char* frame_dump_trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
-    const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
+    static int frame_dump_counter = 0;
+    ++frame_dump_counter;
+    static const char* frame_dump_interval_env = std::getenv("GOW3_FRAME_DUMP_INTERVAL");
+    const int frame_dump_interval = frame_dump_interval_env ? std::atoi(frame_dump_interval_env) : 0;
+    const bool frame_dump = (frame_dump_trigger && std::remove(frame_dump_trigger) == 0) ||
+                            (frame_dump_interval > 0 && (frame_dump_counter % frame_dump_interval == 0));
     // gow3: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
     const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
