@@ -146,12 +146,18 @@ static ButtonMap pad_map={{
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT,BTN_LEFT}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT,BTN_RIGHT},
 },15};
 static ButtonMap key_map={{
-    {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
-    {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
-    {SDL_SCANCODE_R,BTN_L2}, {SDL_SCANCODE_F,BTN_R2}, {SDL_SCANCODE_Z,BTN_L3}, {SDL_SCANCODE_C,BTN_R3},
-    {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT},
-    {SDL_SCANCODE_I,BTN_UP}, {SDL_SCANCODE_K,BTN_DOWN}, {SDL_SCANCODE_J,BTN_LEFT}, {SDL_SCANCODE_L,BTN_RIGHT},
-},17};
+    {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_RETURN,BTN_CROSS},
+    {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_ESCAPE,BTN_CIRCLE},
+    {SDL_SCANCODE_E,BTN_SQUARE}, {SDL_SCANCODE_Q,BTN_TRIANGLE},
+    {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
+    {SDL_SCANCODE_R,BTN_L2}, {SDL_SCANCODE_F,BTN_R2},
+    {SDL_SCANCODE_Z,BTN_L3}, {SDL_SCANCODE_C,BTN_R3},
+    {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT},
+    {SDL_SCANCODE_I,BTN_UP}, {SDL_SCANCODE_K,BTN_DOWN},
+    {SDL_SCANCODE_J,BTN_LEFT}, {SDL_SCANCODE_L,BTN_RIGHT},
+    {SDL_SCANCODE_UP,BTN_UP}, {SDL_SCANCODE_DOWN,BTN_DOWN},
+    {SDL_SCANCODE_LEFT,BTN_LEFT}, {SDL_SCANCODE_RIGHT,BTN_RIGHT},
+},22};
 
 static char *trim(char *text) {
     while (*text==' ' || *text=='\t') ++text;
@@ -384,39 +390,43 @@ static void sample(PadData *d) {
 
 static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }
 static ABI int32_t pad_open(int32_t user, int32_t type, int32_t index, const void *param) {
-    (void)param;
-    if (!initialized) return ERR_NOT_INITIALIZED;
-    if (user!=1) return ERR_INVALID_ARG;
-    if (type!=0 && type!=2) return ERR_INVALID_ARG; /* standard / special port */
-    if (index) return ERR_INVALID_ARG;
+    (void)param; (void)type; (void)index;
+    if (!initialized) {
+        pthread_mutex_lock(&lock);
+        initialized = 1;
+        pthread_mutex_unlock(&lock);
+    }
     pthread_mutex_lock(&lock);
-    int already=opened; opened=1;
+    opened = 1;
     pthread_mutex_unlock(&lock);
-    if (already) return ERR_ALREADY_OPENED;
-    puts("Runtime: pad opened for user 1 (SDL gamepad or keyboard)");
+    printf("Runtime: pad opened (handle=%d) for user %d (type=%d, index=%d)\n", PAD_HANDLE, user, type, index);
     return PAD_HANDLE;
 }
 static ABI int32_t pad_close(int32_t handle) {
-    if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
-    opened=0; return 0;
+    (void)handle;
+    return 0;
 }
 static ABI int32_t pad_read_state(int32_t handle, PadData *data) {
-    if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
+    if (handle <= 0) return ERR_INVALID_HANDLE;
     if (!data) return ERR_INVALID_ARG;
     pthread_mutex_lock(&lock);
-    sample(data); ++reads;
+    sample(data);
+    if (++reads == 1 || (data->buttons != 0 && reads % 60 == 0)) {
+        printf("Runtime: pad read #%zu: buttons=0x%x lx=%u ly=%u rx=%u ry=%u\n",
+               reads, data->buttons, data->left_x, data->left_y, data->right_x, data->right_y);
+    }
     pthread_mutex_unlock(&lock);
     return 0;
 }
 /* Buffered read: the port samples once per call, so one entry is returned. */
 static ABI int32_t pad_read(int32_t handle, PadData *data, int32_t count) {
-    if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
+    if (handle <= 0) return ERR_INVALID_HANDLE;
     if (!data || count<1 || count>64) return ERR_INVALID_ARG;
     pad_read_state(handle,data);
     return 1;
 }
 static ABI int32_t pad_info(int32_t handle, ControllerInfo *info) {
-    if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
+    if (handle <= 0) return ERR_INVALID_HANDLE;
     if (!info) return ERR_INVALID_ARG;
     memset(info,0,sizeof(*info));
     info->pixel_density=44.86f; info->resolution_x=1920; info->resolution_y=943;
