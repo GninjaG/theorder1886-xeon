@@ -148,6 +148,12 @@ s32 PS4_SYSV_ABI sceVideoOutSetFlipRate(s32 handle, s32 rate) {
     std::printf("VideoOut: sceVideoOutSetFlipRate(handle=%d, rate=%d)\n", handle, rate);
     std::fflush(stdout);
     LOG_TRACE(Lib_VideoOut, "called");
+    // gow3: GOW3_FLIP_RATE=<n> replaces the game's flip rate (0: every vblank).
+    static const char* forced = std::getenv("GOW3_FLIP_RATE");
+    if (forced && *forced) {
+        rate = std::atoi(forced);
+        std::printf("VideoOut: flip rate forced to %d (GOW3_FLIP_RATE)\n", rate);
+    }
     driver->GetPort(handle)->flip_rate = rate;
     return ORBIS_OK;
 }
