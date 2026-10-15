@@ -187,12 +187,24 @@ GraphicsPipeline::GraphicsPipeline(
 
     boost::container::static_vector<vk::PipelineShaderStageCreateInfo, MaxShaderStages>
         shader_stages;
+    // gow3: the object motion buffer addresses, specialization constants of the vertex shader
+    // (EmitVertexMotion); unused by a shader without motion vectors.
+    using Motion = Shader::MotionVectors;
+    const std::array<u64, 2> motion_addresses{Motion::params_address, Motion::positions_address};
+    const std::array motion_entries{
+        vk::SpecializationMapEntry{Motion::ParamsSpecId, 0, sizeof(u64)},
+        vk::SpecializationMapEntry{Motion::PositionsSpecId, sizeof(u64), sizeof(u64)},
+    };
+    const vk::SpecializationInfo motion_specialization{
+        static_cast<u32>(motion_entries.size()), motion_entries.data(), sizeof(motion_addresses),
+        motion_addresses.data()};
     auto stage = u32(Shader::SwStage::Vertex);
     if (infos[stage]) {
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,
             .module = modules[stage],
             .pName = "main",
+            .pSpecializationInfo = Motion::params_address ? &motion_specialization : nullptr,
         });
     }
     stage = u32(Shader::SwStage::Geometry);

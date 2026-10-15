@@ -62,7 +62,8 @@ struct Profile {
     /// 1: stale/garbage T#s read as Image::Null (shader_recompiler/resource.h).
     /// 2: FMask reads keep their image and sampler declared (resource_patching_pass.cpp).
     /// 3: FMask read replacements return four components (they were invalid SPIR-V).
-    u32 translation_revision{3};
+    /// 4: motion vertex shaders take the buffer addresses as specialization constants.
+    u32 translation_revision{4};
 
     bool operator==(const Profile&) const = default;
 };
