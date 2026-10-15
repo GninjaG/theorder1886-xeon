@@ -96,14 +96,16 @@
         </PatchList>
     </Metadata>
     <Metadata Title="The Order 1886"
-              Name="Resolution Patch (1080p Full Height - 1920x1080)"
+              Name="Letterbox Removal - 16:9 Full Height (1920x1080)"
+              Note="Removes cinematic black bars and expands render height from 800p to full 1080p with 16:9 calibrated camera FOV."
               Author="theorder1886-port"
-              PatchVer="1.0"
+              PatchVer="2.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="false">
+              isEnabled="true">
         <PatchList>
-            <Line Type="bytes32" Address="0x00a57ce3" Value="0x00000438"/>
+            <Line Type="bytes32" Address="0x00e6cfb2" Value="0x00000438"/>
+            <Line Type="bytes32" Address="0x0167229c" Value="0x3fe38e39"/>
         </PatchList>
     </Metadata>
 </Patch>
