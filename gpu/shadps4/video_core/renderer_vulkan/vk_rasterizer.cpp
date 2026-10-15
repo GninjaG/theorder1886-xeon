@@ -64,6 +64,10 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
         liverpool->BindRasterizer(this);
     }
     memory->SetRasterizer(this);
+    // gow3: a T# no guest mapping covers is bound as null: specialize shaders on it as null too.
+    Shader::g_valid_image_address = [](VAddr address) {
+        return Core::Memory::Instance()->IsValidGpuMapping(address, 1);
+    };
 
     GpuProfiler::Init(instance, scheduler);
     if (DrawPipeWanted()) {

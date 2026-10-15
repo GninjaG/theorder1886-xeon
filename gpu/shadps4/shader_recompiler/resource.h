@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <algorithm>
+#include <bit>
+
 #include "common/types.h"
 #include "shader_recompiler/ir/type.h"
 #include "video_core/amdgpu/resource.h"
@@ -112,6 +115,10 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+/// gow3: the GPU backend's guest memory check (MemoryManager::IsValidGpuMapping); unset in
+/// tools without a guest.
+inline bool (*g_valid_image_address)(VAddr address) = nullptr;
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     bool is_depth{};
@@ -143,7 +150,8 @@ struct ImageResource {
         // GCN GPU virtual addresses are 40-bit: a higher base cannot be memory.
         if (!image.Valid() || image.Address() < 0x10000 || image.Address() >= (1ULL << 40) ||
             image.GetDataFmt() == AmdGpu::DataFormat::FormatInvalid ||
-            image.base_level > image.last_level) {
+            image.base_level > image.last_level || !Plausible(image) ||
+            (g_valid_image_address && !g_valid_image_address(image.Address()))) {
             image = AmdGpu::Image::Null(is_depth);
         } else if (is_depth) {
             const auto data_fmt = image.GetDataFmt();
@@ -153,6 +161,32 @@ struct ImageResource {
             }
         }
         return image;
+    }
+
+    /// gow3: what a stale T# shows that a texture the dispatch samples cannot.
+    constexpr bool Plausible(const AmdGpu::Image& image) const {
+        const u64 width = image.width, height = image.height;
+        const u64 layers = image.NumLayers();
+        // The limits the rasterizer binds a texture under (BindTextures).
+        if (width >= 8192 || height >= 8192 || layers > 2048 ||
+            width * height * layers > (256u << 20) ||
+            (layers > 16 && (width >= 2048 || height >= 2048))) {
+            return false;
+        }
+        const bool is_3d = image.GetType() == AmdGpu::ImageType::Color3D;
+        if (!image.IsGuestMsaa()) {
+            const u64 depth = is_3d ? u64(image.depth) + 1 : 1;
+            const u32 levels = std::bit_width(std::max({width + 1, height + 1, depth}));
+            if (image.base_level >= levels) {
+                return false;
+            }
+        }
+        // A cube is sampled as an array (MIMG DA bit), a 3D image never is. Only for plain
+        // sampling: a size query need not set the bit.
+        if (!is_written && !is_atomic && !needs_native) {
+            return image.IsCube() ? is_array : !(is_3d && is_array);
+        }
+        return true;
     }
 
     constexpr bool Fetch(const u32* flatbuf, AmdGpu::Image* out) const {
