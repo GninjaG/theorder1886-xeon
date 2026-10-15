@@ -81,6 +81,12 @@ def main():
             env = dict(os.environ)
             env.update({'THEORDER_GAME_DIR': GAME_DIR, 'GOW3_GAME_DIR': GAME_DIR,
                         'THEORDER_TIMEOUT': str(args.secs), 'GOW3_TIMEOUT': str(args.secs)})
+            # A run's settings (the in-game menu writes them on exit) go to a fresh file of its
+            # own, never to the player's gow3.ini, unless the condition picks a config.
+            if 'THEORDER_CONFIG' not in extra and 'GOW3_CONFIG' not in extra:
+                run_ini = out / f'{label}-{i + 1}.ini'
+                run_ini.unlink(missing_ok=True)
+                env['THEORDER_CONFIG'] = env['GOW3_CONFIG'] = str(run_ini)
             env.update(extra)
             log_path = out / f'{label}-{i + 1}.log'
             stop = threading.Event()
