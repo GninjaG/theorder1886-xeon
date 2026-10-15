@@ -147,7 +147,7 @@ O núcleo gráfico lê estas variáveis de ambiente:
 | Variável | Efeito |
 |---|---|
 | `GOW3_NO_MSAA=1` / `0` | imagens do jogo sem ou com multisampling (com, por padrão, na NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=0` | compila os pipelines de compute na thread da GPU (travadas) |
+| `GOW3_ASYNC_COMPUTE=1` | compila os pipelines de compute em segundo plano (menos travadas, mas os menus podem perder textos e ícones de botão) |
 | `GOW3_LAZY_SHADER_CACHE=0` | traduz todos os shaders de novo em vez de carregar os do cache |
 | `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | taxa de apresentação (ver o patch de 60 FPS) |
 | `GOW3_VK_VALIDATION=1` | camada de validação do Vulkan (com `VK_ADD_LAYER_PATH` apontando para ela) |

@@ -146,7 +146,7 @@ The graphics core reads these environment variables:
 | Variable | Effect |
 |---|---|
 | `GOW3_NO_MSAA=1` / `0` | single-sampled or multisampled game images (multisampled by default on NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=0` | builds compute pipelines on the GPU thread (stalls) |
+| `GOW3_ASYNC_COMPUTE=1` | builds compute pipelines in the background (fewer stalls, but menus can lose text and button icons) |
 | `GOW3_LAZY_SHADER_CACHE=0` | translates every shader again instead of loading the cached ones |
 | `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | presentation rate overrides (see the 60 FPS patch) |
 | `GOW3_VK_VALIDATION=1` | Vulkan validation layer (with `VK_ADD_LAYER_PATH` pointing to it) |

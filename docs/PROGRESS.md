@@ -2,6 +2,25 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-15 (release): windows-v0.1.0
+
+**Fixed:** menus without text or button icons (the title's "PRESS ✕", every menu). Iggy copies
+each glyph and button icon into its textures once, with a compute dispatch (`0xc98f383802f87e7d`,
+storage image write). The asynchronous compute pipelines of the entry below skipped dispatches
+whose pipeline was still being built, so those copies never ran and the textures stayed empty.
+Compute pipelines are built on the GPU thread again by default; `GOW3_ASYNC_COMPUTE=1` keeps the
+faster, lossy path. Cost: compile stalls of new compute permutations are back (~15 s of compile
+time in the first 70 s of a session; the "mini stutters").
+
+**Release:** the GoW3 launcher, adapted (`The Order 1886.exe`, settings in
+`%APPDATA%/theorder1886-launcher`, frame rate 30 original / 60 experimental: `run.py` adds flip
+rate 0 and a 60 limit with the 60 FPS patch). `packaging/windows/package.sh`, run from MSYS2's own
+bash (Git Bash's runtime expands its `find` patterns), builds `dist/theorder1886-windows.zip`.
+
+**Next:** fewer stalls without losing one-shot work: build compute pipelines in the background
+but wait, instead of skipping, for dispatches that write images (check first what `0x804aeead`
+writes: if images too, it needs another rule).
+
 ## 2026-10-15 (later): branch fix/nvidia-crashes-and-shader-specialization, 15 commits
 
 **State:** 4-minute prologue session, 0 faults, every 5 s window at 30.0 FPS, p99 frame time
