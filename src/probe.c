@@ -916,6 +916,8 @@ static int cpu_supported(char *missing, size_t size) {
     return 1;
 }
 
+static int is_order1886 = 0;
+
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 #ifndef _WIN32
@@ -1025,8 +1027,17 @@ int main(int argc, char **argv) {
         }
         char sfo[4096], id[16]="";
         snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0);
-        if (sfo_value(sfo,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value(sfo,"TITLE_ID",id,sizeof(id),NULL))
+        if (sfo_value(sfo,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value(sfo,"TITLE_ID",id,sizeof(id),NULL)) {
             runtime_savedata_configure(id);
+            if (!strncmp(id, "CUSA00035", 9) || !strncmp(id, "CUSA00070", 9) ||
+                !strncmp(id, "CUSA00076", 9) || !strncmp(id, "CUSA00100", 9) ||
+                !strncmp(id, "CUSA00670", 9) || !strncmp(id, "CUSA00785", 9)) {
+                is_order1886 = 1;
+            }
+        }
+    }
+    if (!is_order1886 && (getenv("THEORDER_ARGS") || getenv("THEORDER_GAME_DIR"))) {
+        is_order1886 = 1;
     }
     gow3gpu_register_kernel();
 #ifdef _WIN32
@@ -1231,10 +1242,12 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
-    if (gpu_enabled) install_orb_multiplier(segments, ns, size);
-    if (gpu_enabled) install_cheats(segments, ns, size);
-    if (gpu_enabled) install_actor_watch(segments, ns, size);
-    if (gpu_enabled) install_stat_multipliers(segments, ns, size);
+    if (gpu_enabled && !is_order1886) {
+        install_orb_multiplier(segments, ns, size);
+        install_cheats(segments, ns, size);
+        install_actor_watch(segments, ns, size);
+        install_stat_multipliers(segments, ns, size);
+    }
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
