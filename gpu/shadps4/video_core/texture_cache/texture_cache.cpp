@@ -1243,6 +1243,43 @@ void TextureCache::RefreshImage(Image& image) {
         copy.bufferOffset += offset;
     }
 
+    // gow3: a copy that reads past the source buffer faults the GPU (an NVIDIA driver crash or
+    // a device that never signals again). A failed detile leaves a too-large image (512x512 with
+    // 337 layers) reading 20 GB from the 4 GB guest buffer: skip what does not fit.
+    const u32 block = image.info.props.is_block ? 4u : 1u;
+    const u64 texel_bytes = std::max(image.info.num_bits / 8u, 1u);
+    const auto too_large = [&](const vk::BufferImageCopy& copy) {
+        const u64 row = Common::DivCeil(copy.bufferRowLength ? copy.bufferRowLength
+                                                             : copy.imageExtent.width, block);
+        const u64 rows = Common::DivCeil(copy.bufferImageHeight ? copy.bufferImageHeight
+                                                                : copy.imageExtent.height, block);
+        const u64 slices = u64(copy.imageSubresource.layerCount) * copy.imageExtent.depth;
+        const u64 end = copy.bufferOffset +
+                        ((slices - 1) * rows * row +
+                         (Common::DivCeil(copy.imageExtent.height, block) - 1) * row +
+                         Common::DivCeil(copy.imageExtent.width, block)) *
+                            texel_bytes;
+        if (end <= buffer->SizeBytes()) {
+            return false;
+        }
+        static u32 warned = 0;
+        if (warned < 8) {
+            ++warned;
+            LOG_ERROR(Render, "Skipping upload of {:#x} {}x{}x{} layers {} mip {}: reads {} bytes "
+                      "of a {} byte buffer",
+                      image.info.guest_address, image.info.size.width, image.info.size.height,
+                      image.info.size.depth, copy.imageSubresource.layerCount,
+                      copy.imageSubresource.mipLevel, end, buffer->SizeBytes());
+        }
+        return true;
+    };
+    image_copies.erase(std::remove_if(image_copies.begin(), image_copies.end(), too_large),
+                       image_copies.end());
+    if (image_copies.empty()) {
+        image.flags &= ~ImageFlagBits::Dirty;
+        return;
+    }
+
     runtime.UploadImage(&image, buffer, image_copies);
 }
 
