@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
@@ -44,6 +46,8 @@ private:
     };
     void CreateColorToMSDepthPipeline(const MsPipelineKey& key);
     void CreateMsCopyPipeline(const MsPipelineKey& key);
+    /// gow3: the copy shader matching the attachment format's numeric class.
+    vk::ShaderModule CopyShader(const MsPipelineKey& key) const;
 
 private:
     const Vulkan::Instance& instance;
@@ -54,6 +58,8 @@ private:
     vk::ShaderModule color_to_ms_depth_frag;
     vk::ShaderModule src_msaa_copy_frag;
     vk::ShaderModule src_non_msaa_copy_frag;
+    /// gow3: [0] unsigned, [1] signed integer formats; index 1 of each pair reads MSAA.
+    std::array<std::array<vk::ShaderModule, 2>, 2> int_copy_frag{};
 
     using MsPipeline = std::pair<MsPipelineKey, vk::UniquePipeline>;
     std::vector<MsPipeline> color_to_ms_depth_pl;

@@ -6,6 +6,8 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/texture_cache/blit_helper.h"
+
+#include <vulkan/vulkan_format_traits.hpp>
 #include "video_core/texture_cache/image.h"
 
 #include "video_core/host_shaders/color_to_ms_depth_fallback_frag.h"
@@ -13,6 +15,10 @@
 #include "video_core/host_shaders/fs_tri_vert.h"
 #include "video_core/host_shaders/ms_image_blit_frag.h"
 #include "video_core/host_shaders/ms_image_blit_msaa_frag.h"
+#include "video_core/host_shaders/ms_image_blit_msaa_sint_frag.h"
+#include "video_core/host_shaders/ms_image_blit_msaa_uint_frag.h"
+#include "video_core/host_shaders/ms_image_blit_sint_frag.h"
+#include "video_core/host_shaders/ms_image_blit_uint_frag.h"
 
 namespace VideoCore {
 
@@ -45,6 +51,11 @@ BlitHelper::~BlitHelper() {
     device.destroy(color_to_ms_depth_frag);
     device.destroy(src_msaa_copy_frag);
     device.destroy(src_non_msaa_copy_frag);
+    for (const auto& modules : int_copy_frag) {
+        for (const auto module : modules) {
+            device.destroy(module);
+        }
+    }
 }
 
 void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_samples,
@@ -259,6 +270,10 @@ void BlitHelper::CreateShaders() {
                                  : Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_FRAG, device);
     src_msaa_copy_frag = Vulkan::CompileSPV(MS_IMAGE_BLIT_MSAA_FRAG, device);
     src_non_msaa_copy_frag = Vulkan::CompileSPV(MS_IMAGE_BLIT_FRAG, device);
+    int_copy_frag = {{{Vulkan::CompileSPV(MS_IMAGE_BLIT_UINT_FRAG, device),
+                        Vulkan::CompileSPV(MS_IMAGE_BLIT_MSAA_UINT_FRAG, device)},
+                       {Vulkan::CompileSPV(MS_IMAGE_BLIT_SINT_FRAG, device),
+                        Vulkan::CompileSPV(MS_IMAGE_BLIT_MSAA_SINT_FRAG, device)}}};
 }
 
 void BlitHelper::CreatePipelineLayouts() {
@@ -358,6 +373,14 @@ void BlitHelper::CreateColorToMSDepthPipeline(const MsPipelineKey& key) {
     color_to_ms_depth_pl.emplace_back(key, std::move(pipeline));
 }
 
+vk::ShaderModule BlitHelper::CopyShader(const MsPipelineKey& key) const {
+    const std::string_view numeric = vk::componentNumericFormat(key.attachment_format, 0);
+    if (numeric == "UINT" || numeric == "SINT") {
+        return int_copy_frag[numeric == "SINT"][key.src_msaa];
+    }
+    return key.src_msaa ? src_msaa_copy_frag : src_non_msaa_copy_frag;
+}
+
 void BlitHelper::CreateMsCopyPipeline(const MsPipelineKey& key) {
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly = {
         .topology = vk::PrimitiveTopology::eTriangleList,
@@ -385,7 +408,7 @@ void BlitHelper::CreateMsCopyPipeline(const MsPipelineKey& key) {
     };
     shader_stages[1] = {
         .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = key.src_msaa ? src_msaa_copy_frag : src_non_msaa_copy_frag,
+        .module = CopyShader(key),
         .pName = "main",
     };
 
