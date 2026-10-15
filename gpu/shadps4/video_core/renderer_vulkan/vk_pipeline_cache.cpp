@@ -911,10 +911,12 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (const auto found = compute_pipelines.find(compute_key); found != compute_pipelines.end()) {
         return found->second.get();
     }
-    // GOW3_ASYNC_COMPUTE=0 builds compute pipelines on the GPU thread again.
+    // GOW3_ASYNC_COMPUTE=1 builds compute pipelines on the compiler threads, skipping dispatches
+    // until they are ready. Off by default: a skipped one-shot dispatch never runs again (Iggy
+    // copies each glyph and button icon into its textures once: the menus lost them).
     static const bool async_compute = [] {
         const char* env = std::getenv("GOW3_ASYNC_COMPUTE");
-        return !env || env[0] != '0';
+        return env && env[0] == '1';
     }();
     if (async_compute && AsyncCompilation() && !EmulatorSettings.IsShaderCollect() &&
         !sync_compute_keys.contains(compute_key.value)) {
