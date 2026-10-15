@@ -2,6 +2,35 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-15 (later): branch fix/nvidia-crashes-and-shader-specialization, 15 commits
+
+**State:** 4-minute prologue session, 0 faults, every 5 s window at 30.0 FPS, p99 frame time
+~34.5 ms. 20+ consecutive crash-free runs since the draw-pipe race fix.
+
+**Since the entry below (all committed):** async compute pipelines (stalls 9.4 s -> 0.1 s per
+40 s); textures over 512 MiB of computed size bound as null (stale T#s with garbage pitch/layers
+uploaded 1.3-3.3 GB: 1-3 s freezes); FMask read replacements return F32x4 and Flat only on
+fragment inputs (both invalid SPIR-V); lazy load of a program's cached permutations
+(`GOW3_LAZY_SHADER_CACHE`); `GOW3_FLIP_RATE`; `GOW3_BIG_TRACK_LOG`; tools: `--game-args`, `--pad`
+(`--pad "24:cross 28:cross 32:cross ..."` reaches the in-engine prologue).
+
+**60 FPS (experimental, verified):** the patch in `patches/TheOrder1886-Orbis.xml` changes the
+four 33333 us immediates of the 01.02 eboot to 16667 (checked in the binary). Recipe: an ini with
+`engine_fps=120` as `THEORDER_CONFIG` (the launcher falls back to the 60 FPS patch), plus
+`GOW3_FLIP_RATE=0 GOW3_FPS_LIMIT=60`. Game speed is correct (frame dumps line up in time with a 30
+FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93% busy.
+
+**Next:**
+1. Motion-vector vertex shaders are retranslated every session (`LoadShaderMeta` rejects them:
+   they embed `MotionVectors::positions_address/params_address`, emit_spirv_special.cpp). Pass the
+   addresses as push constants or a fixed binding instead, so they can be cached: the remaining
+   ~6.7 s of capture waits per 90 s at 60 FPS.
+2. Launcher: for The Order, 30 is native and 60 needs the patch plus flip rate 0 and a 60 limit
+   (scripts/graphics_options.py treats 60 as native, inherited from GoW3).
+3. `VUID-vkCmdDispatchIndirect-magFilter-04553`: linear sampler with an integer image (benign on
+   NVIDIA so far).
+4. Test beyond the prologue (the only save, `Playthrough00`, is there too).
+
 ## 2026-10-15
 
 **How to test (use these, not single runs)**
