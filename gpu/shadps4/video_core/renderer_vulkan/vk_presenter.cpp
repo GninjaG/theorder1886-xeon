@@ -428,6 +428,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         .subresourceRange{frame_subresources},
     };
 
+    // gow3: the draw recording thread writes this command buffer too: idle it right before
+    // recording (FindImage/UpdateImage above can queue work on it after any earlier drain).
+    rasterizer->DrainDrawPipe();
     draw_scheduler.EndRendering();
     const auto cmdbuf = draw_scheduler.CommandBuffer();
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{
@@ -559,6 +562,9 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     Frame* frame = GetRenderFrame();
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
+    if (!present_thread) {
+        rasterizer->DrainDrawPipe(); // as in PrepareFrame
+    }
     scheduler.EndRendering();
 
     const auto cmdbuf = scheduler.CommandBuffer();

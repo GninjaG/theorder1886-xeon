@@ -86,11 +86,16 @@ Liverpool::~Liverpool() {
 }
 
 void Liverpool::ProcessCommands() {
-    if (num_commands && rasterizer) {
-        rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands); // gow3: commands touch the caches
-    }
     // Process incoming commands with high priority
     while (num_commands) {
+        // gow3: commands touch the caches and record (a flip records the presentation into the
+        // draw scheduler), so the draw recording thread must be idle first. Drained per command:
+        // a check before the loop raced with a guest thread queuing a flip in between, and the
+        // flip then recorded into the command buffer the draw thread was writing (NVIDIA driver
+        // crashes in vkCmdBeginRendering/vkCmdEndRendering/vkCmdDraw, a corrupt record chunk).
+        if (rasterizer) {
+            rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands);
+        }
         Common::UniqueFunction<void> callback{};
         {
             std::scoped_lock lk{submit_mutex};
