@@ -143,6 +143,8 @@ public:
     bool LoadComputePipeline(Serialization::Archive& ar);
     bool LoadGraphicsPipeline(Serialization::Archive& ar);
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
+    /// gow3: the cached permutations of a program seen for the first time this session.
+    bool LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage);
 
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);

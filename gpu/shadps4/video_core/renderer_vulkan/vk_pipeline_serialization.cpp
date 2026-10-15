@@ -16,6 +16,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include "common/hash.h"
 #include "common/serdes.h"
 #include "common/scope_exit.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
@@ -894,6 +895,59 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     sel.infos[stage] = &it_pgm.value()->info;
     sel.modules[stage] = module;
 
+    return true;
+}
+
+// gow3: without a bulk warm-up (the pipeline binary cache, the default on NVIDIA) every session
+// translated every shader again, the GPU thread waiting for each new graphics shader (1-2 s per
+// 5 s while the prologue starts). The translated permutations of a program are stored by index
+// (RegisterShaderMeta/RegisterShaderBinary): load them when the program is first needed, so the
+// specialization lookup finds a ready module. Indices are read contiguously from 0; a program's
+// resource lists do not depend on its T#s, so any permutation's info serves as the program's.
+bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("GOW3_LAZY_SHADER_CACHE");
+        return !env || env[0] != '0';
+    }();
+    auto& db = Storage::DataBase::Instance();
+    if (!enabled || !db.IsOpened()) {
+        return false;
+    }
+    constexpr size_t MaxCachedPermutations = 256;
+    std::unique_ptr<Program> program;
+    for (size_t index = 0; index < MaxCachedPermutations; ++index) {
+        std::vector<u8> meta_blob;
+        db.Load(Storage::BlobType::ShaderMeta,
+                fmt::format("{:#018x}", HashCombine(pgm_hash, index)), meta_blob);
+        if (meta_blob.empty()) {
+            break;
+        }
+        Serialization::Archive meta_ar{std::move(meta_blob)};
+        auto info = std::make_unique<Shader::Info>();
+        Shader::StageSpecialization spec{};
+        std::optional<Shader::Gcn::FetchShaderData> fetch;
+        size_t perm_idx{};
+        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx) || perm_idx != index ||
+            info->pgm_hash != pgm_hash || info->hw_stage != stage) {
+            break;
+        }
+        std::vector<u32> spv;
+        db.Load(Storage::BlobType::ShaderBinary, fmt::format("{:#018x}_{}", pgm_hash, index), spv);
+        if (spv.empty()) {
+            break;
+        }
+        if (!program) {
+            program = std::make_unique<Program>();
+            program->info = std::move(*info);
+        }
+        spec.info = &program->info;
+        program->InsertPermut(CompileSPV(spv, instance.GetDevice()), std::move(spec), index);
+    }
+    if (!program) {
+        return false;
+    }
+    std::unique_lock lock{programs_mutex};
+    program_cache.emplace(pgm_hash, std::move(program));
     return true;
 }
 
