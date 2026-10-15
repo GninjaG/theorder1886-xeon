@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""God of War III (gow3) launcher for Windows and Linux (Tkinter).
+"""The Order: 1886 launcher for Windows and Linux (Tkinter), adapted from the God of War III
+port's.
 
 Every setting of the port in one window: the game folder and saves, gow3.ini (upscaler,
 preset, output, effects), start-up options passed to run.py as environment variables
 (frame rate, presentation, HDR, ...), mods, third-party patches and controls.
-Launcher options live in %APPDATA%/gow3-launcher/settings.json (~/.config/gow3-launcher on Linux).
+Launcher options live in %APPDATA%/theorder1886-launcher/settings.json
+(~/.config/theorder1886-launcher on Linux).
 
-Frozen with PyInstaller (packaging/windows/package.sh) the same God of War III.exe also runs the
+Frozen with PyInstaller (packaging/windows/package.sh) the same The Order 1886.exe also runs the
 game without the window (`--play`), run.py (`--run`) and the preparation scripts (`--script`),
 so a packaged port needs no Python installation.
 """
@@ -44,24 +46,25 @@ from patches import game_profile, game_sfo  # noqa: E402  (scripts/)
 from prepare import load_sfo  # noqa: E402  (scripts/)
 DATA_DIR = Path(os.environ.get('GOW3_DATA_DIR', PORT_DIR))
 CONFIG_DIR = (Path(os.environ.get('APPDATA', Path.home())) if WINDOWS else
-              Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')) / 'gow3-launcher'
+              Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')) / 'theorder1886-launcher'
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
 MOD_PRESETS = DATA_DIR / 'mods_presets.json'
-APP_NAME = 'God of War III'
+APP_NAME = 'The Order 1886'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # The game and everything it starts form one process group, ended together (GameJob).
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '2.2.0'
-RELEASES_API = 'https://api.github.com/repos/FelipePrado0/gow3_pc/releases/latest'
-RELEASES_PAGE = 'https://github.com/FelipePrado0/gow3_pc/releases/latest'
-UPDATE_DIR = Path(tempfile.gettempdir()) / 'gow3-update'
+VERSION = '0.1.0'
+RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
+RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
+UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'mods', 'gow3.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
-# The God of War face for titles, next to gow3.ico; main() registers it for this process only.
-FONT_FILE = PORT_DIR / 'launcher' / 'gowfont.ttf'
+# A face for titles next to the icons, registered by main() for this process only. The God of War
+# III face is not used for this game: without the file the titles use the serif font (Georgia).
+FONT_FILE = PORT_DIR / 'launcher' / 'theorder_font.ttf'
 FR_PRIVATE = 0x10
 
 
@@ -291,18 +294,18 @@ def heading_text(text, every_language=False):
 INI_FLAGS = {'cheat_double_jumps', 'cheat_very_hard', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
              'stale_readback'}
 # The graphics keys are also in the in-game menu (Insert / R3+L2); run.py reads the startup ones.
-INI_DEFAULTS = {'upscaler': 'fsr3', 'preset': '1',
+INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
-                'render_resolution': 'native', 'engine_fps': '120',
+                'render_resolution': 'native', 'engine_fps': '60',
                 'frames_queued': '1', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
 PAGES = ('home', 'graphics', 'performance', 'game', 'advanced')
 PAGE_REFRESH = {'home': ('refresh_status',), 'game': ('refresh_lists', 'refresh_game_patches')}
-APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'CUSA01623') if WINDOWS else ''), 'update_dir': '', 'experimental_upscaler': False,
+APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_DIR', os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'CUSA00035') if WINDOWS else '')), 'update_dir': '', 'experimental_upscaler': False,
                 'video_backend': 'auto', 'gamemode': False, 'mangohud': False, 'desktop_integration': True, 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '', 'no_msaa': '', 'stream_memory': 'cached',
@@ -556,7 +559,7 @@ def describe_missing(missing):
 
 
 def ready_to_play(game_dir, update_dir=''):
-    """Whether --play (Steam, "Play God of War III.exe") may start the game at once; anything
+    """Whether --play (Steam, "Play The Order 1886.exe") may start the game at once; anything
     the Play button would refuse opens the launcher window instead."""
     if update_dir and same_folder(update_dir, game_dir or '.'):
         return False
@@ -572,7 +575,7 @@ def same_folder(a, b):
 def system_files_beside(folder, reference=None, base=None):
     """PKG extractors write the system files (param.sfo, icon0.png, pic1.png, trophy/) to Sc0/
     beside the game files (Image0/), while the port reads them from the folder's sce_sys/: the
-    Sc0 folder beside `folder` holding a God of War III param.sfo (patches.game_profile), while
+    Sc0 folder beside `folder` holding a known game's param.sfo (patches.game_profile), while
     `folder` has none worth keeping (an unreadable one is a different problem). For an update
     folder the title must be that of `reference` (the base game's param.sfo values); an Sc0
     beside the base game itself (`base`) is the base game's own unless the base game's param.sfo
@@ -648,7 +651,7 @@ DESKTOP_MARKER = 'X-GOW3-Integration=true'
 
 def desktop_entry(command, icon, marker=False):
     """The menu entry; its StartupWMClass is the application id of the launcher and of the game window."""
-    return ('[Desktop Entry]\nType=Application\nName=God of War III Remastered\n'
+    return ('[Desktop Entry]\nType=Application\nName=The Order: 1886\n'
             f'Exec={command}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupWMClass=gow3\n'
             + (DESKTOP_MARKER + '\n' if marker else ''))
 
@@ -666,7 +669,7 @@ def integrate_desktop(enabled, appimage, icon_source, data_dir, home=None):
             return None
         if not appimage or (entry.is_file() and not ours):
             return None
-        icon = Path(data_dir) / 'gow3.png'
+        icon = Path(data_dir) / 'theorder.png'
         icon.parent.mkdir(parents=True, exist_ok=True)
         if not icon.is_file() or icon.read_bytes() != Path(icon_source).read_bytes():
             shutil.copyfile(icon_source, icon)
@@ -681,7 +684,7 @@ def integrate_desktop(enabled, appimage, icon_source, data_dir, home=None):
 
 def steam_icon(game):
     """Picture of the Steam shortcut's icon: the launcher's own on Linux, the game's on Windows."""
-    return Path(game) / 'sce_sys' / 'icon0.png' if WINDOWS else PORT_DIR / 'launcher' / 'gow3.png'
+    return Path(game) / 'sce_sys' / 'icon0.png' if WINDOWS else PORT_DIR / 'launcher' / 'theorder.png'
 
 
 def steam_launch_command():
@@ -769,12 +772,14 @@ def game_environment(s):
 # ---------------------------------------------------------------------------------------------
 # The window.
 
-# God of War III's own colors: near black, ash and blood red (no gold or orange).
-BG, PANEL, CARD, LINE = '#0d0b0b', '#161212', '#1d1717', '#2a2222'
-TEXT, MUTED, ACCENT, ACCENT_HI = '#e6e0d8', '#8a817a', '#a4161a', '#c81e25'
+# The Order: 1886's colors: soot black, slate and aged brass.
+BG, PANEL, CARD, LINE = '#0c0d0f', '#141619', '#1b1e22', '#2b2f35'
+TEXT, MUTED, ACCENT, ACCENT_HI = '#e8e2d6', '#8d877c', '#a8803c', '#c9a051'
 RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('480p', ('480p',)), ('720p', ('720p',)),
                       ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K',))]
-ENGINE_FPS_CHOICES = [('60', ('60 (original)',)), ('120', ('120',)), ('240', ('240',))]
+# '60' runs the game at its own 30 FPS (no frame rate patch); '120' asks for the frame rate patch,
+# which for this game is the 60 FPS one (run.py presents every vblank, capped at 60).
+ENGINE_FPS_CHOICES = [('60', ('30 (original)',)), ('120', ('60 (experimental)',))]
 
 
 def window_icon(root, tk, game_icon, own_icon, ico_file):
@@ -864,7 +869,7 @@ class Launcher:
 
     def set_icon(self):
         game_icon = Path(self.meta_dir() or '.') / 'sce_sys' / 'icon0.png'
-        self.icon = window_icon(self.root, self.tk, game_icon, PORT_DIR / 'launcher' / 'gow3.png',
+        self.icon = window_icon(self.root, self.tk, game_icon, PORT_DIR / 'launcher' / 'theorder.png',
                                 CONFIG_DIR / 'game_icon.ico')
 
     # ---- look --------------------------------------------------------------------------------
@@ -1277,19 +1282,13 @@ class Launcher:
 
     def build_game(self):
         f = self.scrolled_page('game', _('Game', 'Игра'), _('Your game dump, saves and the game patches.'))
-        self.section(f, _('Cheats'), top=4)
-        self.check(f, 'cheat_double_jumps', 'ini', _('Infinite Double Jumps'),
-                   _('Repeat air jumps without landing. Also available in the in-game Cheats menu.'))
-        self.check(f, 'cheat_very_hard', 'ini', _('Unlock Very Hard'),
-                   _('Select Very Hard without completing the game. Does not change existing save difficulty. '
-                     'In-game: enable before opening New Game.'))
-        self.section(f, _('Folders'))
+        self.section(f, _('Folders'), top=4)
         self.folder(f, 'game_dir', _('Game folder', 'Папка игры'),
                     _('Choose the folder with eboot.bin', 'Выберите папку с eboot.bin'),
-                    _('Your own dump of the game (eboot.bin, sce_module, sce_sys): God of War III Remastered, '
-                      'any region and version.',
-                      'Ваш дамп игры (eboot.bin, sce_module, sce_sys): God of War III Remastered, '
-                      'любой регион и версия.'), on_change=self.game_changed)
+                    _('Your own dump of the game (eboot.bin, sce_module, sce_sys): The Order: 1886. '
+                      'Tested: CUSA00035, version 01.02.',
+                      'Ваш дамп игры (eboot.bin, sce_module, sce_sys): The Order: 1886. '
+                      'Проверено: CUSA00035, версия 01.02.'), on_change=self.game_changed)
         self.folder(f, 'update_dir', _('Update folder (optional)'),
                     _('Choose the folder of the update (eboot.bin, sce_sys)'),
                     _('Only if the update is dumped apart from the game: it is laid over the game folder '
@@ -1431,10 +1430,7 @@ class Launcher:
             ttk.Radiobutton(names, text=label, value=value, variable=self.pad_style,
                             command=self.relabel_pad_controls).pack(side='left', padx=(0, 14))
         self.row(f, _('Gamepad names'), names)
-        self.row(f, _('In-game button icons'), self.choice(f, 'glyph_style', 'app', GLYPH_STYLES),
-                 hint=_('Replaces the PlayStation button icons inside the game with the ones of your controller. '
-                        'Works on a copy of two game files in the port\'s data folder (about 70 MB); your game folder '
-                        'is never changed. Applied when the game starts.'))
+        # The in-game button icon replacement patches God of War III's files: not offered here.
         table = ttk.Frame(f)
         table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(16, 0))
         for column, span, title in ((0, 2, _('GAME BUTTON')), (2, 1, _('KEYBOARD')), (3, 2, _('GAMEPAD'))):
@@ -1911,8 +1907,8 @@ class Launcher:
         if not self.collect():
             return
         if not game_info(self.app['game_dir']):
-            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA01623).',
-                                                  'Выберите папку игры с eboot.bin (CUSA01623).'))
+            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA00035).',
+                                                  'Выберите папку игры с eboot.bin (CUSA00035).'))
             self.show('game')
             return
         if not self.offer_system_files():
@@ -2099,7 +2095,7 @@ class Launcher:
                 shutil.rmtree(UPDATE_DIR, ignore_errors=True)
                 UPDATE_DIR.mkdir(parents=True, exist_ok=True)
                 archive = UPDATE_DIR / 'update.zip'
-                request = urllib.request.Request(url, headers={'User-Agent': 'gow3-launcher'})
+                request = urllib.request.Request(url, headers={'User-Agent': 'theorder1886-launcher'})
                 with urllib.request.urlopen(request, timeout=60) as response, open(archive, 'wb') as out:
                     total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
                     while chunk := response.read(1 << 20):
@@ -2112,11 +2108,11 @@ class Launcher:
                 with zipfile.ZipFile(archive) as package:
                     package.extractall(UPDATE_DIR / 'new')
                 archive.unlink()
-                new = next((p.parent for p in (UPDATE_DIR / 'new').rglob('God of War III.exe')), None)
+                new = next((p.parent for p in (UPDATE_DIR / 'new').rglob('The Order 1886.exe')), None)
                 if not new:
-                    raise OSError('God of War III.exe is missing from the download')
+                    raise OSError('The Order 1886.exe is missing from the download')
                 # The new launcher copies itself over this installation once this one has closed.
-                subprocess.Popen([str(new / 'God of War III.exe'), '--install-update', str(PORT_DIR), str(os.getpid())],
+                subprocess.Popen([str(new / 'The Order 1886.exe'), '--install-update', str(PORT_DIR), str(os.getpid())],
                                  cwd=str(new), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
                 self.ui_calls.put(self.root.destroy)
             except (OSError, zipfile.BadZipFile) as failure:
@@ -2139,7 +2135,7 @@ class Launcher:
                                                  'минут будет подтормаживать, пока кэш собирается заново.'))
 
     def shortcut(self):
-        """God of War III.lnk on the desktop (a .desktop entry in the menu and on the desktop on Linux)."""
+        """The Order 1886.lnk on the desktop (a .desktop entry in the menu and on the desktop on Linux)."""
         if not WINDOWS:
             self.linux_shortcut()
             return
@@ -2148,9 +2144,9 @@ class Launcher:
         else:  # a source tree: the launcher script with the windowless Python
             pythonw = Path(sys.executable).with_name('pythonw.exe')
             target = str(pythonw if pythonw.exists() else sys.executable)
-            arguments, icon = Path(__file__).resolve(), PORT_DIR / 'launcher' / 'gow3.ico'
+            arguments, icon = Path(__file__).resolve(), PORT_DIR / 'launcher' / 'theorder.ico'
         script = ('$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath("Desktop")'
-                  '+"\\God of War III.lnk");'
+                  '+"\\The Order 1886.lnk");'
                   f'$s.TargetPath="{target}";$s.WorkingDirectory="{PORT_DIR}";$s.IconLocation="{icon}";'
                   + (f"$s.Arguments='\"{arguments}\"';" if arguments else '') + '$s.Save()')
         result = subprocess.run(['powershell', '-NoProfile', '-Command', script], capture_output=True,
@@ -2164,10 +2160,10 @@ class Launcher:
         launcher = os.environ.get('APPIMAGE') or (sys.executable if FROZEN else '')
         command = f'"{launcher}"' if launcher else f'python3 "{Path(__file__).resolve()}"'
         icon_dir = Path.home() / '.local' / 'share' / 'icons'
-        icon = icon_dir / 'gow3.png'
+        icon = icon_dir / 'theorder.png'
         try:
             icon_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(PORT_DIR / 'launcher' / 'gow3.png', icon)
+            shutil.copyfile(PORT_DIR / 'launcher' / 'theorder.png', icon)
         except OSError:
             icon = 'gow3'
         entry = desktop_entry(command, icon)
@@ -2185,7 +2181,7 @@ class Launcher:
                     continue
                 folder.mkdir(parents=True, exist_ok=True)
                 # In the applications menu the file is named after the window's application id.
-                target = folder / ('gow3.desktop' if folder == folders[0] else 'God of War III.desktop')
+                target = folder / ('gow3.desktop' if folder == folders[0] else 'The Order 1886.desktop')
                 target.write_text(entry, encoding='utf-8')
                 target.chmod(0o755)
                 created.append(str(target))
@@ -2200,8 +2196,8 @@ class Launcher:
             return
         game = self.var('game_dir', 'app').get()
         if not game_info(game):
-            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA01623).',
-                                                  'Выберите папку игры с eboot.bin (CUSA01623).'))
+            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA00035).',
+                                                  'Выберите папку игры с eboot.bin (CUSA00035).'))
             return
         self.root.configure(cursor='watch')
         self.root.update_idletasks()
@@ -2336,7 +2332,7 @@ def version_tuple(text):
 def latest_release():
     """(version, zip URL, page URL) of the newest GitHub release."""
     request = urllib.request.Request(RELEASES_API, headers={'Accept': 'application/vnd.github+json',
-                                                            'User-Agent': 'gow3-launcher'})
+                                                            'User-Agent': 'theorder1886-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
         release = json.load(response)
     version = '.'.join(re.findall(r'\d+', release['tag_name']))
@@ -2368,7 +2364,7 @@ def install_update(target, wait_pid):
             'Не удалось установить обновление. Скачайте его со страницы релизов.'), APP_NAME, 0x10)
         open_url(RELEASES_PAGE)
         return 1
-    subprocess.Popen([str(target / 'God of War III.exe')], cwd=str(target))
+    subprocess.Popen([str(target / 'The Order 1886.exe')], cwd=str(target))
     return 0
 
 
@@ -2381,7 +2377,7 @@ def main():
     LANG = settings.get('ui_language') or windows_language()
     if not WINDOWS:
         integrate_desktop(settings.get('desktop_integration', True), os.environ.get('APPIMAGE'),
-                          PORT_DIR / 'launcher' / 'gow3.png', DATA_DIR)
+                          PORT_DIR / 'launcher' / 'theorder.png', DATA_DIR)
     if WINDOWS and args[:1] == ['--install-update'] and len(args) == 3:
         sys.exit(install_update(args[1], args[2]))
     if WINDOWS and FROZEN and UPDATE_DIR not in PORT_DIR.parents:

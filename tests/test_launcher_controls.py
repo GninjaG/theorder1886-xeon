@@ -137,7 +137,9 @@ class ControlMapTest(unittest.TestCase):
 
     def test_graphics_defaults_match_the_game(self):
         d = launcher.INI_DEFAULTS
-        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '120'))
+        # The Order runs at its own 30 FPS by default ('60': no frame rate patch, see ENGINE_FPS_CHOICES).
+        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '60'))
+        self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120'])
         self.assertEqual([v for v, _t in launcher.FPS_LIMITS], ['30', '60', '120', '240', '0'])
         self.assertEqual(d['frames_queued'], '1')
         self.assertEqual([v for v, _t in launcher.FRAMES_QUEUED], ['1', '2', '0'])
@@ -548,10 +550,10 @@ class GpuChoiceTest(unittest.TestCase):
 
 
 class ReleaseVersionTest(unittest.TestCase):
-    def test_god_of_war_release_is_newer_than_the_inherited_tags(self):
-        self.assertEqual(launcher.VERSION, '2.2.0')
-        self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v1.5'))
-        self.assertGreater(launcher.version_tuple('windows-v2.2.1'), launcher.version_tuple(launcher.VERSION))
+    def test_the_order_release_version(self):
+        self.assertEqual(launcher.VERSION, '0.1.0')
+        self.assertGreater(launcher.version_tuple('windows-v0.1.1'), launcher.version_tuple(launcher.VERSION))
+        self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_first_start_is_in_english(self):
         # The translations are partial; 'System' stays a choice in Advanced.

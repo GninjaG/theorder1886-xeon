@@ -1,4 +1,5 @@
-"""The God of War title font: an optional launcher asset, never a reason the launcher cannot start."""
+"""The title font: an optional launcher asset, never a reason the launcher cannot start. The Order's
+launcher ships none (the God of War III face is not used), so titles use the serif font."""
 import sys
 import unittest
 from pathlib import Path
@@ -11,14 +12,11 @@ import gow3_launcher_win as launcher  # noqa: E402
 class FontFileTest(unittest.TestCase):
     def test_font_file_is_a_launcher_asset_under_port_dir(self):
         # Frozen builds find launcher assets next to the exe (PORT_DIR / 'launcher'), like gow3.ico.
-        self.assertEqual(launcher.FONT_FILE, launcher.PORT_DIR / 'launcher' / 'gowfont.ttf')
-        self.assertTrue(launcher.FONT_FILE.is_file())
+        self.assertEqual(launcher.FONT_FILE, launcher.PORT_DIR / 'launcher' / 'theorder_font.ttf')
 
-    def test_windows_package_ships_the_font(self):
+    def test_windows_package_does_not_ship_the_god_of_war_font(self):
         script = (ROOT / 'packaging' / 'windows' / 'package.sh').read_text(encoding='utf-8')
-        copies = [line for line in script.splitlines()
-                  if 'launcher/gowfont.ttf' in line and '"$dest/launcher/"' in line]
-        self.assertTrue(copies, 'package.sh must copy launcher/gowfont.ttf into $dest/launcher/')
+        self.assertNotIn('gowfont.ttf', script)
 
 
 class RegisterFontTest(unittest.TestCase):
@@ -29,7 +27,7 @@ class RegisterFontTest(unittest.TestCase):
     def test_file_that_is_not_a_font_is_refused(self):
         self.assertFalse(launcher.register_font(Path(launcher.__file__)))
 
-    @unittest.skipUnless(sys.platform == 'win32', 'GDI font registration')
+    @unittest.skipUnless(sys.platform == 'win32' and launcher.FONT_FILE.is_file(), 'GDI font registration')
     def test_font_file_registers(self):
         self.assertTrue(launcher.register_font(launcher.FONT_FILE))
 

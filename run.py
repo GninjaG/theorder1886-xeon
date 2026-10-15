@@ -288,7 +288,7 @@ def main():
         import patches
         from patches import game_profile_for, patch_requirements, patch_status, selected_patches
         profile = game_profile_for(game)
-        engine_fps = 60
+        engine_fps, fps_patched = 60, False
         # The window shows the game's icon (BMP: the format SDL loads without extra libraries); on
         # Linux the launcher's own icon (the AppImage ships the one chosen when it was built) and
         # an application id the desktop entry matches, so the shell shows the same icon.
@@ -333,7 +333,20 @@ def main():
             # leaves the engine at 60 FPS, and the notes' memory and VBlank needs follow the same list.
             applied = (patch_status(out) or {}).get('applied', [])
             engine_fps = graphics_options.applied_engine_fps(applied)
+            fps_patched = any(n.startswith(f'{graphics_options.FPS_PREFIX} - ') for n in applied)
             dmem, vblank = patch_requirements(profile[1], applied, profile[2])
+            # The Order presents at 30 Hz (flip rate 1) and steps 33.3 ms per frame. Its 60 FPS patch
+            # halves the step, so the presentation has to follow (every vblank, at most 60 FPS) or
+            # the game runs in slow motion. Derived like the values below, so a restart back to 30 FPS
+            # drops them (flip rate 0 without the patch doubles the game's speed).
+            if profile[3] == 'The Order 1886' and f'{graphics_options.FPS_PREFIX} - 60 FPS' in applied:
+                for key, value in (('FLIP_RATE', '0'), ('FPS_LIMIT', '60')):
+                    if not get_env(env, key):
+                        env[f'THEORDER_{key}'] = value
+                        env[f'GOW3_{key}'] = value
+                        derived.append(f'THEORDER_{key}')
+                        derived.append(f'GOW3_{key}')
+                print('The Order 60 FPS patch: presenting every vblank, at most 60 FPS', flush=True)
             for key, value in (('DMEM_MB', dmem), ('VBLANK_HZ', vblank)):
                 if value and not get_env(env, key):
                     env[f'THEORDER_{key}'] = str(value)
@@ -352,7 +365,7 @@ def main():
         derived.append('THEORDER_ENGINE_FPS')
         derived.append('GOW3_ENGINE_FPS')
         print(f'Engine frame rate: {engine_fps} FPS'
-              + ('' if engine_fps > 60 or graphics['engine_fps'] == '60' else
+              + ('' if fps_patched or graphics['engine_fps'] == '60' else
                  ' (the frame rate patch was not found in this eboot.bin)'), flush=True)
         glyph_args, glyph_style = glyph_mounts(env, probe, game, out)
         if glyph_style:  # the in-game menu names the buttons the same way
