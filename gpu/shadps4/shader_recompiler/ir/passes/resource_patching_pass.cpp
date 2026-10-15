@@ -306,14 +306,20 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         switch (inst.GetOpcode()) {
         case IR::Opcode::ImageRead:
         case IR::Opcode::ImageSampleRaw: {
+            // gow3: both return F32x4: a two-component value made the users' .z/.w reads
+            // invalid SPIR-V (VUID-VkShaderModuleCreateInfo-pCode-08737).
             IR::F32 fmaskx = ir.BitCast<IR::F32>(ir.Imm32(0x76543210));
             IR::F32 fmasky = ir.BitCast<IR::F32>(ir.Imm32(0xfedcba98));
-            inst.ReplaceUsesWith(ir.CompositeConstruct(fmaskx, fmasky));
+            const IR::F32 zero = ir.Imm32(0.0f);
+            inst.ReplaceUsesWith(ir.CompositeConstruct(fmaskx, fmasky, zero, zero));
             return;
         }
-        case IR::Opcode::ImageQueryLod:
-            inst.ReplaceUsesWith(ir.Imm32(1));
+        case IR::Opcode::ImageQueryLod: {
+            // gow3: F32x4 as well (it was an integer scalar).
+            const IR::F32 zero = ir.Imm32(0.0f);
+            inst.ReplaceUsesWith(ir.CompositeConstruct(zero, zero, zero, zero));
             return;
+        }
         case IR::Opcode::ImageQueryDimensions: {
             IR::Value dims = ir.CompositeConstruct(ir.Imm32(static_cast<u32>(image.width)),  // x
                                                    ir.Imm32(static_cast<u32>(image.height)), // y
