@@ -127,8 +127,9 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     }
 
     const auto& db = render_state.depth_stencil_attachment;
-    const bool valid_depth = db.image_view != VK_NULL_HANDLE && db.has_depth;
-    const bool valid_stencil = db.image_view != VK_NULL_HANDLE && db.has_stencil;
+    const bool has_ds = db.image_view != VK_NULL_HANDLE && (db.has_depth || db.has_stencil);
+    const bool valid_depth = has_ds;
+    const bool valid_stencil = has_ds;
     const vk::RenderingAttachmentInfo depth_attachment = {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,

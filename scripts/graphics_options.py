@@ -12,7 +12,7 @@ from pathlib import Path
 
 RESOLUTIONS = ('native', '480p', '720p', '1440p', '1800p', '4K')
 ENGINE_FPS = (60, 120, 240)
-DEFAULTS = {'render_resolution': 'native', 'engine_fps': '120', 'deferred_readback': '1',
+DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1'}
 RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'

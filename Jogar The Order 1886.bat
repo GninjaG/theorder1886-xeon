@@ -10,7 +10,7 @@ echo                THE ORDER: 1886 - PC NATIVE PORT (VULKAN)
 echo                     Ready at Dawn / Sony Santa Monica
 echo ===============================================================================
 echo.
-echo   [1] Iniciar Jogo (Início Rápido - Westminster / Cutscenes Puladas)
+echo   [1] Iniciar Jogo (Modo Padrão / Original sem Patches)
 echo   [2] Capítulo 1: Ruas de Whitechapel (cat_010_streets)
 echo   [3] Capítulo 1: Túneis da Embaixada (emb_020_tunnels)
 echo   [4] Capítulo 3: Dirigível Agamemnon (air_010_rappel)
@@ -37,9 +37,9 @@ goto menu
 
 :launch_fast
 cls
-echo [INFO] Iniciando The Order: 1886 no modo Início Rápido...
-echo [INFO] Pulos de logotipos e introdução ativados.
+echo [INFO] Iniciando The Order: 1886 (Modo Padrao / Sem Patches)...
 echo [INFO] Controle DualSense ou Teclado pronto.
+echo.
 python run.py
 pause
 goto menu

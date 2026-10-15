@@ -15,7 +15,7 @@
               PatchVer="2.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="true">
+              isEnabled="false">
         <PatchList>
             <Line Type="bytes" Address="0x00486a93" Value="1b410000"/>
             <Line Type="bytes" Address="0x00345ca7" Value="1b410000"/>
@@ -30,7 +30,7 @@
               PatchVer="1.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="true">
+              isEnabled="false">
         <PatchList>
             <Line Type="bytes" Address="0x0044a66c" Value="e9e7010000909090"/>
         </PatchList>
@@ -42,7 +42,7 @@
               PatchVer="1.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="true">
+              isEnabled="false">
         <PatchList>
             <Line Type="bytes" Address="0x0044acc1" Value="2b070401"/>
         </PatchList>
@@ -66,7 +66,7 @@
               PatchVer="1.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="true">
+              isEnabled="false">
         <PatchList>
             <Line Type="bytes" Address="0x0044a93b" Value="e9b111000090909090"/>
         </PatchList>
@@ -102,7 +102,7 @@
               PatchVer="2.0"
               AppVer="01.02"
               AppElf="eboot.bin"
-              isEnabled="true">
+              isEnabled="false">
         <PatchList>
             <Line Type="bytes32" Address="0x00e6cfb2" Value="0x00000438"/>
             <Line Type="bytes32" Address="0x0167229c" Value="0x3fe38e39"/>
