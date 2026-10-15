@@ -101,6 +101,27 @@ namespace {
 bool IsKnownFormat(AmdGpu::DataFormat data_fmt, AmdGpu::NumberFormat num_fmt) {
     return LiverpoolToVK::TrySurfaceFormat(data_fmt, num_fmt) != vk::Format::eUndefined;
 }
+
+/// gow3: a stale T# (a texture slot a dispatch does not sample) with a plausible address and
+/// format can still describe a 1-3 GB image through its pitch and layer fields: registering it
+/// uploaded gigabytes of guest memory in one frame (1-3 s stalls), again on every write to
+/// that range. Real textures stay far below this (8K x 8K x 4 bytes is 256 MiB).
+bool ImplausibleTexture(const VideoCore::ImageInfo& info) {
+    constexpr u64 MaxTextureGuestSize = 512ULL << 20;
+    if (info.guest_size <= MaxTextureGuestSize) {
+        return false;
+    }
+    static std::atomic<u32> reported{0};
+    if (reported.fetch_add(1, std::memory_order_relaxed) < 8) {
+        LOG_WARNING(Render_Vulkan,
+                    "Not binding implausible texture {:#x}: {} MiB, {}x{}x{} pitch {}, {} layers, "
+                    "{} levels",
+                    info.guest_address, info.guest_size >> 20, info.size.width,
+                    info.size.height, info.size.depth, info.pitch, info.resources.layers,
+                    info.resources.levels);
+    }
+    return true;
+}
 } // namespace
 
 bool Rasterizer::FilterDraw() {
@@ -1546,6 +1567,9 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
         const auto& entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
+        if (ImplausibleTexture(entry.desc.info)) {
+            continue; // null descriptor, as in BindTextures
+        }
         if (entry.found_generation != generation) {
             return false;
         }
@@ -2354,6 +2378,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         auto& desc_entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
+        if (ImplausibleTexture(desc_entry.desc.info)) {
+            image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
+            image_binding_entries.push_back(nullptr);
+            binding_proxy_ok.push_back(false);
+            image_descriptor_array_sizes.push_back(1);
+            continue;
+        }
         // GOW3_SCENE_DEBUG: proxied scene targets this binding reads at the native size, and why.
         const auto debug_native = [&](const VideoCore::Image& image) {
             if (!scene_debug_frame || proxy_candidate || !image.scene_proxy) return;
