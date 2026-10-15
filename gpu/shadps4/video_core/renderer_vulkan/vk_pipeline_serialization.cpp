@@ -16,7 +16,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include "common/elf_info.h"
 #include "common/hash.h"
+#include "common/path_util.h"
 #include "common/serdes.h"
 #include "common/scope_exit.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
@@ -254,6 +256,64 @@ std::optional<std::vector<PipelineBinaryCache::Binary>> LoadLegacyBinary(
 }
 } // namespace
 
+// gow3: the binaries are a cache of driver output, 1-3 MB each on NVIDIA; permutations that
+// came back under new indices every session left 41 GB of them. The most recently used are
+// kept within GOW3_PIPELINE_BINARY_CACHE_MB (default 4096): beyond it the oldest go, down to
+// three quarters of it. Temporary files of writes cut short go too.
+static void TrimPipelineBinaries(const std::filesystem::path& directory) {
+    u64 budget = u64{4096} << 20;
+    if (const char* env = std::getenv("GOW3_PIPELINE_BINARY_CACHE_MB")) {
+        budget = std::strtoull(env, nullptr, 10) << 20;
+    }
+    using Clock = std::filesystem::file_time_type::clock;
+    const auto stale_temp = Clock::now() - std::chrono::minutes(10);
+    struct File {
+        std::filesystem::file_time_type time;
+        u64 size;
+        std::filesystem::path path;
+    };
+    std::vector<File> files;
+    u64 total = 0;
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(directory, error), end; !error && it != end;
+         it.increment(error)) {
+        std::error_code entry_error;
+        const auto time = it->last_write_time(entry_error);
+        const u64 size = it->file_size(entry_error);
+        if (entry_error || !it->is_regular_file(entry_error)) {
+            continue;
+        }
+        if (it->path().extension() == ".tmp") {
+            if (time < stale_temp) {
+                std::filesystem::remove(it->path(), entry_error);
+            }
+            continue;
+        }
+        total += size;
+        files.push_back({time, size, it->path()});
+    }
+    if (total <= budget) {
+        return;
+    }
+    const u64 before = total;
+    std::ranges::sort(files, {}, &File::time);
+    size_t removed = 0;
+    for (const auto& file : files) {
+        if (total <= budget / 4 * 3) {
+            break;
+        }
+        if (std::filesystem::remove(file.path, error)) {
+            total -= file.size;
+            ++removed;
+        }
+    }
+    std::printf("Pipeline binaries: %llu MiB over the %llu MiB budget, %zu oldest removed "
+                "(%llu MiB left)\n",
+                static_cast<unsigned long long>(before >> 20),
+                static_cast<unsigned long long>(budget >> 20), removed,
+                static_cast<unsigned long long>(total >> 20));
+}
+
 void ReportPipelineBinaryCache() {
     const auto hits = binary_hits.load();
     const auto misses = binary_misses.load();
@@ -379,6 +439,10 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
                 auto result = create(nullptr, restored_info, true);
                 if (result.result == vk::Result::eSuccess) {
                     ++binary_hits;
+                    // The file's time orders TrimPipelineBinaries.
+                    std::error_code error;
+                    std::filesystem::last_write_time(
+                        file, std::filesystem::file_time_type::clock::now(), error);
                     return result;
                 }
             }
@@ -1160,6 +1224,11 @@ void PipelineCache::StartOnDemand() {
                         prefetch->metas.size(),
                         std::chrono::duration<double>(std::chrono::steady_clock::now() - started)
                             .count());
+            if (!stop.stop_requested()) {
+                TrimPipelineBinaries(Common::FS::GetUserPath(Common::FS::PathType::CacheDir) /
+                                     Common::ElfInfo::Instance().GameSerial() /
+                                     "pipeline-binaries");
+            }
         });
     }
     std::printf("Pipeline startup: on demand, no bulk warm-up\n");
