@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <unordered_set>
 #include <functional>
 #include <unordered_map>
 #include <shared_mutex>
@@ -43,6 +44,7 @@ class Scheduler;
 class ShaderCache;
 struct AsyncShaderCompilation;
 struct AsyncGraphicsCompilation;
+struct AsyncComputeCompilation;
 
 struct Program {
     struct Module {
@@ -182,6 +184,7 @@ private:
                      std::optional<Shader::StageSpecialization> specialization = {});
     void PublishShaders(bool wait = false);
     void PublishGraphics(bool wait = false);
+    void PublishCompute(bool wait = false);
     void FinishCompilations();
     void SeedWorkerCaches();
     bool CheckCacheProfile();
@@ -232,6 +235,9 @@ private:
     /// gow3: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
     BackgroundWarmup* background = nullptr;
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<AsyncGraphicsCompilation>> pending_graphics;
+    tsl::robin_map<ComputePipelineKey, std::shared_ptr<AsyncComputeCompilation>> pending_compute;
+    /// gow3: compute pipelines whose asynchronous build failed: built on the GPU thread instead.
+    std::unordered_set<u64> sync_compute_keys;
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
     std::vector<Program*> pending_programs;
     /// gow3: exclusive for program/permutation insertions, shared for worker lookups.

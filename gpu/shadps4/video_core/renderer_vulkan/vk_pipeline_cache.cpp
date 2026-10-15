@@ -79,6 +79,20 @@ struct AsyncGraphicsCompilation {
     bool failure_logged = false;
 };
 
+// gow3: a compute pipeline built on a compiler thread. Its driver compile took ~180 ms on the GPU
+// thread per new permutation of The Order's material shader (0x804aeead); the dispatches that
+// need it are skipped until it is ready, as draws are while their graphics pipeline compiles.
+struct AsyncComputeCompilation {
+    AsyncJob<std::shared_ptr<AsyncComputeCompilation>> job;
+    ComputePipelineKey key{};
+    std::unique_ptr<Shader::Info> info;
+    std::vector<u32> user_data;
+    const Shader::Info* live_info{};
+    vk::ShaderModule module{};
+    ComputePipeline::SerializationSupport data{};
+    std::unique_ptr<ComputePipeline> pipeline;
+};
+
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
 
 constexpr static std::array DescriptorHeapSizes = {
@@ -692,12 +706,38 @@ void PipelineCache::PublishGraphics(bool wait) {
     }
 }
 
+void PipelineCache::PublishCompute(bool wait) {
+    for (auto it = pending_compute.begin(); it != pending_compute.end();) {
+        auto build = it.value();
+        if (wait) {
+            build->job.Wait();
+        }
+        if (build->job.Failed()) {
+            LOG_ERROR(Render_Vulkan, "gow3: compute pipeline {:#x} compilation failed: {}",
+                      build->key.value, build->job.Error());
+            sync_compute_keys.insert(build->key.value);
+            it = pending_compute.erase(it);
+            continue;
+        }
+        if (!build->job.Poll()) {
+            ++it;
+            continue;
+        }
+        build->pipeline->PublishStage(build->live_info);
+        RegisterPipelineData(build->key, build->data);
+        compute_pipelines.emplace(build->key, std::move(build->pipeline));
+        ++num_new_pipelines;
+        it = pending_compute.erase(it);
+    }
+}
+
 void PipelineCache::FinishCompilations() {
     if (compiler) {
         capture_compiler->Stop();
         compiler->Stop();
         PublishShaders(true);
         PublishGraphics(true);
+        PublishCompute(true);
         std::vector<vk::PipelineCache> sources;
         for (const auto& cache : worker_pipeline_caches) {
             sources.push_back(*cache);
@@ -863,8 +903,43 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
 const ComputePipeline* PipelineCache::GetComputePipeline() {
     PublishShaders();
     PublishGraphics();
+    PublishCompute();
     PumpWarmUp();
     if (!RefreshComputeKey()) {
+        return nullptr;
+    }
+    if (const auto found = compute_pipelines.find(compute_key); found != compute_pipelines.end()) {
+        return found->second.get();
+    }
+    // GOW3_ASYNC_COMPUTE=0 builds compute pipelines on the GPU thread again.
+    static const bool async_compute = [] {
+        const char* env = std::getenv("GOW3_ASYNC_COMPUTE");
+        return !env || env[0] != '0';
+    }();
+    if (async_compute && AsyncCompilation() && !EmulatorSettings.IsShaderCollect() &&
+        !sync_compute_keys.contains(compute_key.value)) {
+        if (!pending_compute.contains(compute_key) && compiler->HasCapacity()) {
+            auto build = std::make_shared<AsyncComputeCompilation>();
+            build->key = compute_key;
+            // The GPU thread rewrites the program's info (user data) on every dispatch.
+            build->info = std::make_unique<Shader::Info>(*sel.infos[0]);
+            build->user_data.assign(sel.infos[0]->user_data.begin(),
+                                    sel.infos[0]->user_data.end());
+            build->info->user_data = build->user_data;
+            build->live_info = sel.infos[0];
+            build->module = sel.modules[0];
+            const bool queued = build->job.Start(*compiler, [this, build] {
+                PhaseTimer compile{g_gow3_async_ns};
+                build->pipeline = std::make_unique<ComputePipeline>(
+                    instance, scheduler, desc_heap, profile,
+                    *worker_pipeline_caches[AsyncCompiler::WorkerIndex()], build->key,
+                    *build->info, build->module, build->data, false);
+                return build;
+            });
+            if (queued) {
+                pending_compute.emplace(compute_key, std::move(build));
+            }
+        }
         return nullptr;
     }
     const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);

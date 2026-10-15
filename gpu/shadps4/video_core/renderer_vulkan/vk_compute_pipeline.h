@@ -50,6 +50,11 @@ public:
                     vk::ShaderModule module, SerializationSupport& sdata, bool preloading);
     ~ComputePipeline();
 
+    /// gow3: after an asynchronous build, binds the program's live info (vk_pipeline_cache.cpp).
+    void PublishStage(const Shader::Info* info) {
+        stages[int(Shader::SwStage::Compute)] = info;
+    }
+
 private:
     ComputePipelineKey compute_key;
 };
