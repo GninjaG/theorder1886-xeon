@@ -426,6 +426,8 @@ PipelineCache::~PipelineCache() {
 // gow3: shader/pipeline compile time on the GPU thread, reported by GOW3_FRAME_STATS.
 std::atomic<u64> g_gow3_compile_ns;
 std::atomic<u32> g_gow3_compiles;
+// gow3: the synchronous compile split: GCN translation and SPIR-V emission (CompileModule).
+std::atomic<u64> g_gow3_translate_ns, g_gow3_emit_ns;
 std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
 std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
 std::atomic<u32> g_gow3_pool_reuses;
@@ -454,6 +456,78 @@ struct CompileTimer {
         ++g_gow3_compiles;
     }
 };
+
+// gow3: GOW3_PERMUTATION_LOG names the specialization field that forced a new permutation.
+std::string DescribeSpecDifference(const Shader::StageSpecialization& a,
+                                   const Shader::StageSpecialization& b) {
+    std::string out;
+    const auto add = [&out](std::string what) {
+        out += out.empty() ? "" : ", ";
+        out += std::move(what);
+    };
+    if (a.vs_attribs != b.vs_attribs) add("vs_attribs");
+    if (a.runtime_info.props != b.runtime_info.props) add("props");
+    if (!a.runtime_info.HasSameHwInfo(b.runtime_info.hw)) {
+        if (a.runtime_info.hw_stage == Shader::HwStage::Compute) {
+            const auto& x = a.runtime_info.hw.cs;
+            const auto& y = b.runtime_info.hw.cs;
+            add(fmt::format("cs workgroup {}x{}x{} vs {}x{}x{}", x.workgroup_size[0],
+                            x.workgroup_size[1], x.workgroup_size[2], y.workgroup_size[0],
+                            y.workgroup_size[1], y.workgroup_size[2]));
+        } else {
+            add("hw runtime info");
+        }
+    }
+    if (!a.runtime_info.HasSameSwInfo(b.runtime_info.sw)) add("sw runtime info");
+    if (a.fetch_shader_data != b.fetch_shader_data) add("fetch shader");
+    for (u32 i = 0; i < std::min(a.fmasks.size(), b.fmasks.size()); ++i) {
+        if (a.fmasks[i] != b.fmasks[i]) {
+            add(fmt::format("fmask {} {}x{} vs {}x{}", i, a.fmasks[i].width, a.fmasks[i].height,
+                            b.fmasks[i].width, b.fmasks[i].height));
+        }
+    }
+    if (a.start != b.start) add("start bindings");
+    // Only resources bound in `a` (the new draw) break the match (StageSpecialization ==).
+    u32 binding = 0;
+    for (u32 i = 0; i < std::min(a.buffers.size(), b.buffers.size()); ++i) {
+        const auto& x = a.buffers[i];
+        const auto& y = b.buffers[i];
+        if (a.bitset[binding++] && x != y) {
+            add(fmt::format("buffer {} stride {} vs {}, formatted {}/{}, fmt {}/{} vs {}/{}", i,
+                            u32(x.stride), u32(y.stride), u32(x.is_formatted),
+                            u32(y.is_formatted), u32(x.data_format), u32(x.num_format),
+                            u32(y.data_format), u32(y.num_format)));
+        }
+    }
+    for (u32 i = 0; i < std::min(a.images.size(), b.images.size()); ++i) {
+        const auto& x = a.images[i];
+        const auto& y = b.images[i];
+        if (a.bitset[binding++] && x != y) {
+            const auto sharp = a.info->images[i].GetSharp(*a.info);
+            add(fmt::format("image {} type {}/{} int {}/{} storage {}/{} cube {}/{} srgb {}/{} "
+                            "bindings {}/{} (T# {:#x} {}x{}x{} fmt {}/{} mips {}-{})",
+                            i, u32(x.type), u32(y.type), x.is_integer, y.is_integer, x.is_storage,
+                            y.is_storage, x.is_cube, y.is_cube, x.is_srgb, y.is_srgb,
+                            x.num_bindings, y.num_bindings, sharp.Address(), u32(sharp.width + 1),
+                            u32(sharp.height + 1), u32(sharp.depth + 1), u32(sharp.GetDataFmt()),
+                            u32(sharp.GetNumberFmt()), u32(sharp.base_level),
+                            u32(sharp.last_level)));
+        }
+    }
+    for (u32 i = 0; i < std::min(a.samplers.size(), b.samplers.size()); ++i) {
+        if (a.samplers[i] != b.samplers[i]) add(fmt::format("sampler {}", i));
+    }
+    return out.empty() ? "no field difference found" : out;
+}
+
+void LogNewPermutation(u64 hash, size_t perm_idx, const Shader::StageSpecialization& spec,
+                       const Shader::StageSpecialization& closest) {
+    static const bool enabled = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+    if (enabled) {
+        LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {}: {}", hash, perm_idx,
+                    DescribeSpecDifference(spec, closest));
+    }
+}
 } // namespace
 
 bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage,
@@ -1143,8 +1217,12 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
     CompileTimer timer;
 
+    PhaseTimer translate{g_gow3_translate_ns};
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    translate.Stop();
+    PhaseTimer emit{g_gow3_emit_ns};
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
+    emit.Stop();
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
     vk::ShaderModule module;
@@ -1299,8 +1377,37 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                         std::move(spec));
             return {};
         }
+        if (!program->modules.empty()) {
+            LogNewPermutation(params.hash, perm_idx, spec,
+                              program->modules[std::min(program->last_used,
+                                                        program->modules.size() - 1)].spec);
+        }
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
+        static const bool check_shape = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        if (check_shape && (new_info.buffers.size() != info.buffers.size() ||
+                            new_info.images.size() != info.images.size() ||
+                            new_info.samplers.size() != info.samplers.size() ||
+                            new_info.fmasks.size() != info.fmasks.size())) {
+            LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {} resources {}/{}/{}/{} "
+                        "(buffers/images/samplers/fmasks), program {}/{}/{}/{}",
+                        params.hash, perm_idx, new_info.buffers.size(), new_info.images.size(),
+                        new_info.samplers.size(), new_info.fmasks.size(), info.buffers.size(),
+                        info.images.size(), info.samplers.size(), info.fmasks.size());
+        }
+        for (u32 i = 0; check_shape && i < std::min(new_info.images.size(), info.images.size());
+             ++i) {
+            const auto& a = new_info.images[i];
+            const auto& b = info.images[i];
+            if (a.NumBindings(new_info) != b.NumBindings(info) ||
+                a.mip_fallback_mode != b.mip_fallback_mode || a.is_written != b.is_written) {
+                LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {} image {}: bindings "
+                            "{}/{}, mip mode {}/{}, written {}/{} (permutation/program)",
+                            params.hash, perm_idx, i, a.NumBindings(new_info),
+                            b.NumBindings(info), u32(a.mip_fallback_mode),
+                            u32(b.mip_fallback_mode), a.is_written, b.is_written);
+            }
+        }
 
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         std::unique_lock lk{programs_mutex};

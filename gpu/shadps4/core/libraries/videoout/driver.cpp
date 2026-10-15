@@ -39,6 +39,7 @@ extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
 namespace Vulkan {
 extern std::atomic<u64> g_gow3_compile_ns;
 extern std::atomic<u32> g_gow3_compiles;
+extern std::atomic<u64> g_gow3_translate_ns, g_gow3_emit_ns, g_gow3_pipeline_driver_ns;
 extern std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
 extern std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
 extern std::atomic<u32> g_gow3_pending_draws;
@@ -351,18 +352,22 @@ void VideoOutDriver::Flip(const Request& req) {
         primed = true;
         // Waits and work inside the long frame (window counters are reset every 5 s, so the
         // previous values are reset with them).
-        static u64 last_wait[7];
-        const u64 wait_now[7] = {Gow3Stats::t_readback_wait.load(), Gow3Stats::tick_wait_ns.load(),
+        static u64 last_wait[10];
+        const u64 wait_now[10] = {Gow3Stats::t_readback_wait.load(), Gow3Stats::tick_wait_ns.load(),
                                  Gow3Stats::sync_recording_ns.load(), Gow3Stats::host_copies_wait_ns.load(),
                                  u64(Vulkan::g_gow3_compile_ns.load()), u64(Vulkan::g_gow3_compiles.load()),
-                                 Gow3Stats::t_gc.load()};
+                                 Gow3Stats::t_gc.load(), Vulkan::g_gow3_translate_ns.load(),
+                                 Vulkan::g_gow3_emit_ns.load(), Vulkan::g_gow3_pipeline_driver_ns.load()};
         if (stall) {
             std::printf("Stall: %.1f ms frame; waits: readback %.1f ms, GPU ticks %.1f ms, "
-                        "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms; GC %.1f ms\n",
+                        "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms (translate "
+                        "%.1f, SPIR-V %.1f, driver %.1f); GC %.1f ms\n",
                         frame_ms, (wait_now[0] - last_wait[0]) / 1e6, (wait_now[1] - last_wait[1]) / 1e6,
                         (wait_now[2] - last_wait[2]) / 1e6, (wait_now[3] - last_wait[3]) / 1e6,
                         static_cast<unsigned long long>(wait_now[5] - last_wait[5]),
-                        (wait_now[4] - last_wait[4]) / 1e6, (wait_now[6] - last_wait[6]) / 1e6);
+                        (wait_now[4] - last_wait[4]) / 1e6, (wait_now[7] - last_wait[7]) / 1e6,
+                        (wait_now[8] - last_wait[8]) / 1e6, (wait_now[9] - last_wait[9]) / 1e6,
+                        (wait_now[6] - last_wait[6]) / 1e6);
         }
         std::copy(std::begin(wait_now), std::end(wait_now), std::begin(last_wait));
         if (stall) {

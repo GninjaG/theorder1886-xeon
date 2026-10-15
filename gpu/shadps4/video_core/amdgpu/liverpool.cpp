@@ -1255,10 +1255,30 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 // Else the value may come from a fence that thread has yet to write: let it
                 // catch up before yielding to other queues.
+                const auto wait_started = std::chrono::steady_clock::now();
+                bool wait_reported = false;
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     if (rasterizer && !rasterizer->DrawPipeIdle()) {
                         rasterizer->DrainDrawPipe(static_cast<u32>(opcode));
                         continue;
+                    }
+                    // gow3: a wait that never ends freezes the game with no other trace.
+                    if (!wait_reported &&
+                        std::chrono::steady_clock::now() - wait_started > std::chrono::seconds(2)) {
+                        wait_reported = true;
+                        const bool memory = wait_reg_mem->mem_space.Value() ==
+                                            PM4CmdWaitRegMem::MemSpace::Memory;
+                        std::printf("Liverpool: GFX WaitRegMem unmet for 2 s: %s %#llx, function "
+                                    "%u, ref %#x, mask %#x, value %#x\n",
+                                    memory ? "address" : "register",
+                                    memory ? static_cast<unsigned long long>(
+                                                 wait_reg_mem->Address<VAddr>())
+                                           : static_cast<unsigned long long>(wait_reg_mem->Reg()),
+                                    static_cast<u32>(wait_reg_mem->function.Value()),
+                                    wait_reg_mem->ref, wait_reg_mem->mask,
+                                    memory ? *wait_reg_mem->Address<const u32*>()
+                                           : regs.reg_array[wait_reg_mem->Reg()]);
+                        std::fflush(stdout);
                     }
                     YIELD_GFX();
                 }
