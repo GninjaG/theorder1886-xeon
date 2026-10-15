@@ -36,7 +36,7 @@
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 static constexpr u32 ShaderBinaryVersion = 7u; // gow3: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 7u; // gow3: ImageResource::needs_native
+static constexpr u32 ShaderMetaVersion = 8u; // gow3: SPIR-V hash
 static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResource::needs_native)
 } // namespace Serialization
 
@@ -390,6 +390,11 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
         destroy();
     }
     ++binary_misses;
+    static const bool miss_log = std::getenv("GOW3_BINARY_MISS_LOG") != nullptr;
+    if (miss_log) {
+        std::printf("Binary miss: pipeline %016llx driver key %s\n",
+                    static_cast<unsigned long long>(std::hash<KeyType>{}(key)), name.c_str());
+    }
     flags.flags = vk::PipelineCreateFlags2{static_cast<VkPipelineCreateFlags>(info.flags)} |
                   vk::PipelineCreateFlagBits2::eCaptureDataKHR;
     auto result = create(nullptr, captured_info, false);
@@ -625,7 +630,7 @@ void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
 void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash,
-                        size_t perm_idx) {
+                        size_t perm_idx, u64 spv_hash) {
     if (!Storage::DataBase::Instance().IsOpened()) {
         return;
     }
@@ -638,6 +643,7 @@ void RegisterShaderMeta(const Shader::Info& info,
 
     meta.Write(perm_hash);
     meta.Write(perm_idx);
+    meta.Write(spv_hash);
 
     spec.Serialize(ar);
     info.Serialize(ar);
@@ -646,19 +652,25 @@ void RegisterShaderMeta(const Shader::Info& info,
                                        fmt::format("{:#018x}", perm_hash), ar.TakeOff());
 }
 
-void RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) {
+u64 SpvHash(std::span<const u32> spv) {
+    return XXH3_64bits(spv.data(), spv.size_bytes());
+}
+
+u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) {
+    const u64 hash = SpvHash(spv);
     if (!Storage::DataBase::Instance().IsOpened()) {
-        return;
+        return hash;
     }
 
     Storage::DataBase::Instance().Save(Storage::BlobType::ShaderBinary,
                                        fmt::format("{:#018x}_{}", pgm_hash, perm_idx),
                                        std::move(spv));
+    return hash;
 }
 
 bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
                     std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
-                    Shader::StageSpecialization& spec, size_t& perm_idx) {
+                    Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash) {
     Serialization::Reader meta{ar};
 
     u32 meta_version{};
@@ -676,6 +688,7 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
     u64 perm_hash_ar{};
     meta.Read(perm_hash_ar);
     meta.Read(perm_idx);
+    meta.Read(spv_hash);
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
@@ -844,7 +857,8 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     Shader::StageSpecialization spec{};
     spec.info = &program->info;
     size_t perm_idx{};
-    if (!LoadShaderMeta(ar, program->info, sel.fetch_shader, spec, perm_idx)) {
+    u64 spv_hash{};
+    if (!LoadShaderMeta(ar, program->info, sel.fetch_shader, spec, perm_idx, spv_hash)) {
         return false;
     }
 
@@ -852,7 +866,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderBinary,
                                        fmt::format("{:#018x}_{}", program->info.pgm_hash, perm_idx),
                                        spv);
-    if (spv.empty()) {
+    if (spv.empty() || SpvHash(spv) != spv_hash) {
         return false;
     }
 
@@ -910,7 +924,9 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
     if (!enabled || !db.IsOpened()) {
         return false;
     }
-    constexpr size_t MaxCachedPermutations = 256;
+    // Material and particle shaders keep hundreds: with 256, every session translated and
+    // compiled the rest again, under indices that differ each time.
+    constexpr size_t MaxCachedPermutations = 4096;
     static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
     const auto started = std::chrono::steady_clock::now();
     const char* stop = "limit";
@@ -937,7 +953,8 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         Shader::StageSpecialization spec{};
         std::optional<Shader::Gcn::FetchShaderData> fetch;
         size_t perm_idx{};
-        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx)) {
+        u64 spv_hash{};
+        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx, spv_hash)) {
             stop = "meta version";
             break;
         }
@@ -952,7 +969,7 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         spec.info = &program->info;
         // The module itself is read when this specialization is first used (LoadDeferredModule):
         // material shaders keep hundreds of permutations a session mostly does not need.
-        program->InsertPermut(vk::ShaderModule{}, std::move(spec), index);
+        program->InsertPermut(vk::ShaderModule{}, std::move(spec), index, spv_hash);
     }
     if (log) {
         LOG_WARNING(Render_Vulkan,
@@ -978,7 +995,7 @@ vk::ShaderModule PipelineCache::LoadDeferredModule(Program& program, size_t perm
         fmt::format("{:#018x}_{}", program.info.pgm_hash, perm_idx), spv);
     std::unique_lock lock{programs_mutex};
     auto& entry = program.modules[perm_idx];
-    if (spv.empty()) {
+    if (spv.empty() || SpvHash(spv) != entry.spv_hash) {
         entry.spec = {}; // never matches again
         return {};
     }
@@ -1283,14 +1300,15 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", hashes[i]), meta_blob);
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
+                u64 spv_hash{};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->fetch, stage->spec,
-                                   stage->perm_idx)) {
+                                   stage->perm_idx, spv_hash)) {
                     std::vector<u32> spv;
                     db.Load(Storage::BlobType::ShaderBinary,
                             fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
                                         stage->perm_idx),
                             spv);
-                    if (!spv.empty()) {
+                    if (!spv.empty() && SpvHash(spv) == spv_hash) {
                         const auto module_started = std::chrono::steady_clock::now();
                         stage->module = CompileSPV(spv, stage->device);
                         module_time = ElapsedNs(module_started);
