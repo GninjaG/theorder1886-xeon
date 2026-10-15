@@ -151,14 +151,29 @@ def main():
     translated_args = []
     i = 0
     while i < len(args):
-        if args[i] == '--startlevel' and i + 1 < len(args):
+        if args[i] in ('--startlevel', '--level') and i + 1 < len(args):
             translated_args.extend(['--guest-arg', '-startlevel', '--guest-arg', args[i + 1]])
             i += 2
-        elif args[i] == '--startcheckpoint' and i + 1 < len(args):
+        elif args[i] in ('--startcheckpoint', '--checkpoint') and i + 1 < len(args):
             translated_args.extend(['--guest-arg', '-startcheckpoint', '--guest-arg', args[i + 1]])
+            i += 2
+        elif args[i] in ('--no-cloth', '--disablecloth'):
+            translated_args.extend(['--guest-arg', '-disablecloth'])
+            i += 1
+        elif args[i] in ('--no-cam-springs', '--nocamsprings'):
+            translated_args.extend(['--guest-arg', '-nocamsprings'])
+            i += 1
+        elif args[i] in ('--no-cam-additive', '--nocamadditive'):
+            translated_args.extend(['--guest-arg', '-nocamadditive'])
+            i += 1
+        elif args[i] == '--msaa' and i + 1 < len(args):
+            translated_args.extend(['--guest-arg', '-msaa', '--guest-arg', args[i + 1]])
             i += 2
         elif args[i] == '--frontend':
             translated_args.extend(['--guest-arg', '-frontend'])
+            i += 1
+        elif args[i] == '--perf':
+            translated_args.extend(['--guest-arg', '-disablecloth', '--guest-arg', '-nocamsprings', '--guest-arg', '-nocamadditive', '--guest-arg', '-msaa', '--guest-arg', '1'])
             i += 1
         else:
             translated_args.append(args[i])
