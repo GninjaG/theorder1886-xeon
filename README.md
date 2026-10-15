@@ -1,314 +1,199 @@
 # The Order: 1886 PC Native Port
 
-**English** | [Português (Brasil)](README.pt-BR.md)
+**English** | [Português (Brasil)](README.pt-BR.md) | [Español](README.es.md)
 
-A PC port of **The Order: 1886** (PlayStation 4) for Windows 10 and 11.
+A work-in-progress PC port of **The Order: 1886** (PlayStation 4) for Windows 10 and 11.
 
 The CPU side is native: the game's original executable runs directly on the PC's processor (the
-PS4 uses the same x86-64 architecture), and a runtime written for this game replaces the PS4
-system libraries, so there is no emulator. The graphics are translated: they run on the
+PS4 uses the same x86-64 architecture), and a runtime written for this port replaces the PS4
+system libraries, so there is no CPU emulator. The graphics are translated: they run on the
 [shadPS4](https://github.com/shadps4-emu/shadPS4) video core, which converts the PS4 GPU commands
-and shaders to Vulkan, customized for the Ready at Dawn engine. Running the game code
-directly on the CPU is also how shadPS4 works; what this project changes is the system layer and
-the game-specific runtime work (patches, background shader cache, turnkey launcher).
+and shaders to Vulkan. This project started as a copy of the
+[God of War III Remastered port](https://github.com/FelipePrado0/gow3_pc) and is being adapted to
+Ready at Dawn's engine.
 
-> **No game files are included.** You need a dump from your own PS4 (tested: CUSA00035,
-> versions 01.00 and 01.02).
-> This project is not affiliated with Sony Interactive Entertainment, Ready at Dawn, or Santa Monica Studio.
-> The Order: 1886 is a trademark of Sony Interactive Entertainment.
+> **No game files are included.** You need a dump of your own copy of the game.
+> This project is not affiliated with Sony Interactive Entertainment, Ready at Dawn or Santa
+> Monica Studio. The Order: 1886 is a trademark of Sony Interactive Entertainment.
 
-On the test machine, the game boots directly into the title screen ("THE ORDER: 1886 - PRESS [X]")
-with high framerates and clean presentation on modern Vulkan GPUs.
+## Status
 
-## What works
+Checked on Windows 11 with an NVIDIA GeForce RTX 5060 Laptop GPU and the dump **CUSA00035,
+version 01.02** (`eboot.bin` sha256 `f742eb17…`):
 
-- Opening, menus, video cutscenes (H.264) and gameplay.
-- Audio: music, voices and effects (ATRAC9 and MP3).
-- Controller (DualSense, Xbox and others, through SDL3) and keyboard at the same time, both
-  remappable.
-- **In-game button icons** (opt-in, off by default): the PlayStation button icons in the game can
-  show your controller's, Xbox or Nintendo ones (Game page, Controls).
-- Saving and loading: the save list is shown on screen, as on the PS4. Autosave works too. The
-  launcher backs the saves up before every start.
-- Patches: render resolution of 480p, 720p, 1440p, 1800p or 4K, corrupted texture fix and skip
-  videos with the X button (community); engine frame rate of 120 FPS (kvicken) or 240 FPS
-  (adapted by Felipe Prado).
-- **Instant start:** the saved shader cache loads in the background while you play, and new
-  shaders compile in the background too, so the game does not stop to build them.
-- **Launcher** in the game's colors, in English with partial translations: quick settings on the home page, display,
-  performance, game folder and save backups, patches, mods (order, presets and conflicts),
-  controls with PlayStation or Xbox button icons, updates and diagnostics.
-- **In-game menu** (Insert on the keyboard, R3+L2 on the controller), with four tabs:
-  - **Game:** cheats (infinite health, magic, item meter, Rage of Sparta, max red orbs);
-    multipliers from 0.1x to 100x for red, green (health), blue (magic) and gold (Rage of
-    Sparta) orbs and for damage dealt and taken; an enemy health bar.
-  - **Image:** display mode (windowed, borderless, fullscreen), VSync and RCAS sharpening.
-  - **Performance:** frame rate limit (30 to unlimited), frames queued, background shader
-    compiling; render resolution, engine frame rate and GPU readback options apply with one
-    "Apply and restart" button.
-  - **Overlay:** a performance overlay with FPS, frametime, upscaler, GPU (name and use), CPU,
-    RAM and VRAM, each optional, with font size, corner, background opacity and layout. The
-    numbers are the game's own use, not the whole system's.
+- The game boots through the logos and the title screen into a new game; the prologue cutscene
+  renders in the engine (characters, lighting and textures checked in frame dumps).
+- A 4-minute run of the prologue held the game's own 30 FPS in every 5-second window, with a
+  99th-percentile frame time of about 34.5 ms, and no crash in more than 20 consecutive automated
+  runs (`tools/batch_runs.py`).
+- The Vulkan validation layer reports a single remaining warning class in these scenes
+  (`magFilter-04553`, a linear sampler used with an integer texture).
 
-## Download and play
-
-**You need**
-- Windows 10 (1903 or newer) or Windows 11, 64-bit.
-- A graphics card with Vulkan 1.3 and an up-to-date driver.
-- Your own copy of The Order: 1886, as a folder that contains `eboot.bin`,
-  `sce_module` and `sce_sys`. Tested: **CUSA00035**, versions 01.00 and
-  01.02 (full update). No game files are included in this download.
-
-**Steps**
-1. Extract or clone this repository to a folder of your choice.
-2. Double-click **`Jogar The Order 1886.bat`** or **`Jogar - Inicio Rapido.bat`**.
-3. You can choose to launch into the Prologue / Chapter selections or start directly from the intro.
-4. DualSense and Xbox controllers work out of the box with native vibrations and mapping.
-
-**If something goes wrong**
-- Black screen at start: **Advanced → Clear shader cache**, then start again.
-- The game does not open: check **Advanced → Log**, or send `user\last_run.log` with your report.
-
-## Linux (AppImage, experimental)
-
-The Linux build runs the same native runtime and the same launcher. It was tested on Arch Linux
-with a Radeon RX 7800 XT (RADV) in a Wayland session.
-
-**You need:** a Vulkan 1.3 driver and your own dump of the game (CUSA01623, version 01.02).
-
-**Build and run**
-```
-bash build.sh
-bash packaging/linux/build.sh   # needs PyInstaller, Tk, Pillow and iced-x86 for Python, plus patchelf and curl
-./dist/gow3-x86_64.AppImage
-```
-Choose the game folder in the launcher. `--play` starts the game with the saved options and no
-window. From a source tree: `GOW3_GAME_DIR=/path/to/CUSA01623 python3 run.py` after `bash build.sh`.
-
-- **Files:** saves, settings, shader cache and the log are in `~/.local/share/gow3`; the launcher's
-  own settings in `~/.config/gow3-launcher`.
-- **Update folder:** if the update was dumped apart from the game, choose it under **Game → Update
-  folder**. It is laid over the game folder without changing either.
-- **Advanced → Linux:** window system (automatic, Wayland or X11), GameMode and MangoHud. Only the
-  tools installed on the system can be turned on.
-- **Steam:** **Advanced → Add to Steam** adds "God of War III Remastered" as a non-Steam game, with
-  the icon, the vertical and horizontal capsules, the library background and the logo made from the
-  dump's pictures. Close Steam first (it rewrites its shortcuts when it exits). The button is also in
-  the Windows launcher (not tested there yet).
-- **Menu entry:** the AppImage writes `~/.local/share/applications/gow3.desktop` when it starts, so
-  the launcher and the game window show their icon in the dock; **Advanced → Linux** turns it off and
-  removes the entry.
-- **Icon:** the AppImage, the launcher and the game window use `packaging/linux/gow3.png` when that
-  file exists at build time, and `launcher/gow3.png` otherwise.
-- **Patches:** the same patch file serves the full 01.02 update (`eboot.bin` sha256 `6e72330e…`) and
-  the European title (CUSA01715): the patches and cheats find their sites by signature.
-- **Graphics:** the temporal upscalers (FSR 3.1, FSR 4, TAA, DLSS) are temporarily removed while a
-  better implementation is worked on.
+Not verified yet: gameplay beyond the prologue, sound (the automated runs do not check it),
+saving and loading, AMD and Intel graphics cards, other regions and versions of the game, Linux.
+The work log, the fixes and the open items are in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Requirements
 
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.
-- A 64-bit processor with AVX: Intel Sandy Bridge (2011) or newer, AMD FX or newer. On CPUs without
-  MOVBE, BMI1 or LZCNT (Sandy/Ivy Bridge, AMD FX) the loader rewrites the game's instructions that
-  use them to emulated stubs and logs an `ISA:` line; performance on those CPUs has not been
-  measured yet. Older CPUs stop at start with a `STOP: this CPU lacks` line in the log.
+- A 64-bit processor with AVX. On CPUs without MOVBE, BMI1 or LZCNT (Sandy/Ivy Bridge, AMD FX)
+  the loader rewrites the game's instructions that use them to emulated stubs and logs an `ISA:`
+  line; older CPUs stop at start with a `STOP: this CPU lacks` line.
 - A graphics card with Vulkan 1.3 and a current driver.
-- Your copy of the game (the folder with `eboot.bin`, `sce_module` and `sce_sys`). Tested:
-  CUSA01623 and CUSA01715, versions 01.00 and 01.02.
-- The patches and the in-game hooks (cheats, multipliers, health bar) find their sites by
-  signature: the original bytes around each one, wherever a release placed that code
-  (`tools/make_signatures.py`). A site that is not found leaves only that patch or hook off; the
-  game starts without it, and the log and the menu say why.
-- To build from source: [MSYS2](https://www.msys2.org) and [Python 3](https://www.python.org) with Pillow
-  (`pip install pillow`, used for the game's icon and cover art); on a CPU without MOVBE, BMI1 or LZCNT
-  also iced-x86 (`pip install iced-x86`, used for the instruction rewrite).
+- Your dump of the game: the folder with `eboot.bin`, `sce_module` and `sce_sys`. Only CUSA00035
+  01.02 has been tested; the patch file also lists CUSA00070, CUSA00076, CUSA00100, CUSA00670 and
+  CUSA00785.
+- [MSYS2](https://www.msys2.org) and [Python 3](https://www.python.org) to build it (see below).
 
-## Building from source
+## Building
 
-Development happens on the `gow3` branch; `main` receives tested merges.
-
-1. Install MSYS2 (`winget install MSYS2.MSYS2`) and, in the **MSYS2 CLANG64** shell, the
-   packages listed in [packaging/windows/README.md](packaging/windows/README.md).
-2. Clone the repository with its submodules and build:
+1. Install MSYS2 (`winget install MSYS2.MSYS2`) and, in the **MSYS2 CLANG64** shell, the packages
+   listed in [packaging/windows/README.md](packaging/windows/README.md).
+2. Clone with the submodules and build:
 
    ```bash
-   git clone --recursive https://github.com/FelipePrado0/gow3_pc
-   cd gow3_pc
-   git checkout gow3   # the newest work; skip it to build main
+   git clone --recursive https://github.com/mateussmeneses/theorder1886-port
+   cd theorder1886-port
    bash build.sh
    ```
 
-3. Start the launcher (in PowerShell, in the project folder):
+   The result is `out/theorder-probe.exe` (also copied as `out/gow3-probe.exe`). If the build
+   says it cannot replace the executable, a game process is still running.
 
-   ```powershell
-   python launcher/gow3_launcher_win.py
-   ```
+## Playing
 
-4. On **Game**, choose the game folder. Adjust **Display**, **Performance** and **Patches** if
-   you like, then press **PLAY**.
-
-To play with the saved settings without opening the launcher's window (for a shortcut or Steam):
+The game folder is taken from `THEORDER_GAME_DIR`; without it, `run.py` looks for a `CUSA00035`
+folder next to the project folder.
 
 ```powershell
-python launcher/gow3_launcher_win.py --play
-```
-
-Or without the launcher at all:
-
-```powershell
-$env:GOW3_GAME_DIR = 'D:\path\CUSA01623'
+$env:THEORDER_GAME_DIR = 'D:\path\CUSA00035'
 python run.py
 ```
 
-Settings are kept in `gow3.ini` (the game and the in-game menu) and in
-`%APPDATA%\gow3-launcher\settings.json` (the launcher). Saves, the shader cache and
-`last_run.log` go to the project's `user` folder.
+Or double-click one of the batch files (their menus are in Portuguese):
 
-On **Performance → GPU data → Stream buffer memory**, choose **System RAM (cached, default)**,
-**System RAM (uncached)** or **GPU memory (previous behavior)**. System RAM can improve frame
-rates on NVIDIA laptops. The choice is saved and applies on the next game launch, including
-when using `Play God of War III.exe` or `--play`. Choose GPU memory to restore the previous
-allocation behavior. For direct launches without the launcher, `GOW3_STREAM_MEMORY` accepts
-`cached`, `host` or `device`; the launcher's saved choice takes precedence when using it.
+- **`Jogar The Order 1886.bat`**: a menu that starts the game normally, or with the engine's own
+  options described below (level shortcuts, a lighter "performance" mode).
+- **`Jogar - Inicio Rapido.bat`**: starts the game (`python run.py`).
+- **`Jogar - Modo Performance.bat`**: starts it with the lighter engine options.
 
-On **Performance → GPU data → Game multisampling**, **Automatic** lets the game decide by the
-graphics card it runs on: it creates the game's multisampled images with a single sample on
-AMD's and Intel's Windows drivers, where reading the 2-sample depth buffer as a texture
-produced black lines in the lighting (Radeon RX 6600 family, Arc), and keeps them multisampled
-elsewhere (NVIDIA). The label names the card and the decision, for example "Automatic (Intel(R)
-Arc(TM) A750 Graphics: off)", and follows the **Graphics card** choice. The rule covers every
-GPU on those two drivers, integrated ones included; the game's log line `GPU: guest
-multisampling off` or `on` is what was applied. Choose **Off** if the lines appear on another
-card and **On** to keep multisampling anyway. Off and On set `GOW3_NO_MSAA=1` or `0`; Automatic
-passes an inherited `GOW3_NO_MSAA` through. Applies on the next game launch.
+### Engine options
 
-### Importing shadPS4 saves
+These options exist in the game's executable; `run.py` passes them on. What they do in the retail
+build is not verified yet: with `--level`, the game still stops at the title screen.
 
-Only **shadPS4 saves for God of War III Remastered** are compatible. RPCS3 saves are
-from the PS3 game and will not work. Use the same title ID (this example uses `CUSA01623`).
+| `run.py` | Game option |
+|---|---|
+| `--level <name>` | `-startlevel <name>` (for example `cat_010_streets`, `emb_020_tunnels`, `air_010_rappel`, `pro_020_westminster`) |
+| `--checkpoint <name>` | `-startcheckpoint <name>` |
+| `--no-cloth` | `-disablecloth` |
+| `--no-cam-springs`, `--no-cam-additive` | `-nocamsprings`, `-nocamadditive` |
+| `--msaa <n>` | `-msaa <n>` |
+| `--frontend` | `-frontend` |
+| `--perf` | `-disablecloth -nocamsprings -nocamadditive -msaa 1` |
 
-1. Close the game and shadPS4. Back up both save folders.
-2. Find the source in shadPS4's data folder: `user\savedata\1\CUSA01623\` in older
-   versions, or `home\<user-id>\savedata\CUSA01623\` in newer versions.
-3. The destination is **`user\savedata\1\CUSA01623\` next to `God of War III.exe`**.
-   Example: `C:\Games\gow3-windows\user\savedata\1\CUSA01623\`. With a custom
-   **Saves folder** in the launcher, use `<custom folder>\savedata\1\CUSA01623\`.
-4. Copy each slot folder there, keeping its name and game files. Do not nest another
-   `CUSA01623` folder. Exclude the slot's internal `sce_sys` folder from the game data.
-5. Beside each slot, create `<slot name>.sce_sys` if it does not exist. You can copy
-   shadPS4's `sce_sys\icon0.png` there. **Do not rename `param.sfo` to `param.bin`**:
-   the formats differ. Preserve any existing port `param.bin`. Without one, the slot
-   appears by folder name; saving again in the port writes its metadata and refreshes
-   the displayed information.
-6. Start the port and select **Load Game**. Completed saves can be imported too.
+## Controls
 
-The port's save dialog displays at most **32 entries**. If the imported slot is missing
-from a long list, test it with a separate **Saves folder** containing just that slot
-under `savedata\1\CUSA01623\`, with its sibling metadata folder. Keep the original saves
-and restore the previous Saves folder setting after testing.
-
-### Third-party overlays (Windows)
-
-The game process is **`bin\gow3-probe.exe`**, not `God of War III.exe` (source builds
-use `out\gow3-probe.exe`). Add that executable to RTSS and enable Afterburner's on-screen
-display. In the ReShade installer, select that same executable and the **Vulkan** API.
-
-If the overlay still does not appear, report the port and overlay versions, the last
-working port version, and attach `user\last_run.log`. These checks do not confirm a fix
-for every overlay configuration.
-
-### Keyboard controls
-
-Defaults; change them in the launcher's **Game** page, **Controls** section.
+Controllers (DualSense, Xbox and others) work through SDL3, together with the keyboard.
 
 | Key | Button |
 |---|---|
 | WASD | left stick |
-| Arrows | right stick (camera) |
-| Space | Cross |
-| Left Shift | Circle |
+| Arrows | right stick (camera) and d-pad |
+| Space or Enter | Cross |
+| Left Shift or Esc | Circle |
 | E | Square |
 | Q | Triangle |
 | 1 and 3 | L1 and R1 |
 | R and F | L2 and R2 |
 | Z and C | L3 and R3 |
 | I, K, J, L | d-pad |
-| Enter | Options |
-| Tab | left touchpad click (photo mode) |
-| Backspace | right touchpad click (pause menu) |
-| Insert | the port's menu (R3+L2 on the controller) |
+| Tab and Backspace | left and right touchpad click |
+| Insert | the port's menu (R3+L2 on a controller) |
 
-On a controller without a touchpad (Xbox and others), View opens the pause menu (the right
-touchpad click) and L1 + View opens photo mode (the left click). On a DualSense the touchpad
-works as on the PS4, and Share/Create works like View.
+The keyboard has no Options button yet. On a controller without a touchpad, View (Back) is the
+right touchpad click. `GOW3_KEY_MAP` and `GOW3_PAD_MAP` change the buttons (`src/runtime_pad.c`).
 
-**In-game button icons** (off by default) are chosen in the launcher's Game page, Controls section, under
-*In-game button icons*: *Match my controller*, *Xbox* or *Nintendo*. They replace the PlayStation icons in the
-tutorial, move-list and quick-time prompts; the pause-menu controller drawing stays a DualShock 4.
-The launcher writes a patched copy of two game files into the port's data folder and never changes
-your game folder. A new controller is picked up after a restart. Without the launcher, set
-`GOW3_GLYPH_STYLE` to `auto`, `xbox` or `nintendo` before starting `run.py`.
+The port's menu (Insert) holds the display, frame limit and performance overlay settings. Its
+cheats and stat multipliers come from the God of War III port and do nothing in this game: their
+hooks are not installed for The Order.
 
-In the menu: L1/R1 or Q/E switch tabs. In the save list: arrows or the d-pad choose, Enter or
-Cross confirm, Esc or Circle cancel.
+## Patches
+
+`patches/TheOrder1886-Orbis.xml` is applied in memory at start; the game files are not changed.
+Every patch is off by default.
+
+- **Frame Rate Patch - 60 FPS** (experimental): sets the four 30 FPS frame-time constants (33333
+  µs) of the 01.02 executable to 16667; the sites were checked in the binary. The game also asks
+  for a 30 Hz presentation, so the port must present every vblank and cap at 60:
+
+  ```powershell
+  Set-Content fps60.ini 'engine_fps=120'   # the launcher logic falls back to the 60 FPS patch
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:GOW3_CONFIG = $env:THEORDER_CONFIG
+  $env:GOW3_FLIP_RATE = '0'; $env:GOW3_FPS_LIMIT = '60'
+  python run.py
+  ```
+
+  Game speed stays correct (frame dumps line up in time with a 30 FPS run). The logos and the
+  title hold 60 FPS; the in-engine prologue runs at 45-58 FPS with uneven pacing.
+- Skip Intro Logos, Skip Prologue (Westminster or Chapter 1), Auto-Dismiss Title Screen,
+  900p and 720p resolution, Letterbox Removal: written during earlier development and not verified.
+
+## Settings and diagnostics
+
+The graphics core reads these environment variables:
+
+| Variable | Effect |
+|---|---|
+| `GOW3_NO_MSAA=1` / `0` | single-sampled or multisampled game images (multisampled by default on NVIDIA) |
+| `GOW3_ASYNC_COMPUTE=0` | builds compute pipelines on the GPU thread (stalls) |
+| `GOW3_LAZY_SHADER_CACHE=0` | translates every shader again instead of loading the cached ones |
+| `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | presentation rate overrides (see the 60 FPS patch) |
+| `GOW3_VK_VALIDATION=1` | Vulkan validation layer (with `VK_ADD_LAYER_PATH` pointing to it) |
+| `GOW3_GPU_LOG=info` | GPU log level |
+| `GOW3_PERMUTATION_LOG=1` | why each new shader permutation was compiled |
+| `GOW3_BIG_TRACK_LOG=1` | who tracks memory ranges above 256 MiB |
+| `GOW3_PAD_FILE=<file>` | scripted controller input for automated runs |
+
+Saves and the shader cache are in the project's `user` folder (`user/savedata`,
+`user/cache/CUSA00035`).
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests
-bash build.sh --test
-ninja -C out/gpu stat-multipliers-test perf-overlay-test warmup-inbox-test graphics-settings-test
-out/gpu/stat-multipliers-test.exe out/eboot.elf
-out/gpu/perf-overlay-test.exe
-out/gpu/warmup-inbox-test.exe
-out/gpu/graphics-settings-test.exe
+python -m unittest discover -s tests          # 273 tests, all passing on 2026-10-15
+python tools/batch_runs.py --runs 8 --secs 40 --pad "24:cross 28:cross 32:cross"
+python tools/fault_stacks.py out/batch/*.log
 ```
 
-The C++ tests are targets in [gpu/CMakeLists.txt](gpu/CMakeLists.txt); the ones that check the
-game's code take the prepared executable (`out/eboot.elf`) as their argument.
-
-To check that every system function the game uses is implemented, without starting the game:
-
-```bash
-out/gow3-probe.exe out/boot-linked.bin --app0 <game folder> --check-imports
-```
+`tools/batch_runs.py` starts the game repeatedly, can compare conditions (`--cond`), press buttons
+(`--pad`, to get past the title screen) and reports faults, freezes and compile time;
+`tools/fault_stacks.py` symbolizes the fault reports.
 
 ## How it works
 
 | Part | Where | What it does |
 |---|---|---|
 | Preparation | `scripts/` | Reads `eboot.bin`, applies its relocations and links the game's own `libc` and `libSceFios2` into one image |
-| Loader | `src/probe.c` | Loads the image, installs the validated hooks (cheats, multipliers, health bar) and starts the game's original code |
+| Loader | `src/probe.c` | Loads the image and starts the game's original code |
 | Runtime | `src/runtime_*.c` | Reimplements the PS4 system functions: memory, threads, files, audio, video, controller, saves and services |
-| GPU | `gpu/shadps4/` | The shadPS4 video core, translating the PS4 GPU commands and shaders to Vulkan, with cuesta4's God of War III fixes (`eltutz` branch) and this port's speed work (background shader cache, deferred readbacks) |
-| In-game menu | `gpu/shim/gow3_overlay.cpp` | The Dear ImGui menu and performance overlay; settings in `gpu/shim/gow3_settings.cpp` |
-| Patches | `patches/God_of_War_III_Remastered.xml`, `scripts/patches.py` | Applied in memory at start, without changing the game files |
-| Launcher | `launcher/gow3_launcher_win.py` | Settings, patches, mods, controls and the play button |
+| GPU | `gpu/shadps4/` | The shadPS4 video core with cuesta4's fixes and the God of War III and The Order ports' work (asynchronous shader and pipeline builds, shader cache) |
+| Port menu | `gpu/shim/gow3_overlay.cpp` | The Dear ImGui menu and performance overlay |
+| Patches | `patches/TheOrder1886-Orbis.xml`, `scripts/patches.py` | Applied in memory at start |
 
-More documentation: [mods](docs/MODS.md), [frame map and upscaler](docs/upscaler.md),
-[parallel GPU work](docs/parallel_gpu.md) and the [roadmap](docs/gow3/ROADMAP.md).
+The launcher in `launcher/` and the Linux packaging in `packaging/linux/` come from the God of War
+III port and have not been adapted to this game.
 
 ## Credits
 
-This project is a fork of Supermedo's Windows port, which builds on deadinside28's original:
-
+- **Felipe Prado**: the [God of War III Remastered PC port](https://github.com/FelipePrado0/gow3_pc)
+  this project is copied from.
 - **deadinside28**: [bloodborne_pc](https://github.com/deadinside28/bloodborne_pc), the original
-  native port.
-- **Supermedo** (Mohammed Albarghouthi): [bloodborne_pc for Windows](https://github.com/Supermedo/bloodborne_pc),
-  the fork this project comes from.
-- **cuesta4**: [shadPS4 fork focused on God of War III Remastered](https://github.com/cuesta4/shadPS4/tree/eltutz)
-  (branch `eltutz`). The game's rendering in this port depends on its fixes: the GNM blend
-  rewrite, depth/stencil state and image aliasing. cuesta4 is also a co-author of the
-  resolution, texture fix, 120 FPS and skip videos patches (below). If you play on shadPS4,
-  this is the build to use for God of War III.
-- **shadPS4 team**: the [shadPS4](https://github.com/shadps4-emu/shadPS4) video core, which does
-  all the GPU and shader translation to Vulkan in this port.
-
-Patches: kvicken and cuesta4 (resolution, texture fix, 120 FPS and skip videos, building on the
-PS3 patches by illusion0001), published for shadPS4 in
-[shadps4-emu/ps4_cheats#145](https://github.com/shadps4-emu/ps4_cheats/pull/145) and adapted to
-this executable. The 240 FPS patch was adapted by Felipe Prado from the 120 FPS patch.
-Cheats: adapted from Celogamez's [GoldHEN cheats](https://github.com/GoldHEN/GoldHEN_Cheat_Repository).
+  native port, and **Supermedo** (Mohammed Albarghouthi), its
+  [Windows fork](https://github.com/Supermedo/bloodborne_pc).
+- **cuesta4**: the [shadPS4 fork](https://github.com/cuesta4/shadPS4/tree/eltutz) (branch
+  `eltutz`) whose fixes the video core carries.
+- **shadPS4 team**: the [shadPS4](https://github.com/shadps4-emu/shadPS4) video core.
 
 Also used: [LibAtrac9](https://github.com/Thealexbarney/LibAtrac9), [FFmpeg](https://ffmpeg.org),
 [SDL3](https://github.com/libsdl-org/SDL), [Dear ImGui](https://github.com/ocornut/imgui),

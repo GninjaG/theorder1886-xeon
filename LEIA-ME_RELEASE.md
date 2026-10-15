@@ -1,81 +1,44 @@
-# The Order: 1886 — Release PC Native Port (Vulkan Direct)
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão
 
-Esta release pronta permite executar e jogar o port nativo de **The Order: 1886 (PS4 CUSA00035 v01.02)** diretamente no Windows utilizando a GPU NVIDIA GeForce RTX com Vulkan Liverpool Core e tempos de quadro estáveis.
+Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
+documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
+[docs/PROGRESS.md](docs/PROGRESS.md). Nenhum arquivo do jogo está incluído: use o dump da sua
+própria cópia.
 
----
+## Como executar
 
-## 🎮 Como Executar
+1. Coloque o dump numa pasta `CUSA00035` ao lado da pasta do projeto, ou defina
+   `THEORDER_GAME_DIR` com o caminho dela.
+2. Dê dois cliques em **`Jogar - Inicio Rapido.bat`** (inicia o jogo) ou em
+   **`Jogar The Order 1886.bat`** (menu com opções do motor do jogo; os atalhos de nível ainda
+   não foram verificados: o jogo continua parando na tela de título).
 
-Você pode iniciar o jogo de 3 maneiras práticas:
+## Situação (15/10/2026, RTX 5060 Laptop, Windows 11)
 
-1. **Menu Interativo Completo (Recomendado):**
-   - Dê um duplo clique em [`Jogar The Order 1886.bat`](file:///c:/projetos/fork/theorder1886-port/Jogar%20The%20Order%201886.bat).
-   - Permite escolher entre a Campanha Principal, pular direto para Westminster, Ruas de Whitechapel, Túneis da Embaixada, Agamemnon Airship ou selecionar qualquer capítulo customizado.
-2. **Início Rápido (1 Clique):**
-   - Dê um duplo clique em [`Jogar - Inicio Rapido.bat`](file:///c:/projetos/fork/theorder1886-port/Jogar%20-%20Inicio%20Rapido.bat).
-   - Carrega o jogo ignorando os vídeos introdutórios e logos (Sony Santa Monica / Ready at Dawn) e auto-iniciando o gameplay.
-3. **Modo Performance Extrema:**
-   - Dê um duplo clique em [`Jogar - Modo Performance.bat`](file:///c:/projetos/fork/theorder1886-port/Jogar%20-%20Modo%20Performance.bat).
-   - Desliga física pesada de tecidos multi-camadas (`-disablecloth`), remove molas residuais de câmera (`-nocamsprings`) e utiliza resolução temporal rápida.
+- Abertura, tela de título e cinemática do prólogo funcionam; numa sessão de 4 minutos o jogo
+  manteve os 30 FPS originais, com frame time no percentil 99 de cerca de 34,5 ms.
+- Mais de 20 execuções automatizadas seguidas sem crash.
+- Corrigidos nesta versão:
+  - crashes no driver da NVIDIA (duas threads gravando no mesmo command buffer, stencil anexado a
+    imagens só de profundidade, cópia de textura lida fora do buffer);
+  - travadas de compilação de shaders de compute (agora compilados em segundo plano);
+  - congelamentos de 1 a 3 segundos causados por descritores de textura inválidos;
+  - shaders SPIR-V inválidos.
+- Ainda não verificado: gameplay depois do prólogo, som, salvar e carregar, placas AMD e Intel.
+- 60 FPS: patch experimental, com a velocidade do jogo correta, mas o prólogo roda a 45–58 FPS.
+  Veja a seção "Patches" do README.
 
----
+## Controles
 
-## 🎯 Status de Desenvolvimento e Conquistas
+Controle (DualSense, Xbox e outros, via SDL3) e teclado funcionam juntos; a tabela de teclas está
+no README. Não há suporte a mouse. **Insert** (ou R3+L2 no controle) abre o menu do port; as
+trapaças desse menu são do port de God of War III e não funcionam neste jogo.
 
-### 1. Resolução Definitiva de Crash do Driver NVIDIA (`nvoglv64.dll`)
-- **Problema Anterior:** `ACCESS_VIOLATION` no driver NVIDIA ao chamar `vkCmdEndRendering` devido a descritores nulos de stencil em buffers de renderização com formatos apenas de profundidade (ex: mapas de sombra e passadas de geometria).
-- **Correção Aplicada:**
-  - Habilitada a extensão oficial Vulkan `VK_EXT_dynamic_rendering_unused_attachments` encadeada no dispositivo físico.
-  - Sincronização estrita dos aspectos em [`vk_scheduler.cpp`](file:///c:/projetos/fork/theorder1886-port/gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp) respeitando `has_depth` e `has_stencil` independentemente, garantindo que o driver nunca tente ler estruturas nulas de stencil.
-  - **Resultado:** Execução 100% contínua sem nenhum encerramento inesperado em todas as fases testadas.
+## Arquivos
 
-### 2. Caching de Pipelines Binários em Disco (`VK_KHR_pipeline_binary`)
-- Pipelines de computação e shaders são serializados e mantidos em `user/cache/CUSA00035/pipeline-binaries/`.
-- Após a primeira compilação, o tempo de compilação em execuções subsequentes é de **0.0 ms** com **zero travamentos (stutter)** ao carregar efeitos visuais.
-
-### 3. Latência do Sistema e Frame Pacing (1ms Scheduler Quantum)
-- Ativado `timeBeginPeriod(1)` em [`src/probe.c`](file:///c:/projetos/fork/theorder1886-port/src/probe.c), reduzindo a granularidade do temporizador do Windows de 15.6ms para 1ms.
-- **Métricas Registradas em Gameplay:**
-  - Desvio padrão de apresentação de quadros: **0.43 ms** (estabilidade perfeita).
-  - 0 quadros acima de 1.5x da mediana.
-  - Utilização da GPU thread: `32 draws/frame`, tempo ocioso > 90% (ampla folga de performance na RTX 5060).
-
----
-
-## 🕹️ Mapeamento de Controles
-
-### Controle (DualSense / PlayStation / Xbox)
-- **Analógico Esquerdo (L3):** Mover Sir Galahad
-- **Analógico Direito (R3):** Controle de Câmera
-- **Cruz / Botão A:** Interagir / Pular / Escalar
-- **Círculo / Botão B:** Agachar / Sistema de Cobertura (Cover)
-- **Quadrado / Botão X:** Ataque Corpo a Corpo (Melee / Execução)
-- **Triângulo / Botão Y:** Trocar de Arma / Visão Rápida
-- **L2 / LT:** Mirar com Arma
-- **R2 / RT:** Disparar Arma
-- **L1 / LB:** Recarregar / Equipamento
-- **R1 / RB:** Fogo Secundário / Alternativo
-- **Touchpad / Back:** Visualizar Diário / Objetivos
-- **Options / Start:** Pausa e Menu
-- **Insert ou R3+L2:** Menu de Opções Gráficas Avançadas (Overlay Vulkan)
-
-### Teclado & Mouse
-- **W, A, S, D:** Movimentação do Personagem
-- **Mouse:** Controle da Câmera
-- **Espaço:** Interagir / Confirmar
-- **Botão Direito do Mouse:** Mirar
-- **Botão Esquerdo do Mouse:** Atirar
-- **R:** Recarregar
-- **Shift Esquerdo:** Correr
-- **Esc:** Menu de Pausa
-
----
-
-## 📁 Estrutura de Arquivos da Release
-- `Jogar The Order 1886.bat`: Lançador interativo principal.
-- `Jogar - Inicio Rapido.bat`: Executável de 1 clique direto ao jogo.
-- `Jogar - Modo Performance.bat`: Lançador com otimização máxima de frametime.
-- `out/gow3-probe.exe`: Executável nativo compilado com Liverpool Core.
-- `out/*.dll`: 33 bibliotecas dinâmicas essenciais (SDL3, FFmpeg, C++, pthreads, Vulkan, Zydis) para execução independente.
-- `user/cache/CUSA00035/`: Cache serializado de shaders e pipelines binários.
-- `patches/TheOrder1886-Orbis.xml`: Patches de taxa de quadros (60 FPS), skip de intro e auto-start.
+- `Jogar The Order 1886.bat`, `Jogar - Inicio Rapido.bat`, `Jogar - Modo Performance.bat`:
+  atalhos para `python run.py`.
+- `out/theorder-probe.exe`: o executável do port (gerado por `bash build.sh`).
+- `user/savedata/`, `user/cache/CUSA00035/`: saves e cache de shaders e pipelines.
+- `patches/TheOrder1886-Orbis.xml`: patches do jogo, todos desligados por padrão.
+- `tools/batch_runs.py`, `tools/fault_stacks.py`: testes automatizados e análise de crashes.
