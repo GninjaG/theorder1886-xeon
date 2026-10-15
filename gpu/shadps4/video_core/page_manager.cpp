@@ -3,6 +3,7 @@
 
 #include <boost/container/small_vector.hpp>
 #include "gow3_toggles.h"
+#include "gow3_backtrace.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -87,6 +88,14 @@ struct PageManager::Impl {
     template <bool track, bool is_read>
     void UpdatePageWatchers(VAddr addr, u64 size) {
         RENDERER_TRACE;
+        // gow3: GOW3_BIG_TRACK_LOG=1: who tracks a range above 256 MiB (multi-GB uploads).
+        static const bool big_track_log = std::getenv("GOW3_BIG_TRACK_LOG") != nullptr;
+        if (big_track_log && size > (256ULL << 20)) {
+            std::printf("Big track: %s %s %#llx size %llu MiB\n", track ? "track" : "untrack",
+                        is_read ? "read" : "write", static_cast<unsigned long long>(addr),
+                        static_cast<unsigned long long>(size >> 20));
+            Gow3PrintBacktrace("big track");
+        }
 
         size_t page = addr >> PM_PAGE_BITS;
         const u64 page_end = Common::DivCeil(addr + size, PM_PAGE_SIZE);
