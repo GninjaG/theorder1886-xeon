@@ -252,6 +252,15 @@ private:
     tsl::robin_map<ComputePipelineKey, std::shared_ptr<AsyncComputeCompilation>> pending_compute;
     /// gow3: compute pipelines whose asynchronous build failed: built on the GPU thread instead.
     std::unordered_set<u64> sync_compute_keys;
+    /// gow3: frames each compute program ran in, to tell work redone every frame (which a skipped
+    /// dispatch only delays) from one-shot work (SkippableDispatch).
+    struct ComputeRuns {
+        u64 last_frame = 0;
+        u32 frames = 0;
+    };
+    tsl::robin_map<u64, ComputeRuns> compute_runs;
+    bool SkippableDispatch(const Shader::Info& info) const;
+    void CountComputeRun(u64 pgm_hash);
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
     std::vector<Program*> pending_programs;
     /// gow3: exclusive for program/permutation insertions, shared for worker lookups.

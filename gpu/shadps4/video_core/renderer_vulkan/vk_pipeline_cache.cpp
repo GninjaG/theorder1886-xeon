@@ -909,18 +909,13 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (!RefreshComputeKey()) {
         return nullptr;
     }
+    const u64 pgm_hash = sel.infos[0]->pgm_hash;
     if (const auto found = compute_pipelines.find(compute_key); found != compute_pipelines.end()) {
+        CountComputeRun(pgm_hash);
         return found->second.get();
     }
-    // GOW3_ASYNC_COMPUTE=1 builds compute pipelines on the compiler threads, skipping dispatches
-    // until they are ready. Off by default: a skipped one-shot dispatch never runs again (Iggy
-    // copies each glyph and button icon into its textures once: the menus lost them).
-    static const bool async_compute = [] {
-        const char* env = std::getenv("GOW3_ASYNC_COMPUTE");
-        return env && env[0] == '1';
-    }();
-    if (async_compute && AsyncCompilation() && !EmulatorSettings.IsShaderCollect() &&
-        !sync_compute_keys.contains(compute_key.value)) {
+    if (SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
+        !EmulatorSettings.IsShaderCollect() && !sync_compute_keys.contains(compute_key.value)) {
         if (!pending_compute.contains(compute_key) && compiler->HasCapacity()) {
             auto build = std::make_shared<AsyncComputeCompilation>();
             build->key = compute_key;
@@ -949,6 +944,18 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (is_new) {
         const auto pipeline_hash = std::hash<ComputePipelineKey>{}(compute_key);
         LOG_INFO(Render_Vulkan, "Compiling compute pipeline {:#x}", pipeline_hash);
+        static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        if (log) {
+            const auto runs = compute_runs.find(pgm_hash);
+            LOG_WARNING(Render_Vulkan,
+                        "gow3: compute pipeline of {:#x} built on the GPU thread: {} frames, last "
+                        "{} of {}, writes images {}",
+                        pgm_hash, runs != compute_runs.end() ? runs->second.frames : 0,
+                        runs != compute_runs.end() ? runs->second.last_frame : 0,
+                        Gow3Stats::flips.load(std::memory_order_relaxed),
+                        std::ranges::any_of(sel.infos[0]->images,
+                                            [](const auto& image) { return image.is_written; }));
+        }
         CompileTimer timer;
 
         ComputePipeline::SerializationSupport sdata{};
@@ -963,7 +970,42 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
             module_related_pipelines[m].emplace_back(compute_key);
         }
     }
+    CountComputeRun(pgm_hash);
     return it->second.get();
+}
+
+void PipelineCache::CountComputeRun(u64 pgm_hash) {
+    const u64 frame = Gow3Stats::flips.load(std::memory_order_relaxed);
+    auto& runs = compute_runs[pgm_hash];
+    if (runs.last_frame != frame) {
+        runs.last_frame = frame;
+        ++runs.frames;
+    }
+}
+
+// gow3: a new compute permutation is built on the compiler threads, its dispatches skipped
+// until it is ready, only when skipping loses nothing for good: the program ran in several
+// frames up to the last few (work redone every frame, as The Order's particle lighting shader,
+// whose permutations follow the light volumes in view: ~200 ms driver compiles on the GPU
+// thread), and it writes no image (Iggy copies each glyph into its textures once: the menus
+// lost their text). GOW3_ASYNC_COMPUTE=0 never skips, 1 always does.
+bool PipelineCache::SkippableDispatch(const Shader::Info& info) const {
+    static const char mode = [] {
+        const char* env = std::getenv("GOW3_ASYNC_COMPUTE");
+        return env ? env[0] : '\0';
+    }();
+    if (mode == '0' || mode == '1') {
+        return mode == '1';
+    }
+    // A frame can go without the program (the guest flips one frame twice).
+    constexpr u32 MinFrames = 8, MaxIdleFlips = 4;
+    const auto runs = compute_runs.find(info.pgm_hash);
+    const u64 frame = Gow3Stats::flips.load(std::memory_order_relaxed);
+    if (runs == compute_runs.end() || runs->second.frames < MinFrames ||
+        runs->second.last_frame + MaxIdleFlips < frame) {
+        return false;
+    }
+    return std::ranges::none_of(info.images, [](const auto& image) { return image.is_written; });
 }
 
 bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
