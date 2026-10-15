@@ -885,7 +885,10 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
                             perm_idx, program->info.hw_stage, program->info.pgm_hash, idx);
                 return false;
             }
-            module = it->module;
+            module = it->module ? it->module : LoadDeferredModule(*it_pgm.value(), idx);
+            if (!module) {
+                return false;
+            }
         } else {
             module = CompileSPV(spv, instance.GetDevice());
         }
@@ -914,12 +917,25 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         return false;
     }
     constexpr size_t MaxCachedPermutations = 256;
+    static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+    const auto started = std::chrono::steady_clock::now();
+    const char* stop = "limit";
     std::unique_ptr<Program> program;
     for (size_t index = 0; index < MaxCachedPermutations; ++index) {
         std::vector<u8> meta_blob;
-        db.Load(Storage::BlobType::ShaderMeta,
-                fmt::format("{:#018x}", HashCombine(pgm_hash, index)), meta_blob);
+        const u64 perm_hash = HashCombine(pgm_hash, index);
+        if (meta_prefetch && meta_prefetch->ready.load(std::memory_order_acquire)) {
+            // Each program loads once a session: the entry can move out of the map.
+            if (const auto found = meta_prefetch->metas.find(perm_hash);
+                found != meta_prefetch->metas.end()) {
+                meta_blob = std::move(found->second);
+                meta_prefetch->metas.erase(found);
+            }
+        } else {
+            db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", perm_hash), meta_blob);
+        }
         if (meta_blob.empty()) {
+            stop = "no meta";
             break;
         }
         Serialization::Archive meta_ar{std::move(meta_blob)};
@@ -927,13 +943,12 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         Shader::StageSpecialization spec{};
         std::optional<Shader::Gcn::FetchShaderData> fetch;
         size_t perm_idx{};
-        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx) || perm_idx != index ||
-            info->pgm_hash != pgm_hash || info->hw_stage != stage) {
+        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx)) {
+            stop = "meta version";
             break;
         }
-        std::vector<u32> spv;
-        db.Load(Storage::BlobType::ShaderBinary, fmt::format("{:#018x}_{}", pgm_hash, index), spv);
-        if (spv.empty()) {
+        if (perm_idx != index || info->pgm_hash != pgm_hash || info->hw_stage != stage) {
+            stop = "meta of another program or stage";
             break;
         }
         if (!program) {
@@ -941,7 +956,18 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
             program->info = std::move(*info);
         }
         spec.info = &program->info;
-        program->InsertPermut(CompileSPV(spv, instance.GetDevice()), std::move(spec), index);
+        // The module itself is read when this specialization is first used (LoadDeferredModule):
+        // material shaders keep hundreds of permutations a session mostly does not need.
+        program->InsertPermut(vk::ShaderModule{}, std::move(spec), index);
+    }
+    if (log) {
+        LOG_WARNING(Render_Vulkan,
+                    "gow3: cached program {:#x} ({}): {} permutations in {:.1f} ms, stopped: {}",
+                    pgm_hash, u32(stage), program ? program->modules.size() : 0,
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                              started)
+                        .count(),
+                    stop);
     }
     if (!program) {
         return false;
@@ -949,6 +975,21 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
     std::unique_lock lock{programs_mutex};
     program_cache.emplace(pgm_hash, std::move(program));
     return true;
+}
+
+vk::ShaderModule PipelineCache::LoadDeferredModule(Program& program, size_t perm_idx) {
+    std::vector<u32> spv;
+    Storage::DataBase::Instance().Load(
+        Storage::BlobType::ShaderBinary,
+        fmt::format("{:#018x}_{}", program.info.pgm_hash, perm_idx), spv);
+    std::unique_lock lock{programs_mutex};
+    auto& entry = program.modules[perm_idx];
+    if (spv.empty()) {
+        entry.spec = {}; // never matches again
+        return {};
+    }
+    entry.module = CompileSPV(spv, instance.GetDevice());
+    return entry.module;
 }
 
 bool PipelineCache::CheckCacheProfile() {
@@ -1085,6 +1126,31 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
 void PipelineCache::StartOnDemand() {
     CheckCacheProfile();
     Storage::DataBase::Instance().FinishPreload();
+    if (Storage::DataBase::Instance().IsOpened() &&
+        Storage::DataBase::Instance().ConcurrentReads()) {
+        meta_prefetch = std::make_unique<MetaPrefetch>();
+        meta_prefetch->thread = std::jthread([prefetch = meta_prefetch.get()](std::stop_token stop) {
+            Common::SetCurrentThreadName("gow3:MetaPrefetch");
+            Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
+            const auto started = std::chrono::steady_clock::now();
+            Storage::DataBase::Instance().ForEachBlob(
+                Storage::BlobType::ShaderMeta,
+                [prefetch](std::vector<u8>&& data) {
+                    // Meta version, binary version, then the permutation hash (RegisterShaderMeta).
+                    if (data.size() >= 16) {
+                        u64 perm_hash;
+                        std::memcpy(&perm_hash, data.data() + 8, sizeof(perm_hash));
+                        prefetch->metas.emplace(perm_hash, std::move(data));
+                    }
+                },
+                [&stop] { return stop.stop_requested(); });
+            prefetch->ready.store(!stop.stop_requested(), std::memory_order_release);
+            std::printf("Shader cache: %zu permutation metas read in %.1f s\n",
+                        prefetch->metas.size(),
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - started)
+                            .count());
+        });
+    }
     std::printf("Pipeline startup: on demand, no bulk warm-up\n");
 }
 
@@ -1272,6 +1338,10 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     if (it != program.modules.end()) {
         if (size_t(std::distance(program.modules.begin(), it)) != stage.perm_idx) {
             return false;
+        }
+        if (!it->module) { // a deferred cached permutation (LoadCachedProgram): use this one
+            it->module = stage.module;
+            stage.module_kept = true;
         }
         stage.result = it->module;
     } else {

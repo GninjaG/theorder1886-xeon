@@ -145,6 +145,8 @@ public:
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
     /// gow3: the cached permutations of a program seen for the first time this session.
     bool LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage);
+    /// gow3: the module of a cached permutation, read when its specialization is first used.
+    vk::ShaderModule LoadDeferredModule(Program& program, size_t perm_idx);
 
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);
@@ -196,6 +198,15 @@ private:
     bool MergeWarmStage(WarmStage& stage);
     void PumpWarmUp();
     void StopWarmUp();
+    /// gow3: the stored shader metas, read on a background thread at start so that
+    /// LoadCachedProgram does not open a file per permutation on the GPU thread (~1 ms each,
+    /// a quarter of a second for a material shader with 256 cached permutations).
+    struct MetaPrefetch {
+        std::atomic<bool> ready{false};
+        std::unordered_map<u64, std::vector<u8>> metas; ///< by permutation hash
+        std::jthread thread;
+    };
+    std::unique_ptr<MetaPrefetch> meta_prefetch;
     bool AsyncCompilation() const;
     bool RefreshGraphicsKey(PipelineSelection& sel);
     bool RefreshGraphicsStages(PipelineSelection& sel);

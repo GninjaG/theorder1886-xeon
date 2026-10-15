@@ -1355,7 +1355,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
         const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-        if (it == program->modules.end()) {
+        if (it == program->modules.end() || !it->module) { // a deferred module loads on stage A
             worker.failed = true;
             return {};
         }
@@ -1442,6 +1442,10 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                       program->modules[program->last_used].spec == spec
                   ? program->modules.begin() + program->last_used
                   : std::ranges::find(program->modules, spec, &Program::Module::spec);
+    if (it != program->modules.end() && !it->module &&
+        !LoadDeferredModule(*program, std::distance(program->modules.begin(), it))) {
+        it = program->modules.end(); // its binary is gone: compile it again
+    }
     if (it != program->modules.end()) {
         program->last_used = std::distance(program->modules.begin(), it);
     }
