@@ -18,6 +18,7 @@
 #endif
 #ifdef _WIN32
 #include <windows.h>
+#include <tlhelp32.h>
 #include <timeapi.h>
 #else
 #include <sys/mman.h>
@@ -126,6 +127,21 @@ static void describe_address(char *out, size_t size, uintptr_t address) {
     }
     snprintf(out,size,"%p",(void *)address);
 }
+/* Exact host stack from the x64 unwind tables (.pdata); stops at guest code, which has none. */
+static void print_unwound_stack(const CONTEXT *c) {
+    char where[MAX_PATH+64];
+    CONTEXT u=*c;
+    fprintf(stderr,"  unwound stack:\n");
+    for (int depth=0; depth<32 && u.Rip; ++depth) {
+        describe_address(where,sizeof(where),(uintptr_t)u.Rip);
+        fprintf(stderr,"    %2d %s\n",depth,where);
+        DWORD64 base=0; PVOID handler_data; DWORD64 establisher;
+        PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(u.Rip,&base,NULL);
+        if (fn) RtlVirtualUnwind(UNW_FLAG_NHANDLER,base,u.Rip,fn,&u,&handler_data,&establisher,NULL);
+        else if (depth==0) { u.Rip=*(DWORD64 *)u.Rsp; u.Rsp+=8; } /* leaf function */
+        else break;
+    }
+}
 static int fatal_reported;
 static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) { Sleep(INFINITE); }
@@ -139,8 +155,12 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
                 (void *)record->ExceptionInformation[1],where,GetCurrentThreadId());
     else
         fprintf(stderr,"Fault: exception 0x%08lx at %s (thread %lu)\n",record->ExceptionCode,where,GetCurrentThreadId());
+    PWSTR thread_name=NULL;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(),&thread_name)) && thread_name && *thread_name)
+        fprintf(stderr,"  thread name: %ls\n",thread_name);
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
+    print_unwound_stack(c);
     if (image) {
         fprintf(stderr, "  globals: [0x16b1df0]=%p [0x16b3420]=%p [0x16b3418]=%p\n",
                 *(void**)(image + 0x16b1df0), *(void**)(image + 0x16b3420), *(void**)(image + 0x16b3418));
@@ -245,9 +265,35 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
 static DWORD WINAPI win_watchdog_thread(LPVOID param) {
     DWORD sec = (DWORD)(uintptr_t)param;
     Sleep(sec * 1000);
-    fprintf(stderr, "\nSTOP: watchdog timeout after %u seconds\n", (unsigned)sec);
+    fprintf(stderr, "\nSTOP: watchdog timeout after %u seconds; thread stacks:\n", (unsigned)sec);
+    /* As the Linux watchdog: a run that stopped presenting shows where every thread waits. */
+    HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
+    THREADENTRY32 entry={.dwSize=sizeof(entry)};
+    if (snapshot!=INVALID_HANDLE_VALUE && Thread32First(snapshot,&entry)) {
+        do {
+            if (entry.th32OwnerProcessID!=GetCurrentProcessId() || entry.th32ThreadID==GetCurrentThreadId())
+                continue;
+            HANDLE thread=OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_QUERY_LIMITED_INFORMATION,
+                                     FALSE,entry.th32ThreadID);
+            if (!thread) continue;
+            PWSTR name=NULL;
+            GetThreadDescription(thread,&name);
+            CONTEXT context={.ContextFlags=CONTEXT_FULL};
+            /* Left suspended: a resumed thread could take a lock the next stack walk needs. So the
+             * process ends with TerminateProcess below: ExitProcess runs DLL detach, which waits
+             * for the loader lock a suspended thread may hold (a process that never exits). */
+            if (SuspendThread(thread)!=(DWORD)-1 && GetThreadContext(thread,&context)) {
+                fprintf(stderr,"thread %lu %ls\n",entry.th32ThreadID,name && *name ? name : L"");
+                print_unwound_stack(&context);
+            }
+            if (name) LocalFree(name);
+            CloseHandle(thread);
+        } while (Thread32Next(snapshot,&entry));
+    }
+    if (snapshot!=INVALID_HANDLE_VALUE) CloseHandle(snapshot);
     fflush(stderr);
-    ExitProcess(0);
+    fflush(stdout);
+    TerminateProcess(GetCurrentProcess(),0);
     return 0;
 }
 #endif
