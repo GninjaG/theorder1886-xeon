@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Prepares the game image and starts gow3-probe (Windows and Linux; run.sh wraps it on Linux).
+"""Prepares the game image and starts the native probe (Windows and Linux; run.sh wraps it on Linux).
 
-Environment variables (GOW3_GAME_DIR, GOW3_DATA_DIR, GOW3_PATCHES, GOW3_MODS_*,
-GOW3_USER_DIR, ...). Extra arguments go to gow3-probe.
-The in-game "Apply and restart" runs this script again through GOW3_RESTART_COMMAND;
+Environment variables (THEORDER_GAME_DIR / GOW3_GAME_DIR, THEORDER_DATA_DIR / GOW3_DATA_DIR,
+THEORDER_PATCHES / GOW3_PATCHES, THEORDER_MODS_* / GOW3_MODS_*, THEORDER_USER_DIR / GOW3_USER_DIR, ...).
+Extra arguments go to the game probe.
+The in-game "Apply and restart" runs this script again through THEORDER_RESTART_COMMAND / GOW3_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
 import os
@@ -64,8 +65,8 @@ def parse_cpu_features(output):
 
 
 def isa_rewrite_wanted(missing, env):
-    """GOW3_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
-    policy = env.get('GOW3_ISA_REWRITE')
+    """THEORDER_ISA_REWRITE / GOW3_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
+    policy = get_env(env, 'ISA_REWRITE')
     if policy in ('0', '1'):
         return policy == '1'
     return bool(missing)
@@ -97,13 +98,22 @@ def launch_prefix(env):
     variable), GameMode a command that starts the game."""
     if WINDOWS:
         return []
-    if env.get('GOW3_MANGOHUD') == '1':
+    if get_env(env, 'MANGOHUD') == '1':
         env.setdefault('MANGOHUD', '1')
-    if env.get('GOW3_GAMEMODE') == '1':
+    if get_env(env, 'GAMEMODE') == '1':
         if gamemode := shutil.which('gamemoderun'):
             return [gamemode]
         print('GameMode: gamemoderun not found, starting without it', flush=True)
     return []
+
+
+def get_env(env, key, default=None):
+    """Retrieve environment variable checking THEORDER_<key> first, then GOW3_<key>."""
+    if f'THEORDER_{key}' in env:
+        return env[f'THEORDER_{key}']
+    if f'GOW3_{key}' in env:
+        return env[f'GOW3_{key}']
+    return default
 
 
 def find_executable(name):
@@ -114,12 +124,21 @@ def find_executable(name):
     return None
 
 
+def find_probe_executable():
+    """Finds the probe executable (theorder-probe or gow3-probe)."""
+    for name in ('theorder-probe' + EXE_SUFFIX, 'gow3-probe' + EXE_SUFFIX):
+        found = find_executable(name)
+        if found:
+            return found
+    return None
+
+
 def glyph_mounts(env, probe, game, out):
     """(probe arguments, style) of the controller glyphs: patched copies of the WADs that hold the
     game's button icons, mounted over them (scripts/glyphs.py). Opt-in: unless GOW3_GLYPH_STYLE is
     auto, xbox or nintendo nothing is asked, drawn or mounted, and old copies are removed. The
     game folder is never written."""
-    choice = env.get('GOW3_GLYPH_STYLE', 'off')
+    choice = get_env(env, 'GLYPH_STYLE', 'off')
     if choice not in ('auto', 'xbox', 'nintendo'):
         shutil.rmtree(Path(out) / 'glyphs', ignore_errors=True)
         return [], None
@@ -130,7 +149,7 @@ def glyph_mounts(env, probe, game, out):
             pad = subprocess.run([str(probe), '--gamepad'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  text=True, timeout=15, creationflags=no_console()).stdout
         style, faces, name = glyphs.resolve(choice, pad)
-        mounts = glyphs.build(game, out, style, faces, env.get('GOW3_PAD_MAP', ''))
+        mounts = glyphs.build(game, out, style, faces, get_env(env, 'PAD_MAP', ''))
     except Exception as error:  # noqa: BLE001  (icons only: whatever fails, the game still starts)
         print(f'Glyphs: {error}; the game keeps its own button icons', flush=True)
         return [], None
@@ -179,30 +198,34 @@ def main():
             translated_args.append(args[i])
             i += 1
     args = translated_args
-    # As run.sh: relative paths (GOW3_GAME_DIR, GOW3_DATA_DIR, fsr4_shaders/) are from the port.
+    # As run.sh: relative paths (THEORDER_GAME_DIR / GOW3_GAME_DIR, etc.) are from the port.
     os.chdir(PORT)
     env = os.environ
-    data = Path(env.get('GOW3_DATA_DIR', PORT))
+    data = Path(get_env(env, 'DATA_DIR', PORT))
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
-    env.setdefault('GOW3_CONFIG', str(data / 'gow3.ini'))
+    config_default = data / 'theorder.ini' if (data / 'theorder.ini').is_file() else data / 'gow3.ini'
+    env.setdefault('THEORDER_CONFIG', get_env(env, 'CONFIG', str(config_default)))
+    env.setdefault('GOW3_CONFIG', env['THEORDER_CONFIG'])
     # Values this script derived on the previous start ("Apply and restart" inherits them) are
     # derived again from the new options.
-    for key in env.pop('GOW3_DERIVED', '').split(','):
+    for key in env.pop('THEORDER_DERIVED', env.pop('GOW3_DERIVED', '')).split(','):
         env.pop(key, None)
     derived = []
     sys.path.insert(0, str(PORT / 'scripts'))
     import graphics_options
-    graphics, reverted = graphics_options.prepare(env['GOW3_CONFIG'], out / 'graphics_state.json')
+    graphics, reverted = graphics_options.prepare(env['THEORDER_CONFIG'], out / 'graphics_state.json')
     if reverted:
         print('Graphics: the last restart never reached the game; previous options restored', flush=True)
     env.update(graphics_options.environment(graphics))
-    if not env.get('GOW3_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
+    if not get_env(env, 'FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
+        env['THEORDER_FSR411_DIR'] = str(data / 'fsr4_411')
         env['GOW3_FSR411_DIR'] = str(data / 'fsr4_411')
 
-    probe = Path(env['GOW3_PROBE']) if env.get('GOW3_PROBE') else find_executable('gow3-probe' + EXE_SUFFIX)
+    probe_env = get_env(env, 'PROBE')
+    probe = Path(probe_env) if probe_env else find_probe_executable()
     if not probe or not probe.is_file():
-        fail(f'gow3-probe{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
+        fail(f'theorder-probe{EXE_SUFFIX} / gow3-probe{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
     if WINDOWS and not (probe.parent / 'SDL3.dll').is_file():
         clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
@@ -218,7 +241,7 @@ def main():
     missing = parse_cpu_features(features.stdout)
 
     candidates = [
-        env.get('GOW3_GAME_DIR'),
+        get_env(env, 'GAME_DIR'),
         r'C:\Users\Mateus\Downloads\games\CUSA00035',
         PORT.parent / 'CUSA00035',
         PORT.parent / 'CUSA01623',
@@ -229,23 +252,24 @@ def main():
             game = Path(c)
             break
     if not game:
-        game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA00035'))
+        game = Path(get_env(env, 'GAME_DIR', PORT.parent / 'CUSA00035'))
     if not (game / 'eboot.bin').is_file():
-        fail(f'No eboot.bin in {game} (set GOW3_GAME_DIR).')
+        fail(f'No eboot.bin in {game} (set THEORDER_GAME_DIR).')
     update_view = None
-    if env.get('GOW3_PATCH_DIR'):
+    patch_dir = get_env(env, 'PATCH_DIR')
+    if patch_dir:
         import game_update
         try:
-            update_view = game_update.create_view(game, env['GOW3_PATCH_DIR'], out)
+            update_view = game_update.create_view(game, patch_dir, out)
         except (ValueError, OSError) as error:
             fail(str(error))
         game = update_view
-        print(f'Game and update combined from {env["GOW3_PATCH_DIR"]}', flush=True)
+        print(f'Game and update combined from {patch_dir}', flush=True)
     original_game = game.resolve()
     game = Path(run_script('mods.py', game, '--out', out,
-                           '--mods-dir', env.get('GOW3_MODS_DIR', data / 'mods'),
-                           '--config', env.get('GOW3_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('GOW3_MODS_ENABLED', '1'), capture=True).strip())
+                           '--mods-dir', get_env(env, 'MODS_DIR', str(data / 'mods')),
+                           '--config', get_env(env, 'MODS_CONFIG', str(data / 'mods.json')),
+                           '--enabled', get_env(env, 'MODS_ENABLED', '1'), capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     try:
         run_script('prepare.py', game, '--out', out)
@@ -259,7 +283,7 @@ def main():
             print(output, end='', flush=True)
             if code == 0:
                 isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
-        run_script('content_profile.py', game, '--out', out, '--sku', env.get('GOW3_CONTENT_SKU', 'full'))
+        run_script('content_profile.py', game, '--out', out, '--sku', get_env(env, 'CONTENT_SKU', 'full'))
 
         import patches
         from patches import game_profile_for, patch_requirements, patch_status, selected_patches
@@ -270,69 +294,86 @@ def main():
         # an application id the desktop entry matches, so the shell shows the same icon.
         icon_file = game / 'sce_sys' / 'icon0.png'
         if not WINDOWS:
-            env.setdefault('SDL_APP_ID', 'gow3')
-            if (PORT / 'launcher' / 'gow3.png').is_file():
+            env.setdefault('SDL_APP_ID', 'theorder')
+            if (PORT / 'launcher' / 'theorder.png').is_file():
+                icon_file = PORT / 'launcher' / 'theorder.png'
+            elif (PORT / 'launcher' / 'gow3.png').is_file():
                 icon_file = PORT / 'launcher' / 'gow3.png'
         try:
             from PIL import Image
             with Image.open(icon_file) as icon:
                 icon.convert('RGBA').resize((64, 64), Image.LANCZOS).save(out / 'window_icon.bmp')
+            env.setdefault('THEORDER_WINDOW_ICON', str(out / 'window_icon.bmp'))
             env.setdefault('GOW3_WINDOW_ICON', str(out / 'window_icon.bmp'))
         except (ImportError, OSError):
             pass
         # The temporal upscalers and motion vectors are not calibrated for this game yet: they stay
-        # off unless the launcher's experimental switch is on (then gow3.ini decides); linear
-        # image readbacks fix its corrupted textures.
-        if env.get('GOW3_EXPERIMENTAL_UPSCALER') != '1':
+        # off unless the launcher's experimental switch is on; linear image readbacks fix textures.
+        if get_env(env, 'EXPERIMENTAL_UPSCALER') != '1':
+            env.setdefault('THEORDER_UPSCALER', 'none')
             env.setdefault('GOW3_UPSCALER', 'none')
+        env.setdefault('THEORDER_READBACK_LINEAR', '1')
         env.setdefault('GOW3_READBACK_LINEAR', '1')
+        patches_val = get_env(env, 'PATCHES', '')
+        patches_only = get_env(env, 'PATCHES_ONLY') == '1'
         if profile:
-            names = selected_patches(profile[1], profile[2], env.get('GOW3_PATCHES', ''), env.get('GOW3_PATCHES_ONLY') == '1')
-            # gow3.ini decides the resolution and frame rate patches (in-game menu, launcher).
+            names = selected_patches(profile[1], profile[2], patches_val, patches_only)
             names = graphics_options.patch_names(names, graphics)
             names = graphics_options.restrict_to_available(names, patches.available_patches(profile[1], profile[2]))
+            env['THEORDER_PATCHES'] = ';'.join(names)
             env['GOW3_PATCHES'] = ';'.join(names)
+            env['THEORDER_PATCHES_ONLY'] = '1'
             env['GOW3_PATCHES_ONLY'] = '1'
         (out / 'patch_status.json').unlink(missing_ok=True)
-        run_script('patches.py', '--out', out, '--extra', env.get('GOW3_PATCHES', ''), '--game-dir', game,
-                   '--patches-dir', env.get('GOW3_PATCHES_DIR', data / 'patches'),
-                   '--patches-config', env.get('GOW3_PATCHES_CONFIG', data / 'patches.json'))
+        run_script('patches.py', '--out', out, '--extra', get_env(env, 'PATCHES', ''), '--game-dir', game,
+                   '--patches-dir', get_env(env, 'PATCHES_DIR', str(data / 'patches')),
+                   '--patches-config', get_env(env, 'PATCHES_CONFIG', str(data / 'patches.json')))
         if profile:
             # Only the patches found in this eboot.bin count: a frame rate patch that was skipped
             # leaves the engine at 60 FPS, and the notes' memory and VBlank needs follow the same list.
             applied = (patch_status(out) or {}).get('applied', [])
             engine_fps = graphics_options.applied_engine_fps(applied)
             dmem, vblank = patch_requirements(profile[1], applied, profile[2])
-            for key, value in (('GOW3_DMEM_MB', dmem), ('GOW3_VBLANK_HZ', vblank)):
-                if value and key not in env:
-                    env[key] = str(value)
-                    derived.append(key)
-        if 'GOW3_VBLANK_HZ' not in env:
+            for key, value in (('DMEM_MB', dmem), ('VBLANK_HZ', vblank)):
+                if value and not get_env(env, key):
+                    env[f'THEORDER_{key}'] = str(value)
+                    env[f'GOW3_{key}'] = str(value)
+                    derived.append(f'THEORDER_{key}')
+                    derived.append(f'GOW3_{key}')
+        if not get_env(env, 'VBLANK_HZ'):
+            env['THEORDER_VBLANK_HZ'] = '60'
             env['GOW3_VBLANK_HZ'] = '60'
+            derived.append('THEORDER_VBLANK_HZ')
             derived.append('GOW3_VBLANK_HZ')
         # Without the frame rate patch the engine steps 1/60 s per frame: the present thread must
-        # not flip faster (gow3_graphics.h PresentLimit), or the game speeds up.
+        # not flip faster, or the game speeds up.
+        env['THEORDER_ENGINE_FPS'] = str(engine_fps)
         env['GOW3_ENGINE_FPS'] = str(engine_fps)
+        derived.append('THEORDER_ENGINE_FPS')
         derived.append('GOW3_ENGINE_FPS')
         print(f'Engine frame rate: {engine_fps} FPS'
               + ('' if engine_fps > 60 or graphics['engine_fps'] == '60' else
                  ' (the frame rate patch was not found in this eboot.bin)'), flush=True)
         glyph_args, glyph_style = glyph_mounts(env, probe, game, out)
         if glyph_style:  # the in-game menu names the buttons the same way
+            env['THEORDER_GLYPHS'] = glyph_style
             env['GOW3_GLYPHS'] = glyph_style
+            derived.append('THEORDER_GLYPHS')
             derived.append('GOW3_GLYPHS')
+        env['THEORDER_DERIVED'] = ','.join(derived)
         env['GOW3_DERIVED'] = ','.join(derived)
         # The guest memory pool is committed in full at start: a resolution patch above 1080p
         # can need more than 16 GB of RAM, and the game then closes when the page file cannot grow.
         import guest_memory
-        if warning := guest_memory.memory_warning(env.get('GOW3_DMEM_MB'), guest_memory.physical_memory_mb(),
-                                                  env.get('GOW3_STREAM_MEMORY', 'cached')):
+        if warning := guest_memory.memory_warning(get_env(env, 'DMEM_MB'), guest_memory.physical_memory_mb(),
+                                                  get_env(env, 'STREAM_MEMORY', 'cached')):
             print(warning, flush=True)
 
         # The in-game restart starts this script again once this process is gone.
         # GPU caches (shaders, pipelines) beside the saves; read before main(), so set here.
-        user_dir = Path(env.get('GOW3_USER_DIR', data / 'user')).resolve()
+        user_dir = Path(get_env(env, 'USER_DIR', str(data / 'user'))).resolve()
         user_dir.mkdir(parents=True, exist_ok=True)
+        env.setdefault('THEORDER_GPU_USER_DIR', str(user_dir))
         env.setdefault('GOW3_GPU_USER_DIR', str(user_dir))
         from save_backup import backup
         try:
@@ -345,11 +386,14 @@ def main():
         # the probe replaces itself with the new launch while this process still waits for it.
         after = ['--after', str(os.getpid())] if WINDOWS else []
         restart = [sys.executable, *this, *after, *args]
-        env['GOW3_RESTART_COMMAND'] = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
+        restart_cmd = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
+        env['THEORDER_RESTART_COMMAND'] = restart_cmd
+        env['GOW3_RESTART_COMMAND'] = restart_cmd
+        timeout_val = get_env(env, 'TIMEOUT', '0')
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),
                    '--user', str(user_dir),
-                   '--timeout', env.get('GOW3_TIMEOUT', '0'), *isa_args, *glyph_args, *args]
+                   '--timeout', timeout_val, *isa_args, *glyph_args, *args]
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
         return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode
     finally:

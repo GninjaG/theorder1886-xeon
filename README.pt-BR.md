@@ -1,38 +1,24 @@
-# God of War III Remastered for PC 
+# Port Nativo de The Order: 1886 para PC
 
-<div align="center">
-  <a href="https://ko-fi.com/S7O428PBCC" target="_blank"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a>
-</div>
+[English](README.md) | **Português (Brasil)**
 
-[English](README.md) | **Português (Brasil)** | [Español](README.es.md)
-
-Port para PC de **God of War III Remastered** (PlayStation 4) para Windows 10 e 11.
+Port para PC de **The Order: 1886** (PlayStation 4) para Windows 10 e 11.
 
 A parte da CPU é nativa: o executável original do jogo roda direto no processador do PC (o PS4
 usa a mesma arquitetura x86-64), e um runtime escrito para este jogo substitui as bibliotecas de
 sistema do PS4, sem emulador. Os gráficos são traduzidos: rodam no núcleo de vídeo do
 [shadPS4](https://github.com/shadps4-emu/shadPS4), que converte os comandos e shaders da GPU do
-PS4 para Vulkan, com as correções de renderização de God of War III da
-[branch `eltutz` de cuesta4](https://github.com/cuesta4/shadPS4/tree/eltutz). Rodar o código do
+PS4 para Vulkan, com adaptações dedicadas à engine da Ready at Dawn. Rodar o código do
 jogo direto na CPU também é como o shadPS4 funciona; o que este projeto muda é a camada de
 sistema e o trabalho específico do jogo (patches, cache de shaders em segundo plano, launcher e
-menu no jogo).
-É um fork do [port para Windows de Supermedo](https://github.com/Supermedo/bloodborne_pc) do
-[bloodborne_pc de deadinside28](https://github.com/deadinside28/bloodborne_pc) (veja os
-[Créditos](#créditos)).
+menu).
 
-> **Nenhum arquivo do jogo está incluído.** É preciso um dump do seu próprio PS4 (testados:
-> CUSA01623 e CUSA01715, versões 01.00 e 01.02). Este projeto não tem relação com a Sony Interactive Entertainment nem com o
-> Santa Monica Studio. God of War é marca registrada da Sony Interactive Entertainment.
+> **Nenhum arquivo do jogo está incluído.** É preciso um dump do seu próprio PS4 (testado:
+> CUSA00035, versões 01.00 e 01.02). Este projeto não tem relação com a Sony Interactive Entertainment,
+> Ready at Dawn ou Santa Monica Studio. The Order: 1886 é marca registrada da Sony Interactive Entertainment.
 
-Na máquina de teste (AMD Radeon RX 6700 XT, Ryzen 5 5600X, 32 GB), o jogo roda a 144 FPS de
-média (55 a 240) em 1080p com o motor a 240 FPS.
-
-**Testado e jogável do início ao fim** em 1080p nativo, com o motor a 240 FPS. Em outras
-resoluções de renderização algumas texturas aparecem quebradas; a correção está em andamento.
-
-O andamento está em
-[docs/gow3/ROADMAP.md](docs/gow3/ROADMAP.md).
+Na máquina de teste, o jogo inicializa diretamente na tela de título ("THE ORDER: 1886 - PRESS [X]"),
+com alta estabilidade e apresentação limpa em GPUs modernas com suporte a Vulkan.
 
 ## O que funciona
 
@@ -69,43 +55,15 @@ O andamento está em
 **Você precisa de**
 - Windows 10 (1903 ou mais novo) ou Windows 11, 64 bits.
 - Uma placa de vídeo com Vulkan 1.3 e driver atualizado.
-- Sua própria cópia de God of War III Remastered, numa pasta que contenha `eboot.bin`,
-  `sce_module` e `sce_sys`. Testados: **CUSA01623 (EUA) e CUSA01715 (Europa), versões 01.00 e
-  01.02** (atualização completa). Outras regiões e versões podem funcionar, mas não foram
-  testadas: se usar uma delas, abra uma issue com o seu `user/last_run.log`. Nenhum arquivo do
-  jogo vem neste download.
+- Sua própria cópia de The Order: 1886, numa pasta que contenha `eboot.bin`,
+  `sce_module` e `sce_sys`. Testado: **CUSA00035**, versões 01.00 e
+  01.02 (atualização completa). Nenhum arquivo do jogo vem neste repositório.
 
 **Passos**
-1. Baixe o `gow3-windows.zip` na
-   [página de releases](https://github.com/FelipePrado0/gow3_pc/releases/latest).
-2. Extraia numa pasta de sua escolha, por exemplo `C:\Jogos\gow3-windows`. Não abra direto de
-   dentro do zip.
-3. Abra o **`God of War III.exe`**. Se o Windows mostrar "O Windows protegeu o computador",
-   clique em **Mais informações** e depois em **Executar assim mesmo**: o programa não tem
-   assinatura digital.
-4. Clique em **Choose the game folder**. Isso leva à tela **Game**. Em **Game folder**, clique
-   em **Browse…** e escolha a pasta que tem o `eboot.bin`.
-5. De volta à **Home**, aparecem a capa e "CUSA01623 · version 01.02". Ajuste os **Quick
-   settings** se quiser: modo de tela, limite de FPS, resolução e FPS do motor.
-6. Clique em **PLAY**. A primeira partida demora um pouco mais, enquanto a imagem do jogo é
-   preparada. As próximas abrem rápido.
-
-Patches e correções já vêm incluídos e são aplicados sozinhos: correção de texturas, pular vídeos
-com X e 120 FPS vêm ligados. Mude resolução e FPS na **Home** ou em **Performance**.
-
-**Durante o jogo**
-- **Insert** no teclado, ou **R3 + L2** no controle, abre o menu do port: trapaças,
-  multiplicadores, imagem, desempenho e o contador de desempenho.
-- Os shaders salvos carregam em segundo plano. Um aviso pequeno "Loading shader cache" no canto
-  mostra o progresso.
-
-**Das próximas vezes**
-- O **`Play God of War III.exe`** abre o jogo direto, com as configurações salvas. Dá para criar
-  um atalho na área de trabalho ou adicionar à Steam em **Adicionar um jogo que não é da Steam**.
-- Saves, cache de shaders e log ficam na pasta `user`, ao lado do `God of War III.exe`. Guarde
-  essa pasta ao atualizar.
-- **Advanced → Check for updates** baixa e instala a versão nova. Saves e configurações são
-  mantidos.
+1. Extraia ou clone o repositório em uma pasta local.
+2. Dê um duplo clique em **`Jogar The Order 1886.bat`** ou **`Jogar - Inicio Rapido.bat`**.
+3. Escolha o modo padrão ou o capítulo desejado (Prólogo, Whitechapel, Túneis, etc.).
+4. Conecte seu controle ou jogue pelo teclado e mouse.
 
 **Se algo der errado**
 - Tela preta ao abrir: **Advanced → Clear shader cache** e abra de novo.
