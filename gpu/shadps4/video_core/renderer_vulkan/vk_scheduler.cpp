@@ -127,9 +127,12 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     }
 
     const auto& db = render_state.depth_stencil_attachment;
-    const bool has_ds = db.image_view != VK_NULL_HANDLE && (db.has_depth || db.has_stencil);
-    const bool valid_depth = has_ds;
-    const bool valid_stencil = has_ds;
+    // Each aspect is attached only when the pass uses it: a D32 view bound as the stencil
+    // attachment is invalid (VUID-VkRenderingInfo-pStencilAttachment-06548) and crashed the NVIDIA
+    // driver in vkCmdEndRendering. Pipelines declare the same aspects (GraphicsPipeline), and an
+    // unused one may stay null (VK_EXT_dynamic_rendering_unused_attachments).
+    const bool valid_depth = db.image_view != VK_NULL_HANDLE && db.has_depth;
+    const bool valid_stencil = db.image_view != VK_NULL_HANDLE && db.has_stencil;
     const vk::RenderingAttachmentInfo depth_attachment = {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,

@@ -2964,7 +2964,8 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             attachment.has_depth = true;
             attachment.depth_clear = is_depth_clear;
         }
-        if (regs.depth_buffer.StencilValid()) {
+        // The register can enable stencil on an image created without one (D32): nothing to bind.
+        if (regs.depth_buffer.StencilValid() && has_stencil) {
             attachment.clear_value[1] = is_stencil_clear ? regs.stencil_clear : 0u;
             attachment.has_stencil = true;
             attachment.stencil_clear = is_stencil_clear;
