@@ -135,7 +135,15 @@ struct ImageResource {
             image.type = u64(AmdGpu::ImageType::Color2DArray);
             image.depth = (image.depth + 1) * 6 - 1;
         }
-        if (!image.Valid()) {
+        // gow3: stale T#s left in slots a dispatch does not sample (The Order's material and
+        // lighting compute shaders) carry garbage: no format, an empty mip range, a null page.
+        // The rasterizer binds them as null anyway; reading them as Null here too keeps their
+        // random view types out of the shader specialization, where each combination cost a
+        // new permutation and a driver compile.
+        // GCN GPU virtual addresses are 40-bit: a higher base cannot be memory.
+        if (!image.Valid() || image.Address() < 0x10000 || image.Address() >= (1ULL << 40) ||
+            image.GetDataFmt() == AmdGpu::DataFormat::FormatInvalid ||
+            image.base_level > image.last_level) {
             image = AmdGpu::Image::Null(is_depth);
         } else if (is_depth) {
             const auto data_fmt = image.GetDataFmt();

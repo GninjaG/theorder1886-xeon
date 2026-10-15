@@ -57,6 +57,11 @@ struct Profile {
     /// gow3: GOW3_LIGHTING_TEST=dref (vk_lighting_test.h): depth comparisons return the result
     /// in all four channels instead of (v, 0, 0, 0).
     bool dref_broadcast{};
+    /// gow3: bump when translation changes the resources a shader declares for the same input,
+    /// so a pipeline cache written by older code (whose layouts no longer match) is rebuilt.
+    /// 1: stale/garbage T#s read as Image::Null (shader_recompiler/resource.h).
+    /// 2: FMask reads keep their image and sampler declared (resource_patching_pass.cpp).
+    u32 translation_revision{2};
 
     bool operator==(const Profile&) const = default;
 };

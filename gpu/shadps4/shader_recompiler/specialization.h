@@ -53,6 +53,8 @@ struct ImageSpecialization {
     AmdGpu::NumberConversion num_conversion{};
     // FIXME any pipeline cache changes needed?
     u32 num_bindings = 0;
+    /// gow3: an FMask T# turns the slot's reads into constants (resource_patching_pass.cpp).
+    bool is_fmask = false;
 
     bool operator==(const ImageSpecialization&) const = default;
 };
@@ -130,7 +132,7 @@ struct StageSpecialization {
                              spec.element_size = sharp.element_size;
                          }
                      });
-        ForEachSharp(binding, images, info->images,
+        ForEachImageSharp(binding, images, info->images,
                      [&](auto& spec, const auto& desc, AmdGpu::Image sharp) {
                          spec.type = sharp.GetViewType(desc.is_array);
                          spec.is_integer = AmdGpu::IsInteger(sharp.GetNumberFmt());
@@ -143,6 +145,7 @@ struct StageSpecialization {
                          }
                          spec.num_conversion = sharp.GetNumberConversion();
                          spec.num_bindings = desc.NumBindings(*info);
+                         spec.is_fmask = AmdGpu::IsFmask(sharp.GetDataFmt());
                      });
         ForEachSharp(binding, fmasks, info->fmasks,
                      [](auto& spec, const auto& desc, AmdGpu::Image sharp) {
@@ -184,6 +187,23 @@ struct StageSpecialization {
                 continue;
             }
             bitset.set(binding++);
+            func(spec, desc, sharp);
+        }
+    }
+
+    // gow3: an unbound image is still declared by the SPIR-V, from the sharp GetSharp returns
+    // (Image::Null: a plain 2D image, one binding). Its specialization describes that declaration
+    // instead of staying empty, so a later draw that binds a texture of the same kind reuses the
+    // module rather than compiling a new permutation for a num_bindings 0/1 difference. The slot
+    // stays out of `bitset`: a draw that leaves it unbound still matches any permutation.
+    void ForEachImageSharp(u32& binding, auto& spec_list, auto& desc_list, auto&& func) {
+        for (const auto& desc : desc_list) {
+            auto& spec = spec_list.emplace_back();
+            const auto sharp = desc.GetSharp(*info);
+            if (sharp) {
+                bitset.set(binding);
+            }
+            binding++;
             func(spec, desc, sharp);
         }
     }
@@ -232,7 +252,10 @@ struct StageSpecialization {
             }
         }
         for (u32 i = 0; i < images.size(); i++) {
-            if (other.bitset[binding++] && images[i] != other.images[i]) {
+            if (other.bitset[binding++] ? images[i] != other.images[i]
+                                        // gow3: an unbound image still takes num_bindings
+                                        // descriptors: every later binding number depends on it.
+                                        : images[i].num_bindings != other.images[i].num_bindings) {
                 return false;
             }
         }

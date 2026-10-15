@@ -285,6 +285,22 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // Patch image instruction if image is FMask.
     if (AmdGpu::IsFmask(image.GetDataFmt())) {
         ASSERT_MSG(!is_written, "FMask storage instructions are not supported");
+        // gow3: the descriptors stay declared although the reads below become constants. The
+        // resource lists of a program must not depend on what its T#s hold: the pipeline layout
+        // of every permutation comes from the first translation, and a stale FMask T# in a
+        // texture slot (The Order's material shader) shifted every later binding.
+        descriptors.Add(image_res);
+        if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+            auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
+            descriptors.Add(SamplerResource{
+                .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
+                .post_op = resource.sharps[1].post_op,
+                .post_op_tsharp_dw3_off = lod_prod.IsEmpty()
+                                              ? UNKNOWN_LOCATION
+                                              : SharpLocationFromSource(lod_prod.Inst()),
+                .is_depth = bool(inst_info.is_depth),
+            });
+        }
 
         IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
         switch (inst.GetOpcode()) {

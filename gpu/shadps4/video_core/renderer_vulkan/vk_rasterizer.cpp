@@ -1538,6 +1538,7 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+            AmdGpu::IsFmask(data_fmt) ||
             !memory->IsValidGpuMapping(tsharp.Address(), 1) ||
             !IsKnownFormat(data_fmt, num_fmt)) {
             continue; // null descriptor
@@ -2312,7 +2313,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+        // gow3: an FMask T# is read as constants by the shader (resource_patching_pass.cpp).
+        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+            AmdGpu::IsFmask(data_fmt)) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
