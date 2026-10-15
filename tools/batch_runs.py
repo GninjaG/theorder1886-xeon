@@ -1,6 +1,11 @@
 """Repeated timed runs of the game with A/B conditions, summarized as failure rates.
 
     python tools/batch_runs.py --runs 8 --secs 40 --cond base= --cond nomsaa=GOW3_NO_MSAA=1
+    python tools/batch_runs.py --runs 4 --secs 90 --game-args "--level cat_010_streets"
+    python tools/batch_runs.py --runs 4 --secs 90 --pad "22:cross 26:cross 30:cross"
+
+--pad presses buttons at the given seconds after launch (SECS:TOKEN[,TOKEN][:HOLD]) through
+GOW3_PAD_FILE (src/runtime_pad.c), e.g. to get past the title screen.
 
 Each --cond is LABEL=[VAR=VALUE[,VAR=VALUE...]]. Conditions are interleaved run by run, so a
 drift (shader cache warming, temperature) affects all of them alike. Logs land in out/batch/;
@@ -11,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -39,11 +45,24 @@ def summarize(log: str, secs: int):
     }
 
 
+def play_pad(script: str, pad_file: Path, stop: threading.Event):
+    start = time.monotonic()
+    for step in script.split():
+        secs, tokens, *hold = step.split(':')
+        if stop.wait(max(0.0, float(secs) - (time.monotonic() - start))):
+            return
+        pad_file.write_text(tokens.replace(',', ' '))
+        stop.wait(float(hold[0]) if hold else 0.3)
+        pad_file.write_text('')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--runs', type=int, default=8)
     parser.add_argument('--secs', type=int, default=40)
     parser.add_argument('--cond', action='append', default=[], help='LABEL=VAR=VALUE,...')
+    parser.add_argument('--game-args', default='', help='extra run.py arguments, e.g. "--level cat_010_streets"')
+    parser.add_argument('--pad', default='', help='scripted presses: "SECS:TOKEN[,TOKEN][:HOLD] ..."')
     args = parser.parse_args()
     conds = []
     for c in args.cond or ['base=']:
@@ -64,12 +83,20 @@ def main():
                         'THEORDER_TIMEOUT': str(args.secs), 'GOW3_TIMEOUT': str(args.secs)})
             env.update(extra)
             log_path = out / f'{label}-{i + 1}.log'
+            stop = threading.Event()
+            if args.pad:
+                pad_file = out / 'pad'
+                pad_file.write_text('')
+                env['GOW3_PAD_FILE'] = env['THEORDER_PAD_FILE'] = str(pad_file)
+                threading.Thread(target=play_pad, args=(args.pad, pad_file, stop), daemon=True).start()
             with open(log_path, 'w', encoding='utf-8', errors='replace') as f:
                 try:
-                    subprocess.run([sys.executable, str(ROOT / 'run.py')], env=env, cwd=ROOT,
+                    subprocess.run([sys.executable, str(ROOT / 'run.py')] + args.game_args.split(),
+                                   env=env, cwd=ROOT,
                                    stdout=f, stderr=subprocess.STDOUT, timeout=args.secs + 40)
                 except subprocess.TimeoutExpired:
                     pass
+            stop.set()
             r = summarize(log_path.read_text(encoding='utf-8', errors='replace'), args.secs)
             results[label].append(r)
             state = f'FAULT {r["fault"]}' if r['fault'] else ('HUNG' if r['hung'] else 'ok')
