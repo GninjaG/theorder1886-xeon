@@ -81,7 +81,21 @@ Checkpoint names follow `<level>_<nnn>_checkpoint_<nnn>`: `pro` (prologue), `wch
   pipeline gives it (91aa3ac).
 - Final composite to the display buffer: VS b9c87fc1 (positions from the vertex index), PS
   a41511a2 (samples the picture at `fragcoord - (display - picture) / 2`, encodes sRGB).
-- Tonemap and other fullscreen passes: VS 0ece32eb reads position and UV from a vertex buffer
-  (stride 20 bytes) the engine writes every frame (suspect of the one-frame black triangle).
+- Tonemap and other fullscreen passes: VS 0ece32eb reads position and UV from a 60-byte vertex
+  buffer (stride 20: (-1,1,1,0,0) (3,1,1,2,0) (-1,-3,1,0,2)) at 0x1059c18988 in every captured
+  frame. `THEORDER_WATCH=1059c18988:60` showed it written once (zeros, then the triangle) and
+  never again in 80 s: the guest data is static, so the one-frame black triangle comes from the
+  port's side (buffer cache or a different V#), not from the engine rewriting it.
+
+## Task system queue (startup fault at 0x20aa22)
+
+`sub_20a950(scheduler)` runs one pending job (165 direct callers: every "help while waiting"
+path). For each queue in `scheduler+0x168` (count at `+0x190`) it pops a Michael-Scott queue of
+64-byte nodes addressed by index (`queue+0x148` node array; header with head `+0`, tail `+0x40`,
+free list `+0x80`, count `+0xc0`; 64-bit words: index in the low 32 bits, tag above, `next ==
+-1` is null) and pushes the old head node onto a Treiber free list. The fault is the read of
+`node[head].next`: head already held an index outside the array, so the corruption happens
+earlier (push side `sub_20b010` or node reuse). Node fields: `+8` job function, `+0x30` a
+dependency counter pointer, `+0x38` a completion counter decremented after the job runs.
 - Analytic in-scattering of light volumes (Sun et al.): PS 15c552f8, a2925aa8, 64b3f066, fd7df5bc
   into a 960x400 R16G16B16A16 buffer, F table in a 512x512 R32 texture.

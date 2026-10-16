@@ -10,9 +10,15 @@ with the REA CLI: `main` decompiles with its imports named (`memset`, `__stack_c
 12-minute first analysis. Two setup problems: `npx rea-agents@6.5.0` ran a global `npm link` of a
 source build without the Windows native addon (the published package is now in
 `C:\Users\Mateus\tools\rea`), and Claude Code's first start of the server timed out while npx was
-downloading it. Next with REA: the writer of the black triangle's vertex buffer (VS 0ece32eb, 60
-bytes at stride 20: (-1,1,1,0,0) (3,1,1,2,0) (-1,-3,1,0,2), not a constant in the image) and the
-startup fault at 0x20aa22.
+downloading it. The MCP entry now runs that package (Claude Code reaches the tools).
+
+**Black triangle, hypothesis dropped:** the fullscreen vertex buffer is not rewritten every
+frame. `THEORDER_WATCH=<hex address>:<bytes>` (new diagnostic, runtime_memory.c) saw the 60 bytes
+at 0x1059c18988 written once and unchanged for 80 s; the same address in all 20 captured frames.
+Next: look at the port side (buffer cache copy of that range, or the V# of the bad frame).
+**Startup fault 0x20aa22:** decompiled (docs/ENGINE_RE.md, "Task system queue"); the bad head
+index predates the pop. Next: decompile the push `sub_20b010`; a fault dump of the queue header
+would show whether head or the node array is wrong.
 
 ## 2026-10-16: God of War leftovers removed, aspect ratio option
 

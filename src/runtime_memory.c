@@ -762,10 +762,46 @@ static void *toggle_watcher(void *path) {
     }
     return NULL;
 }
+/* THEORDER_WATCH=<hex address>:<bytes> (diagnostic, one busy core): print every change of a
+ * guest range with a monotonic time, read through the backing view so unmapping cannot fault. */
+static void *range_watcher(void *spec) {
+    uintptr_t address=0; unsigned size=0;
+    if (sscanf(spec,"%" SCNxPTR ":%u",&address,&size)!=2 || !size || size>256 || size%4) {
+        fprintf(stderr,"Runtime: THEORDER_WATCH wants <hex address>:<bytes>, bytes a multiple of 4 up to 256\n");
+        return NULL;
+    }
+    const uint32_t *view=NULL;
+    while (!view) {
+        read_lock();
+        size_t i=vma_index(address);
+        if (i<vma_count && vmas[i].start<=address && address+size<=vmas[i].end && vmas[i].kind!=KIND_RESERVED)
+            view=(const uint32_t *)(backing_base+vmas[i].phys+(address-vmas[i].start));
+        read_unlock();
+#ifdef _WIN32
+        if (!view) compat_sleep_ns(1000000);
+#else
+        if (!view) { struct timespec t={0,1000000}; nanosleep(&t,NULL); }
+#endif
+    }
+    uint32_t last[64], now[64];
+    unsigned words=size/4, changes=0;
+    for (int first=1; changes<20000; first=0) {
+        for (unsigned i=0;i<words;++i) now[i]=__atomic_load_n(&view[i],__ATOMIC_RELAXED);
+        if (!first && !memcmp(now,last,size)) continue;
+        struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
+        char line[64*16]; int n=0;
+        for (unsigned i=0;i<words;++i) { float f; memcpy(&f,&now[i],4); n+=snprintf(line+n,sizeof line-n," %g",f); }
+        fprintf(stderr,"Watch %#" PRIxPTR " %lld.%09ld:%s\n",address,(long long)t.tv_sec,t.tv_nsec,line);
+        memcpy(last,now,size);
+        ++changes;
+    }
+    return NULL;
+}
 void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalidate) {
-    const char *toggles=getenv("THEORDER_TOGGLE_FILE");
-    static pthread_t watcher;
+    const char *toggles=getenv("THEORDER_TOGGLE_FILE"), *watch=getenv("THEORDER_WATCH");
+    static pthread_t watcher, range;
     if (toggles && !watcher) pthread_create(&watcher,NULL,toggle_watcher,(void *)toggles);
+    if (watch && !range) pthread_create(&range,NULL,range_watcher,(void *)watch);
     write_lock();
     hook_map=map; hook_unmap=unmap; hook_invalidate=invalidate;
     for (size_t i=0;i<vma_count;++i) if (vmas[i].kind!=KIND_RESERVED) queue_hook(HOOK_MAP,vmas[i].start,vmas[i].end-vmas[i].start);
