@@ -28,6 +28,8 @@ MINGW*|MSYS*)
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     cp out/gpu/theorder-probe.exe out/gpu/theorder-gpu-capabilities.exe out/gpu/theorder-play.exe out/
+    # Loaded instead of FFmpeg's real librsvg, which brings GIO in (packaging/windows/rsvg_stub.c).
+    clang -shared -O2 -Wall -Wextra -Werror packaging/windows/rsvg_stub.c -o out/librsvg-2-2.dll
     echo "Built $PWD/out/theorder-probe.exe"
     exit 0
     ;;

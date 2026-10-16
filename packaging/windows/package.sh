@@ -48,6 +48,8 @@ cp launcher/theorder.ico launcher/theorder.png "$dest/launcher/"
 for exe in theorder-probe.exe theorder-gpu-capabilities.exe; do
     llvm-strip --strip-debug -o "$dest/bin/$exe" "out/$exe"
 done
+# The librsvg stub first: ldd then finds it beside the executable and GIO stays out of the package.
+cp out/librsvg-2-2.dll "$dest/bin/"
 # Every DLL the executables load from the CLANG64 tree (SDL3, FFmpeg, Vulkan loader, ...).
 ldd "$dest/bin/theorder-probe.exe" "$dest/bin/theorder-gpu-capabilities.exe" |
     awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
