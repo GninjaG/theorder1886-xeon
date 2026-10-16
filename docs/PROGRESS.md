@@ -27,6 +27,11 @@ librsvg -> gio, pango, gdk-pixbuf). `packaging/windows/rsvg_stub.c` builds a lib
 the three functions avcodec imports; beside the executable (out/ and the package's bin/) it is
 loaded instead, and libgio, pango, gdk-pixbuf, iertutil and mrmcorer no longer load (checked on
 a running game).
+**Scene-load pauses:** the pipeline binary report now splits a restore: driver key 0.04 ms,
+file 10.4 ms, binary handles 0.26 ms, driver 1.3 ms. Reading the 2 MB files with fread instead
+of std::ifstream (e3909ef): file 2.1-2.6 ms, 11-16 ms per pipeline built in a stall (was 22).
+Next if still worth it: read the binaries of the upcoming draws ahead on a few threads (needs
+an emulator key -> driver binary name index; the name comes from vkGetPipelineKeyKHR).
 **`-startlevel`:** still the title screen with `pro_010` + `pro_010_checkpoint_005`, also with
 the `*(game+0x208)` gate at 0x4480cf patched out and after one ✕ press. Next: find where the
 stored level hash (`param_1[6]`) is used after the title.
