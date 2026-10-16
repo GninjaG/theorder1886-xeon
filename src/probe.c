@@ -261,6 +261,8 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
 static DWORD WINAPI win_watchdog_thread(LPVOID param) {
     DWORD sec = (DWORD)(uintptr_t)param;
     Sleep(sec * 1000);
+    runtime_memory_report(); /* the direct memory still in use: long runs show a leak */
+    fflush(stdout);
     fprintf(stderr, "\nSTOP: watchdog timeout after %u seconds; thread stacks:\n", (unsigned)sec);
     /* As the Linux watchdog: a run that stopped presenting shows where every thread waits. */
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
@@ -433,6 +435,16 @@ static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t 
     for (uint64_t i = 0; i < count; ++i)
         if (address >= segments[i].address && bytes <= segments[i].size &&
             address - segments[i].address <= segments[i].size - bytes) return 1;
+    return 0;
+}
+/* Whether the code at entry calls target (call rel32) within its first 64 bytes. */
+static int entry_calls(const unsigned char *image, uint64_t entry, uint64_t target) {
+    for (uint64_t at = entry; at < entry + 64; ++at) {
+        int32_t rel;
+        if (image[at] != 0xe8) continue;
+        memcpy(&rel, image + at + 1, sizeof rel);
+        if (at + 5 + (int64_t)rel == target) return 1;
+    }
     return 0;
 }
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
@@ -1171,9 +1183,13 @@ int main(int argc, char **argv) {
             if (result) fail("module initializer failed");
         }
     }
-    /* In ELF, DT_INIT runs before the main entry */
+    /* In ELF, DT_INIT runs before the main entry. The Order's entry (_start) calls it itself
+     * after _init_env and atexit, as on the PS4: running it here too constructed every global
+     * twice, mapping the engine's memory pools (1.6 GiB of direct memory) a second time. */
     uint64_t main_init = 0x20;
-    if (mapped(segments, ns, main_init, 1)) {
+    if (entry_calls(image, entry, main_init)) {
+        printf("Main executable initializer at offset 0x%" PRIx64 ": the entry runs it\n", main_init);
+    } else if (mapped(segments, ns, main_init, 1)) {
         printf("Running main executable initializer at offset 0x%" PRIx64 "\n", main_init);
         typedef void (ABI *MainInit)(void);
         ((MainInit)(image + main_init))();

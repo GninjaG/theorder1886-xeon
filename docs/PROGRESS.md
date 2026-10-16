@@ -31,6 +31,17 @@ tools and docs are gone; the launcher only offers options that work for The Orde
   against 58.3 FPS on average over 3+3 interleaved 70 s runs, 3960 flips in both (the GPU command
   thread, not the GPU, limits this machine).
 
+**Crash fixed (the user's, at a gameplay checkpoint):** `_start` (0xa0) calls the initializer
+at 0x20 itself, after `_init_env` and atexit, as on the PS4; probe.c called it as well, so every
+global was constructed twice and the engine's memory pools (8+24+810+654+52 MiB) were mapped
+twice. Direct memory then ran out when a save loads (`direct_allocate loop reject` at
+0x13c000000, then the Streaming IO thread read -1 at 0x7fe12b): reproduced with the user's save
+on the old build at 36 s. probe.c now leaves the initializer to the entry (`entry_calls`); with
+the same save the game runs 7 min, 4.22 of 5.3 GB of direct memory in use, allocations only at
+start and at the load. The watchdog stop prints the direct memory still in use.
+**Found:** from that save the gameplay (cover tutorial) shows a flat light blue picture
+(171,211,242) with only the HUD, ~480 draws per frame.
+
 ## 2026-10-15 (night): windows-v0.2.0
 
 **State:** 70 s prologue runs (warm cache): 0 faults in 30+ runs this session, 30 FPS after the
