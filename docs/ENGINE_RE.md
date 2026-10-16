@@ -5,6 +5,25 @@ porting. Tools: `llvm-objdump -d` (MSYS2 clang64), Rizin 0.9.1 (`rz-bin -zz` for
 string addresses are file offsets, 0x4000 above the virtual addresses past 0x1400000), and short
 Python scripts that resolve rip-relative constants from the ELF segments.
 
+## Decompiling with REA (Ghidra)
+
+REA admits only PE images to Ghidra on Windows, so `python scripts/eboot_pe.py <game folder>`
+wraps the eboot in one, `out/eboot_ghidra.exe`:
+- eboot address A is at **0x100000000 + A** (the PE headers need room below eboot address 0);
+- every relocation is applied; the 679 import slots are IAT entries named from
+  `src/import_names.inc` (26 of the 355 imports keep their NID);
+- the 27958 `.eh_frame_hdr` function starts are exported as `sub_<A>`, A in eboot coordinates,
+  plus `_init`, `_start` and `main`.
+
+The PE loader would pick the Windows x64 calling convention; the eboot uses System V, so the REA
+server needs `REA_GHIDRA_LANGUAGE_ID=x86:LE:64:default` and `REA_GHIDRA_COMPILER_SPEC_ID=gcc`.
+The first query of a session imports and analyzes the whole image (12 min on this PC, 654 s of
+them auto-analysis; nothing is kept between sessions), past REA's 330 s default:
+`REA_GHIDRA_STARTUP_TIMEOUT_MS=3600000`, `GHIDRA_HEADLESS_MAXMEM=8G`. REA must
+run from the published npm package (`C:\Users\Mateus\tools\rea`): the Windows Ghidra boundary
+needs its bundled native addon, which a source build lacks (`npx rea-agents@6.5.0` resolves to
+the global `npm link` of one).
+
 ## Start-up
 
 - `_start` (0xa0) calls `_init_env` and `atexit`, then the initializer at 0x20 (`.init_array` at

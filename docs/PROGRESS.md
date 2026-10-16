@@ -2,6 +2,18 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-16 (later): REA decompiles the eboot
+
+REA's Ghidra provider admits only PE images on Windows: `scripts/eboot_pe.py` wraps the eboot in
+one (docs/ENGINE_RE.md, "Decompiling with REA"), imported with the System V convention. Checked
+with the REA CLI: `main` decompiles with its imports named (`memset`, `__stack_chk_fail`) after a
+12-minute first analysis. Two setup problems: `npx rea-agents@6.5.0` ran a global `npm link` of a
+source build without the Windows native addon (the published package is now in
+`C:\Users\Mateus\tools\rea`), and Claude Code's first start of the server timed out while npx was
+downloading it. Next with REA: the writer of the black triangle's vertex buffer (VS 0ece32eb, 60
+bytes at stride 20: (-1,1,1,0,0) (3,1,1,2,0) (-1,-3,1,0,2), not a constant in the image) and the
+startup fault at 0x20aa22.
+
 ## 2026-10-16: God of War leftovers removed, aspect ratio option
 
 **Cleanup (18c2ae5, d36f8f4, 90a0060):** God of War III's cheats, patches, glyphs, fonts, icons,
