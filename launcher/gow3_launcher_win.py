@@ -348,10 +348,9 @@ READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), (
 # GOW3_NO_MSAA: '' leaves the game's own default, off on AMD's and Intel's Windows drivers
 # (video_core/amdgpu/gow3_msaa_default.h); no_msaa_options names the chosen card in Automatic.
 NO_MSAA = [('', ('Automatic',)), ('1', ('Off (fixes black lines)',)), ('0', ('On',))]
-NO_MSAA_HINT = ("The game's 2-sample depth buffer, read as a texture by its lighting. AMD's and Intel's Windows "
-                'drivers read it wrong and the lighting shows black lines, so Automatic turns multisampling off '
-                'on those cards (Radeon, Arc) and keeps it on elsewhere (NVIDIA). Off and On force the choice on '
-                'any card.')
+NO_MSAA_HINT = ("The game's multisampled (anti-aliased) images. Automatic keeps them on NVIDIA cards and turns "
+                'them off on Radeon and Arc, whose Windows drivers read multisampled depth wrong; Off and On force '
+                'the choice on any card.')
 STREAM_MEMORY = [('cached', ('System RAM (cached, default)',)),
                  ('host', ('System RAM (uncached)',)),
                  ('device', ('GPU memory (previous behavior)',))]
@@ -727,8 +726,6 @@ def game_environment(s):
 # The Order: 1886's colors: soot black, slate and aged brass.
 BG, PANEL, CARD, LINE = '#0c0d0f', '#141619', '#1b1e22', '#2b2f35'
 TEXT, MUTED, ACCENT, ACCENT_HI = '#e8e2d6', '#8d877c', '#a8803c', '#c9a051'
-RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('480p', ('480p',)), ('720p', ('720p',)),
-                      ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K',))]
 # '60' runs the game at its own 30 FPS (no frame rate patch); '120' asks for the frame rate patch,
 # which for this game is the 60 FPS one (run.py presents every vblank, capped at 60).
 ENGINE_FPS_CHOICES = [('60', ('30 (original)',)), ('120', ('60 (experimental)',))]
@@ -1086,7 +1083,6 @@ class Launcher:
             row=0, column=0, columnspan=4, sticky='w')
         tk.Frame(quick, bg=LINE, height=1).grid(row=1, column=0, columnspan=4, sticky='we', pady=(2, 6))
         items = ((_('Display mode'), 'display_mode', DISPLAY_MODES), (_('Frame rate limit'), 'fps_limit', FPS_LIMITS),
-                 (_('Render resolution'), 'render_resolution', RESOLUTION_CHOICES),
                  (_('Engine frame rate'), 'engine_fps', ENGINE_FPS_CHOICES))
         for index, (title, key, options) in enumerate(items):
             r, c = 2 + index // 2, (index % 2) * 2
@@ -1188,9 +1184,6 @@ class Launcher:
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
         self.row(f, _('Engine frame rate'), self.choice(f, 'engine_fps', 'ini', ENGINE_FPS_CHOICES),
                  _('The highest frame rate the game itself runs at (a game patch).'), restart=True)
-        self.row(f, _('Render resolution'), self.choice(f, 'render_resolution', 'ini', RESOLUTION_CHOICES),
-                 _('The size the game draws at; higher is sharper and slower. A resolution patch replaces the '
-                   'texture fix and reserves the memory it needs.'), restart=True)
         self.section(f, _('Shaders'))
         self.check(f, 'pipeline_binary_cache', 'app', _('Use pipeline binary cache (A/B test)'),
                    _('Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. '
@@ -1335,12 +1328,17 @@ class Launcher:
         chosen = self.app.get('game_patches', {}).get(title_id)
         on = set(chosen) if chosen is not None else {m.get('Name') for m in metas
                                                          if m.get('isEnabled', 'false').lower() == 'true'}
+        selectable = [m for m in metas if not m.get('Name').startswith(EXCLUSIVE_PREFIX)
+                      and not m.get('Name').startswith('Frame Rate Patch')]
+        if not selectable:
+            self.note(f, _('{} · version {}: the frame rate patch follows Engine frame rate (Performance).')
+                      .format(title_id, version), top=0)
+            self.game_patch_title = title_id
+            return
         self.note(f, _('{} · version {} · {}. Resolution and frame rate patches follow Performance.',
                        '{} · версия {} · {}.').format(title_id, version, xml.name), top=0)
-        for meta in metas:
+        for meta in selectable:
             name = meta.get('Name')
-            if name.startswith(EXCLUSIVE_PREFIX) or name.startswith('Frame Rate Patch'):
-                continue
             var = tk.BooleanVar(value=name in on)
             self.game_patch_vars[name] = var
             author = meta.get('Author')
@@ -1359,8 +1357,8 @@ class Launcher:
         """Loose-file mods layered over the game at start, on the Game page."""
         self.section(f, _('Mods', 'Моды'))
         self.check(f, 'mods_enabled', 'app', _('Load mods', 'Загружать моды'),
-                   _('Loose-file mods, each in its own folder with dvdroot_ps4.',
-                     'Моды из файлов, каждый в своей папке с dvdroot_ps4.'))
+                   _('Loose-file mods, each in its own folder with _data.',
+                     'Моды из файлов, каждый в своей папке с _data.'))
         self.folder(f, 'mods_dir', _('Mods folder', 'Папка модов'), _('Choose the mods folder', 'Выберите папку модов'),
                     _('Empty: {}', 'Пусто: {}').format(DATA_DIR / 'mods'), on_change=self.refresh_lists)
         self.mods_frame = self.ttk.Frame(f)
@@ -1577,11 +1575,13 @@ class Launcher:
         self.store_game_patches()
         title_id, _profile = game_profile_of(self.meta_dir())
         names = self.app.get('game_patches', {}).get(title_id) or []
-        resolution = dict((v, t[0]) for v, t in RESOLUTION_CHOICES).get(self.var('render_resolution', 'ini').get(), '?')
+        engine = dict((v, t[0]) for v, t in ENGINE_FPS_CHOICES).get(self.var('engine_fps', 'ini').get(), '?')
         from patches import game_patchable, patch_status
         if not game_patchable(self.meta_dir()):
-            return _('{} · 60 FPS engine · no patches for this game').format(resolution)
-        text = _('{} · {} FPS engine · {} patches').format(resolution, self.var('engine_fps', 'ini').get(), len(names))
+            return _('Frame rate {} · no patches for this game').format(_(engine))
+        text = _('Frame rate {}').format(_(engine))
+        if names:
+            text += ' · ' + _('{} patches').format(len(names))
         # Which patches the game's eboot.bin had is known once the game has started (patches.py).
         status = patch_status(DATA_DIR / 'out')
         if status and status.get('skipped'):

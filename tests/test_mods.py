@@ -20,7 +20,7 @@ class ModTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()  # the long name: build_overlay resolves the game folder
         self.game = self.root / 'CUSA01623'
-        self.assets = self.game / 'dvdroot_ps4' / 'data'
+        self.assets = self.game / '_data' / 'data'
         self.assets.mkdir(parents=True)
         (self.game / 'eboot.bin').write_bytes(b'original executable')
         (self.assets / 'a.wad').write_bytes(b'original')
@@ -29,7 +29,7 @@ class ModTests(unittest.TestCase):
 
     def mod(self, name, contents=b'mod', file='a.wad'):
         root = self.moddir / name
-        folder = root / 'dvdroot_ps4' / 'data'
+        folder = root / '_data' / 'data'
         folder.mkdir(parents=True, exist_ok=True)
         (folder / file).write_bytes(contents)
         return root
@@ -38,7 +38,7 @@ class ModTests(unittest.TestCase):
         a = self.mod('A')
         self.mod('A', b'new', 'new.wad')
         result = mods.build_overlay(self.game, self.root / 'out', [('A', a)])
-        folder = result / 'dvdroot_ps4' / 'data'
+        folder = result / '_data' / 'data'
         self.assertEqual((folder / 'a.wad').read_bytes(), b'mod')
         self.assertEqual((folder / 'b.wad').read_bytes(), b'untouched')
         self.assertEqual((folder / 'new.wad').read_bytes(), b'new')
@@ -51,7 +51,7 @@ class ModTests(unittest.TestCase):
         a, b = self.mod('A', b'A'), self.mod('B', b'B')
         for layers, winner in [([('A', a), ('B', b)], b'B'), ([('B', b), ('A', a)], b'A')]:
             result = mods.build_overlay(self.game, self.root / 'out', layers)
-            self.assertEqual((result / 'dvdroot_ps4/data/a.wad').read_bytes(), winner)
+            self.assertEqual((result / '_data/data/a.wad').read_bytes(), winner)
 
     def test_selection_disable_and_new_mod(self):
         for name in ['C', 'B', 'A']:
@@ -66,8 +66,8 @@ class ModTests(unittest.TestCase):
 
     def test_directory_conflict_does_not_modify_base(self):
         a = self.mod('A')
-        (a / 'dvdroot_ps4/data/a.wad').unlink()
-        nested = a / 'dvdroot_ps4/data/b.wad'
+        (a / '_data/data/a.wad').unlink()
+        nested = a / '_data/data/b.wad'
         nested.mkdir()
         (nested / 'child').write_bytes(b'bad')
         with self.assertRaises(ValueError):
@@ -77,7 +77,7 @@ class ModTests(unittest.TestCase):
 
     def test_mod_symlinks_rejected(self):
         a = self.mod('A')
-        link = a / 'dvdroot_ps4/escape'
+        link = a / '_data/escape'
         try:
             link.symlink_to(self.assets, target_is_directory=True)
         except OSError:
@@ -98,32 +98,32 @@ class ModTests(unittest.TestCase):
 
     def test_shadps4_sibling_folder_and_global_disable(self):
         legacy = Path(str(self.game) + '-mods')
-        folder = legacy / 'dvdroot_ps4/data'
+        folder = legacy / '_data/data'
         folder.mkdir(parents=True)
         (folder / 'a.wad').write_bytes(b'legacy')
         for enabled, expected in [('1', b'legacy'), ('0', b'original')]:
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/mods.py'), str(self.game),
                 '--out', str(self.root / 'out'), '--mods-dir', str(self.moddir), '--enabled', enabled],
                 capture_output=True, text=True, check=True)
-            self.assertEqual((Path(result.stdout.strip()) / 'dvdroot_ps4/data/a.wad').read_bytes(), expected)
+            self.assertEqual((Path(result.stdout.strip()) / '_data/data/a.wad').read_bytes(), expected)
 
     def test_app0_wrapped_mod_discovered(self):
         self.moddir.mkdir()
-        (self.moddir / 'Wrapped/app0/dvdroot_ps4').mkdir(parents=True)
+        (self.moddir / 'Wrapped/app0/_data').mkdir(parents=True)
         self.assertEqual(mods.discover(self.moddir), ['Wrapped'])
 
     def test_other_case_replaces_the_game_file(self):
         root = self.moddir / 'Upper'
-        (root / 'DVDROOT_PS4/Data').mkdir(parents=True)
-        (root / 'DVDROOT_PS4/Data/A.WAD').write_bytes(b'upper')
+        (root / '_DATA/Data').mkdir(parents=True)
+        (root / '_DATA/Data/A.WAD').write_bytes(b'upper')
         result = mods.build_overlay(self.game, self.root / 'out', [('Upper', root)])
-        folder = result / 'dvdroot_ps4/data'
+        folder = result / '_data/data'
         self.assertEqual((folder / 'a.wad').read_bytes(), b'upper')
         self.assertEqual({p.name for p in folder.iterdir()}, {'a.wad', 'b.wad'})
-        self.assertEqual({p.name for p in result.iterdir()}, {'dvdroot_ps4', 'eboot.bin'})
+        self.assertEqual({p.name for p in result.iterdir()}, {'_data', 'eboot.bin'})
 
     def test_wrapped_layouts(self):
-        layouts = {'Archive': 'Archive v1.2/dvdroot_ps4/data', 'Nested': 'Nested/app0/dvdroot_ps4/data'}
+        layouts = {'Archive': 'Archive v1.2/_data/data', 'Nested': 'Nested/app0/_data/data'}
         for name, path in layouts.items():
             folder = self.moddir / name / path
             folder.mkdir(parents=True)
@@ -135,7 +135,7 @@ class ModTests(unittest.TestCase):
             with self.subTest(name=name):
                 result = mods.build_overlay(self.game, self.root / 'out',
                                             [(name, self.moddir / name)])
-                self.assertEqual((result / 'dvdroot_ps4/data/a.wad').read_bytes(), name.encode())
+                self.assertEqual((result / '_data/data/a.wad').read_bytes(), name.encode())
 
     def test_invalid_profile_fails(self):
         self.mod('A')
@@ -157,7 +157,7 @@ class ModTests(unittest.TestCase):
         probe.write_text(f'#!{sys.executable}\nimport json,sys,os\nfrom pathlib import Path\n'
             'game=Path(sys.argv[sys.argv.index("--app0")+1])\n'
             'Path(os.environ["GOW3_DATA_DIR"],"mounted.json").write_text(json.dumps({\n'
-            '"path":str(game),"content":(game/"dvdroot_ps4/data/a.wad").read_text()}))\n'
+            '"path":str(game),"content":(game/"_data/data/a.wad").read_text()}))\n'
             'sys.exit(7)\n')
         probe.chmod(0o755)
         env = dict(os.environ, GOW3_PROBE=str(probe),

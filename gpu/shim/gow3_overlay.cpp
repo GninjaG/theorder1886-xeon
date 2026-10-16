@@ -320,14 +320,15 @@ void PerformanceTab() {
         static const char* const fps_labels[] = {"30", "60", "120", "240", "Unlimited"};
         ChoiceRow("Frame rate limit", s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
                   "Caps the frame rate. The engine frame rate (below) is the highest it can go.");
-        const int effective = G::EffectiveFps(s.fps_limit, s.applied_engine_fps);
+        // The Order presents every other vblank of its engine rate: 30 FPS at "60", 60 with the patch.
+        const int effective = G::EffectiveFps(s.fps_limit, s.applied_engine_fps / 2);
         if (s.fps_limit == 0 || effective < s.fps_limit) {
             char text[48];
             std::snprintf(text, sizeof(text), "%d FPS (engine frame rate)", effective);
             InfoRow("Effective limit", text);
         }
         if (s.applied_engine_fps < s.startup_engine_fps) {
-            InfoRow("Engine frame rate", "60 FPS: the frame rate patch is not available for this game build");
+            InfoRow("Engine frame rate", "30 FPS: the 60 FPS patch is not available for this game build");
         }
         static const char* const queued_labels[] = {"1 (lowest latency)", "2", "Unlimited"};
         ChoiceRow("Frames queued", s.frames_queued, queued_labels, G::FramesQueued.data(),
@@ -338,12 +339,10 @@ void PerformanceTab() {
     }
     ImGui::SeparatorText("Applied on restart");
     if (BeginRows("##restart")) {
-        static const char* const resolution_labels[] = {"Native (1080p)", "480p", "720p", "1440p", "1800p", "4K"};
-        ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr, int(G::Resolutions.size()),
-                  "The resolution the game draws at. Higher is sharper and slower.");
-        static const char* const engine_labels[] = {"60 (original)", "120", "240"};
-        ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(), int(G::EngineFps.size()),
-                  "The highest frame rate the game itself runs at.");
+        // Engine 60 is The Order's own 30 FPS; 120 asks for its 60 FPS patch.
+        static const char* const engine_labels[] = {"30 (original)", "60 (experimental)"};
+        ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(), 2,
+                  "The highest frame rate the game itself runs at (a game patch).");
         CheckRow("Game reads GPU data without waiting", s.stale_readback,
                  "Big FPS gain. Switch it off if lighting or objects look wrong.");
         CheckRow("Deferred GPU readbacks", s.deferred_readback,

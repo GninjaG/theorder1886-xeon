@@ -55,8 +55,8 @@ Problemas conhecidos:
 ## Controles
 
 Controle (DualSense, Xbox e outros, via SDL3) e teclado funcionam juntos; a tabela de teclas está
-no README. Não há suporte a mouse. **Insert** (ou R3+L2 no controle) abre o menu do port; as
-trapaças desse menu são do port de God of War III e aparecem como indisponíveis neste jogo.
+no README. Não há suporte a mouse. **Insert** (ou R3+L2 no controle) abre o menu do port (tela,
+limite de quadros e overlay de desempenho).
 
 ## Arquivos (código-fonte)
 

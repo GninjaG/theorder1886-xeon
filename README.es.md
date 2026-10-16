@@ -118,8 +118,7 @@ El teclado aún no tiene el botón Options. En mandos sin panel táctil, View (B
 derecho del panel. `GOW3_KEY_MAP` y `GOW3_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
 
 El menú del port (Insert) tiene las opciones de pantalla, límite de fotogramas y la superposición
-de rendimiento. Sus trucos y multiplicadores vienen del port de God of War III y no hacen nada en
-este juego: sus hooks no se instalan en The Order.
+de rendimiento.
 
 ## Parches
 
@@ -142,11 +141,10 @@ modifican. Todos los parches vienen desactivados.
   con una ejecución a 30 FPS). Logos y título se mantienen a 60 FPS; en una sesión de 240 s del
   prólogo cada ventana de 5 s quedó entre 41 y 60 FPS (57 de media), con las caídas donde el hilo de
   comandos de la GPU está ocupado todo el fotograma (600 a 700 draws por fotograma).
-- Saltar logos, saltar el prólogo (Westminster o Capítulo 1), cerrar la pantalla de título:
-  escritos en sesiones anteriores de desarrollo y sin comprobar. Los parches de 900p, 720p y de
-  quitar las franjas negras de esa época se retiraron: sus direcciones caían en medio de
-  instrucciones (allí no estaban el tamaño ni la proporción de la imagen) y activarlos corrompía
-  el código.
+- Los demás parches escritos en sesiones anteriores se retiraron tras probarlos: saltar logos no
+  cambiaba nada, cerrar la pantalla de título dejaba la pantalla en negro, los dos de saltar el
+  prólogo no se pudieron comprobar, y los de 900p, 720p y de quitar las franjas negras escribían en
+  medio de instrucciones (activarlos corrompía el código).
 
 ## Ajustes y diagnóstico
 

@@ -267,8 +267,6 @@ def main():
             env.setdefault('SDL_APP_ID', 'theorder')
             if (PORT / 'launcher' / 'theorder.png').is_file():
                 icon_file = PORT / 'launcher' / 'theorder.png'
-            elif (PORT / 'launcher' / 'gow3.png').is_file():
-                icon_file = PORT / 'launcher' / 'gow3.png'
         try:
             from PIL import Image
             with Image.open(icon_file) as icon:

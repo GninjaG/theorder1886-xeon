@@ -17,11 +17,11 @@ install -m755 out/gpu/libgow3gpu.so "$share/bin/gpu/"
 cp run.py "$share/"
 cp -r scripts patches "$share/"
 mkdir -p "$share/launcher"
-# The icon of the AppImage, the launcher and the game window: packaging/linux/gow3.png when it
+# The icon of the AppImage, the launcher and the game window: packaging/linux/theorder.png when it
 # exists (a local choice), else the launcher's own.
-icon=launcher/gow3.png
-[[ -f packaging/linux/gow3.png ]] && icon=packaging/linux/gow3.png
-install -m644 "$icon" "$share/launcher/gow3.png"
+icon=launcher/theorder.png
+[[ -f packaging/linux/theorder.png ]] && icon=packaging/linux/theorder.png
+install -m644 "$icon" "$share/launcher/theorder.png"
 
 # The launcher also runs run.py (--run) and the preparation scripts (--script) itself, as on
 # Windows: the standard modules those scripts import come along as hidden imports.

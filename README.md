@@ -114,9 +114,7 @@ Controllers (DualSense, Xbox and others) work through SDL3, together with the ke
 The keyboard has no Options button yet. On a controller without a touchpad, View (Back) is the
 right touchpad click. `GOW3_KEY_MAP` and `GOW3_PAD_MAP` change the buttons (`src/runtime_pad.c`).
 
-The port's menu (Insert) holds the display, frame limit and performance overlay settings. Its
-cheats and stat multipliers come from the God of War III port and do nothing in this game: their
-hooks are not installed for The Order.
+The port's menu (Insert) holds the display, frame limit and performance overlay settings.
 
 ## Patches
 
@@ -137,10 +135,10 @@ Every patch is off by default.
   Game speed stays correct (frame dumps line up in time with a 30 FPS run). The logos and the
   title hold 60 FPS; in a 240 s run of the prologue every 5 s window averaged 41-60 FPS (57 overall),
   the dips where the GPU command thread is busy all frame (600-700 draws per frame).
-- Skip Intro Logos, Skip Prologue (Westminster or Chapter 1), Auto-Dismiss Title Screen: written
-  during earlier development and not verified. The 900p, 720p and letterbox removal patches of
-  that time were removed: their addresses fell inside instructions (no immediate of the size or
-  aspect ratio there), so enabling them corrupted the code.
+- The other patches written during earlier development were removed after testing: Skip Intro
+  Logos changed nothing, Auto-Dismiss Title Screen left a black screen, the two Skip Prologue
+  patches could not be verified, and the 900p, 720p and letterbox removal patches wrote inside
+  instructions (enabling them corrupted the code).
 
 ## Settings and diagnostics
 

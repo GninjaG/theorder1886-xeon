@@ -156,7 +156,7 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
   ~95% of the remaining stutter is the driver compiling new permutations of `0x804aeead`
   (~180 ms each, ~10 s per 40 s run, combinations of 2D/cube/3D textures per slot). Dispatches
   are skipped until the pipeline is ready, as draws already are. Builds; needs a validation run,
-  a batch and a look at frame dumps (`THEORDER_FRAME_DUMP_INTERVAL`, `convert_dumps.py`).
+  a batch and a look at frame dumps (`THEORDER_FRAME_DUMP_INTERVAL`, `tools/convert_dumps.py`).
 
 **Open**
 - `GOW3_STAGE_CHECK` still reports `PrepareFrame` once per run near flip #1 (counting added to

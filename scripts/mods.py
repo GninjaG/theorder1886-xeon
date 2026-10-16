@@ -9,6 +9,24 @@ import shutil
 import sys
 import tempfile
 
+# The Order's content in the game folder: what a mod may replace or add (never eboot.bin,
+# sce_module or sce_sys).
+CONTENT_FOLDERS = ('_data', 'bin', 'TO1886GAMEDLC100', 'TO1886GAMEDLC200')
+CONTENT_FILES = ('archivemap.bin',)
+
+
+def is_content(relative):
+    """Whether a game-relative path is game content a mod may lay over."""
+    first = relative.parts[0].casefold()
+    if len(relative.parts) == 1:
+        return first in (f.casefold() for f in CONTENT_FILES)
+    return first in (f.casefold() for f in CONTENT_FOLDERS)
+
+
+def has_content(folder):
+    return any(child(folder, name).is_dir() for name in CONTENT_FOLDERS)
+
+
 def child(folder, name):
     """`name` inside `folder`, matching an existing entry case-insensitively (mods made on
     Windows often differ from the game's lower-case names)."""
@@ -22,15 +40,14 @@ def child(folder, name):
 def content_root(folder):
     """(root, prefix): where a mod's files are and the game path they go to, or None.
 
-    Accepted layouts: <mod>/dvdroot_ps4, <mod>/app0/dvdroot_ps4 and one wrapper folder around
-    either (an archive extracted into a folder of its name)."""
+    Accepted layouts: <mod>/_data (or another content folder: CONTENT_FOLDERS), <mod>/app0/_data
+    and one wrapper folder around either (an archive extracted into a folder of its name)."""
     folder = Path(folder)
     if not folder.is_dir():
         return None
     for wrapper in ('', 'app0'):
         base = child(folder, wrapper) if wrapper else folder
-        dvdroot = child(base, 'dvdroot_ps4')
-        if dvdroot.is_dir():
+        if has_content(base):
             return base, ''
     entries = [e for e in folder.iterdir() if not e.name.startswith('.')]
     folders = [e for e in entries if e.is_dir()]
@@ -67,10 +84,10 @@ def selected(root, config):
 
 
 def mod_files(folder):
-    """(game path, source) of every file a mod replaces or adds under dvdroot_ps4."""
+    """(game path, source) of every file a mod replaces or adds in the game's content."""
     layout = content_root(folder)
     if not layout:
-        raise ValueError(f'{folder}: expected dvdroot_ps4 (or chr/, parts/, ...) inside the mod folder')
+        raise ValueError(f'{folder}: expected _data (or another game content folder) inside the mod folder')
     root, prefix = layout
     root = root.resolve()
     for directory, folders, files in os.walk(root, followlinks=False):
@@ -86,7 +103,7 @@ def mod_files(folder):
             relative = Path(prefix) / source.relative_to(root) if prefix else source.relative_to(root)
             # Readme/metadata stay outside the mounted game. This loader handles assets;
             # executable patches use the existing patch compiler, with address validation.
-            if relative.parts[0].casefold() != 'dvdroot_ps4':
+            if not is_content(relative):
                 if relative.parts[0].casefold() in ('eboot.bin', 'sce_module', 'sce_sys'):
                     raise ValueError(f'Executable/system replacement is unsupported: {source}')
                 continue
@@ -249,7 +266,7 @@ def main():
         if legacy.is_dir():
             layers.append((legacy.name, legacy))
         # A directly selected loose overlay is also accepted.
-        if child(args.mods_dir, 'dvdroot_ps4').is_dir():
+        if has_content(args.mods_dir):
             layers.append((args.mods_dir.name, args.mods_dir))
         else:
             for name in selected(args.mods_dir, args.config):

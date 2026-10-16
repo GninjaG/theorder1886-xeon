@@ -758,8 +758,8 @@ EXTRA = {
         'Automatic ({}: off)': 'Automático ({}: desligado)',
         'Automatic ({}: on)': 'Automático ({}: ligado)',
         'Off (fixes black lines)': 'Desligado (corrige as linhas pretas)',
-        "The game's 2-sample depth buffer, read as a texture by its lighting. AMD's and Intel's Windows drivers read it wrong and the lighting shows black lines, so Automatic turns multisampling off on those cards (Radeon, Arc) and keeps it on elsewhere (NVIDIA). Off and On force the choice on any card.":
-            'O buffer de profundidade de 2 amostras do jogo, lido como textura pela iluminação. Os drivers da AMD e da Intel no Windows o leem errado e a iluminação mostra linhas pretas, então Automático desliga o multisampling nessas placas (Radeon, Arc) e o mantém nas demais (NVIDIA). Desligado e Ligado forçam a escolha em qualquer placa.',
+        "The game's multisampled (anti-aliased) images. Automatic keeps them on NVIDIA cards and turns them off on Radeon and Arc, whose Windows drivers read multisampled depth wrong; Off and On force the choice on any card.":
+            'As imagens do jogo com multisampling (antisserrilhado). Automático o mantém nas placas NVIDIA e o desliga nas Radeon e Arc, cujos drivers no Windows leem errado a profundidade com multisampling; Desligado e Ligado forçam a escolha em qualquer placa.',
         'Display': 'Tela',
         'How the game appears on your screen.': 'Como o jogo aparece na sua tela.',
         'Display mode': 'Modo de exibição',
@@ -796,13 +796,7 @@ EXTRA = {
         'Deferred GPU readbacks': 'Leituras da GPU adiadas',
         'Fewer waits for the GPU. Switch it off if textures or shadows look wrong.': 'Menos esperas pela GPU. Desative se texturas ou sombras parecerem erradas.',
         'Your game dump, saves and language.': 'Seu dump do jogo, saves e idioma.',
-        'Cheats': 'Cheats',
-        'Infinite Double Jumps': 'Pulos duplos infinitos',
-        'Repeat air jumps without landing. Also available in the in-game Cheats menu.': 'Repete pulos no ar sem tocar o chão. Também está no menu de Cheats do jogo.',
-        'Unlock Very Hard': 'Liberar Muito Difícil',
-        'Select Very Hard without completing the game. Does not change existing save difficulty. In-game: enable before opening New Game.': 'Seleciona Muito Difícil sem terminar o jogo. Não muda a dificuldade de saves existentes. No jogo: ative antes de abrir Novo Jogo.',
         'Folders': 'Pastas',
-        'Your own dump of the game (eboot.bin, sce_module, sce_sys); God of War III Remastered: CUSA00035, version 01.02 for the community patches.': 'Seu próprio dump do jogo (eboot.bin, sce_module, sce_sys); God of War III Remastered: CUSA00035, versão 01.02 para os patches da comunidade.',
         'Update folder (optional)': 'Pasta do update (opcional)',
         'Choose the folder of the update (eboot.bin, sce_sys)': 'Escolha a pasta do update (eboot.bin, sce_sys)',
         'Only if the update is dumped apart from the game: it is laid over the game folder without changing either. Leave empty when the game folder already has the update.': 'Só se o update foi dumpado separado do jogo: ele é colocado por cima da pasta do jogo sem alterar nenhuma das duas. Deixe vazio quando a pasta do jogo já tiver o update.',
@@ -811,7 +805,7 @@ EXTRA = {
         'Save backups': 'Backups de saves',
         'Changes applied to the game code at start.': 'Alterações aplicadas ao código do jogo na inicialização.',
         'Files layered over the game at start; the game files are never changed.': 'Arquivos colocados por cima do jogo na inicialização; os arquivos do jogo nunca são alterados.',
-        'Loose-file mods, each in its own folder with dvdroot_ps4.': 'Mods de arquivos soltos, cada um na sua pasta com dvdroot_ps4.',
+        'Loose-file mods, each in its own folder with _data.': 'Mods de arquivos soltos, cada um na sua pasta com _data.',
         'Controls': 'Controles',
         'Which key or gamepad button presses each button of the game.': 'Qual tecla ou botão do controle aciona cada botão do jogo.',
         'Gamepad names': 'Nomes dos botões do controle',
@@ -902,10 +896,8 @@ EXTRA = {
         'Choose two separate folders for the game and its update, or leave the update folder empty.': 'Escolha duas pastas separadas para o jogo e o update, ou deixe a pasta do update em branco.',
         'Copying the system files…': 'Copiando os arquivos de sistema…',
         'The update folder {} is incomplete. Missing or empty files:\n\n{}\n\nChoose the folder of the update (eboot.bin, sce_sys), or leave it empty.': 'A pasta do update {} está incompleta. Arquivos faltando ou vazios:\n\n{}\n\nEscolha a pasta do update (eboot.bin, sce_sys), ou deixe em branco.',
-        'In-game button icons': 'Ícones dos botões no jogo',
         'Original (default)': 'Original (padrão)',
         'Match my controller': 'Igual ao meu controle',
-        "Replaces the PlayStation button icons inside the game with the ones of your controller. Works on a copy of two game files in the port's data folder (about 70 MB); your game folder is never changed. Applied when the game starts.": 'Troca os ícones de botões PlayStation dentro do jogo pelos do seu controle. Funciona com uma cópia de dois arquivos do jogo na pasta de dados do port (cerca de 70 MB); a pasta do jogo nunca é alterada. Aplicado quando o jogo inicia.',
     },
     'es': {
         '30 (original)': '30 (original)',
@@ -916,8 +908,8 @@ EXTRA = {
         'Automatic ({}: off)': 'Automático ({}: desactivado)',
         'Automatic ({}: on)': 'Automático ({}: activado)',
         'Off (fixes black lines)': 'Desactivado (corrige las líneas negras)',
-        "The game's 2-sample depth buffer, read as a texture by its lighting. AMD's and Intel's Windows drivers read it wrong and the lighting shows black lines, so Automatic turns multisampling off on those cards (Radeon, Arc) and keeps it on elsewhere (NVIDIA). Off and On force the choice on any card.":
-            'El búfer de profundidad de 2 muestras del juego, leído como textura por su iluminación. Los controladores de AMD e Intel en Windows lo leen mal y la iluminación muestra líneas negras, así que Automático desactiva el multisampling en esas tarjetas (Radeon, Arc) y lo mantiene en las demás (NVIDIA). Desactivado y Activado fuerzan la elección en cualquier tarjeta.',
+        "The game's multisampled (anti-aliased) images. Automatic keeps them on NVIDIA cards and turns them off on Radeon and Arc, whose Windows drivers read multisampled depth wrong; Off and On force the choice on any card.":
+            'Las imágenes del juego con multisampling (antialiasing). Automático lo mantiene en las tarjetas NVIDIA y lo desactiva en las Radeon y Arc, cuyos controladores en Windows leen mal la profundidad con multisampling; Desactivado y Activado fuerzan la elección en cualquier tarjeta.',
         'Display': 'Pantalla',
         'How the game appears on your screen.': 'Cómo se ve el juego en tu pantalla.',
         'Display mode': 'Modo de pantalla',
@@ -970,16 +962,7 @@ EXTRA = {
         'Fewer waits for the GPU. Switch it off if textures or shadows look wrong.':
             'Menos esperas por la GPU. Desactívalo si las texturas o las sombras se ven mal.',
         'Your game dump, saves and language.': 'Tu volcado del juego, partidas e idioma.',
-        'Cheats': 'Trucos',
-        'Infinite Double Jumps': 'Dobles saltos infinitos',
-        'Repeat air jumps without landing. Also available in the in-game Cheats menu.':
-            'Repite los saltos en el aire sin tocar el suelo. También está en el menú de trucos del juego.',
-        'Unlock Very Hard': 'Desbloquear Muy difícil',
-        'Select Very Hard without completing the game. Does not change existing save difficulty. In-game: enable before opening New Game.':
-            'Permite elegir Muy difícil sin completar el juego. No cambia la dificultad de las partidas existentes. En el juego: actívalo antes de abrir Nuevo juego.',
         'Folders': 'Carpetas',
-        'Your own dump of the game (eboot.bin, sce_module, sce_sys); God of War III Remastered: CUSA00035, version 01.02 for the community patches.':
-            'Tu propio volcado del juego (eboot.bin, sce_module, sce_sys); God of War III Remastered: CUSA00035, versión 01.02 para los parches de la comunidad.',
         'Update folder (optional)': 'Carpeta de la actualización (opcional)',
         'Choose the folder of the update (eboot.bin, sce_sys)':
             'Elige la carpeta de la actualización (eboot.bin, sce_sys)',
@@ -992,8 +975,8 @@ EXTRA = {
             'Cambios que se aplican al código del juego al iniciar.',
         'Files layered over the game at start; the game files are never changed.':
             'Archivos que se superponen al juego al iniciar; los archivos del juego nunca se modifican.',
-        'Loose-file mods, each in its own folder with dvdroot_ps4.':
-            'Mods de archivos sueltos, cada uno en su propia carpeta con dvdroot_ps4.',
+        'Loose-file mods, each in its own folder with _data.':
+            'Mods de archivos sueltos, cada uno en su propia carpeta con _data.',
         'Controls': 'Controles',
         'Which key or gamepad button presses each button of the game.':
             'Qué tecla o botón del mando activa cada botón del juego.',
@@ -1110,11 +1093,8 @@ EXTRA = {
         'Copying the system files…': 'Copiando los archivos del sistema…',
         'The update folder {} is incomplete. Missing or empty files:\n\n{}\n\nChoose the folder of the update (eboot.bin, sce_sys), or leave it empty.':
             'La carpeta de la actualización {} está incompleta. Archivos que faltan o están vacíos:\n\n{}\n\nElige la carpeta de la actualización (eboot.bin, sce_sys) o déjala vacía.',
-        'In-game button icons': 'Iconos de botones en el juego',
         'Original (default)': 'Original (predeterminado)',
         'Match my controller': 'Igual que mi mando',
-        "Replaces the PlayStation button icons inside the game with the ones of your controller. Works on a copy of two game files in the port's data folder (about 70 MB); your game folder is never changed. Applied when the game starts.":
-            'Sustituye los iconos de botones de PlayStation dentro del juego por los de tu mando. Trabaja sobre una copia de dos archivos del juego en la carpeta de datos del port (unos 70 MB); tu carpeta del juego nunca se modifica. Se aplica al iniciar el juego.',
     },
 }
 

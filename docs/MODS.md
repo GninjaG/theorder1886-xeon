@@ -9,14 +9,14 @@ A pasta padrão é `mods/` no diretório de dados. Cada mod fica na sua própria
 ```text
 mods/
   Nome do mod/
-    dvdroot_ps4/...
+    _data/...
 ```
 
 Também são aceitos:
 
-- `Nome do mod/app0/dvdroot_ps4/...`;
+- `Nome do mod/app0/_data/...`;
 - uma pasta a mais por fora, como a de um arquivo extraído numa pasta com o nome dele:
-  `Nome do mod/Nome do mod v1.2/dvdroot_ps4/...` (readme e imagens ao lado são ignorados).
+  `Nome do mod/Nome do mod v1.2/_data/...` (readme e imagens ao lado são ignorados).
 
 Maiúsculas e minúsculas nos nomes do mod não importam: um arquivo com outra caixa troca o
 arquivo do jogo de mesmo nome. O log mostra quantos arquivos o mod trocou e quantos acrescentou:
@@ -24,7 +24,7 @@ arquivo do jogo de mesmo nome. O log mostra quantos arquivos o mod trocou e quan
 `0 game files replaced`, confira os caminhos dentro dele. Arquivos ZIP/7z precisam ser extraídos
 antes. Dois mods que trocam o mesmo arquivo não são mesclados: o último vence inteiro.
 
-Uma pasta `<pasta do jogo>-mods/dvdroot_ps4/...` ao lado da pasta do jogo (convenção do shadPS4)
+Uma pasta `<pasta do jogo>-mods/_data/...` ao lado da pasta do jogo (convenção do shadPS4)
 entra antes dos mods da lista. A chave geral também a desliga.
 
 Os arquivos do jogo nunca são alterados. A cada início é montada uma árvore de links em
@@ -38,8 +38,8 @@ do mod são recusados.
 Pelo terminal:
 
 ```sh
-GOW3_GAME_DIR=/caminho/CUSA01623 GOW3_MODS_DIR=/caminho/mods python run.py
-GOW3_GAME_DIR=/caminho/CUSA01623 GOW3_MODS_ENABLED=0 python run.py
+GOW3_GAME_DIR=/caminho/CUSA00035 GOW3_MODS_DIR=/caminho/mods python run.py
+GOW3_GAME_DIR=/caminho/CUSA00035 GOW3_MODS_ENABLED=0 python run.py
 ```
 
 Ordem e desativações ficam em `mods.json` no diretório de dados:
@@ -66,5 +66,5 @@ são ignorados. A ativação padrão vem do `isEnabled` do arquivo; a escolha do
 Tipos de linha aceitos: `bytes`, `bytes16/32/64`, `float32/64`, `utf8`, `utf16`. Um patch com
 linhas `mask` (busca por padrão) ou com endereço fora do eboot é ignorado inteiro, com aviso no
 log. Os patches de terceiros são aplicados depois dos embutidos
-(`patches/God_of_War_III_Remastered.xml`): onde os dois escrevem, vence o de terceiros. Pelo
+(`patches/TheOrder1886-Orbis.xml`): onde os dois escrevem, vence o de terceiros. Pelo
 terminal: `GOW3_PATCHES_DIR=/caminho GOW3_PATCHES_CONFIG=/caminho/patches.json python run.py`.

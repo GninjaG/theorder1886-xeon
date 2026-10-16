@@ -16,18 +16,18 @@ class ModConflictTest(unittest.TestCase):
 
     def mod(self, name, *files):
         for file in files:
-            path = self.root / name / 'dvdroot_ps4' / file
+            path = self.root / name / '_data' / file
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'x')
 
     def test_last_in_order_wins(self):
-        self.mod('a', 'chr/kratos.wad', 'ui/hud.wad')
-        self.mod('b', 'chr/kratos.wad')
-        self.mod('c', 'CHR/Kratos.wad', 'music.wad')
+        self.mod('a', 'chr/galahad.ark', 'ui/hud.wad')
+        self.mod('b', 'chr/galahad.ark')
+        self.mod('c', 'CHR/Galahad.ARK', 'music.wad')
         found = mods.conflicts(self.root, ['a', 'b', 'c'])
         self.assertEqual(len(found), 1)
         path, owners = found[0]
-        self.assertEqual(path.casefold(), 'dvdroot_ps4/chr/kratos.wad')
+        self.assertEqual(path.casefold(), '_data/chr/galahad.ark')
         self.assertEqual(owners, ['a', 'b', 'c'])  # c, the last one, wins
 
     def test_only_given_mods_count(self):

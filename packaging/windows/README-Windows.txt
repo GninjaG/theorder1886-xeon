@@ -31,7 +31,7 @@ FPS (heavy scenes dip to the 40s).
 
 While playing
 - Insert on the keyboard, or R3 + L2 on the controller, opens the port's menu (display, frame
-  limit, performance overlay). Its cheats are God of War III's and show as unavailable here.
+  limit, performance overlay).
 - Keyboard: WASD move, arrows camera, Space or Enter = Cross, Left Shift or Esc = Circle,
   E = Square, Q = Triangle, 1/3 = L1/R1, R/F = L2/R2, Z/C = L3/R3.
 
@@ -56,5 +56,5 @@ Como jogar: extraia a pasta, abra "The Order 1886.exe" (se o Windows avisar, cli
 informações" e "Executar assim mesmo"), escolha a pasta do jogo na página Jogo e clique em JOGAR.
 A primeira execução demora mais (preparação da imagem do jogo e dos shaders).
 
-No jogo: Insert (ou R3 + L2 no controle) abre o menu do port. As trapaças desse menu são do God
-of War III e aparecem como indisponíveis aqui.
+No jogo: Insert (ou R3 + L2 no controle) abre o menu do port (tela, limite de quadros e overlay de
+desempenho).

@@ -263,10 +263,11 @@ def prepare(game, out):
     (out / 'entry.bin').write_bytes(image[:1024])
     resources = collections.Counter()
     total_bytes = 0
-    for path in (game / 'dvdroot_ps4').rglob('*'):
-        if path.is_file():
-            resources[path.relative_to(game / 'dvdroot_ps4').parts[0]] += 1
-            total_bytes += path.stat().st_size
+    for folder in ('_data', 'bin', 'TO1886GAMEDLC100', 'TO1886GAMEDLC200'):  # mods.CONTENT_FOLDERS
+        for path in (game / folder).rglob('*'):
+            if path.is_file():
+                resources[folder] += 1
+                total_bytes += path.stat().st_size
     report = dict(source_sha256=hashlib.sha256(source).hexdigest(), source_bytes=len(source),
                   sfo=sfo((game / 'sce_sys/param.sfo').read_bytes()), entry=hex(header[4]),
                   image_bytes=size, program_headers=ph, self_segments=segments,

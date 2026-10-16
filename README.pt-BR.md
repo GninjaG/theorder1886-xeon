@@ -114,9 +114,7 @@ Controles (DualSense, Xbox e outros) funcionam pelo SDL3, junto com o teclado.
 O teclado ainda não tem o botão Options. Em controles sem touchpad, View (Back) é o clique
 direito do touchpad. `GOW3_KEY_MAP` e `GOW3_PAD_MAP` trocam os botões (`src/runtime_pad.c`).
 
-O menu do port (Insert) tem as opções de tela, limite de quadros e o overlay de desempenho. As
-trapaças e os multiplicadores dele vêm do port de God of War III e não fazem nada neste jogo: os
-hooks deles não são instalados no The Order.
+O menu do port (Insert) tem as opções de tela, limite de quadros e o overlay de desempenho.
 
 ## Patches
 
@@ -138,10 +136,10 @@ alterados. Todos os patches vêm desligados.
   30 FPS). Logos e título ficam em 60 FPS; numa sessão de 240 s do prólogo cada janela de 5 s ficou
   entre 41 e 60 FPS (57 na média), com as quedas onde a thread de comandos da GPU fica ocupada o
   quadro todo (600 a 700 draws por quadro).
-- Pular logos, pular o prólogo (Westminster ou Capítulo 1), dispensar a tela de título: escritos
-  em sessões anteriores de desenvolvimento e não verificados. Os patches de 900p, 720p e de
-  remover as faixas pretas daquela época foram retirados: seus endereços caíam no meio de
-  instruções (não havia ali o tamanho nem a proporção da tela), e ativá-los corrompia o código.
+- Os outros patches escritos em sessões anteriores foram retirados depois de testados: pular
+  logos não mudava nada, dispensar a tela de título deixava a tela preta, os dois de pular o
+  prólogo não puderam ser verificados, e os de 900p, 720p e de remover as faixas pretas escreviam
+  no meio de instruções (ativá-los corrompia o código).
 
 ## Configurações e diagnóstico
 
