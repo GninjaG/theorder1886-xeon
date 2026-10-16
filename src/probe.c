@@ -156,6 +156,19 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
         fprintf(stderr,"  thread name: %ls\n",thread_name);
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
+    fprintf(stderr,"  r8=%016llx r9=%016llx r10=%016llx r11=%016llx\n  r12=%016llx r13=%016llx r14=%016llx r15=%016llx\n",
+            c->R8,c->R9,c->R10,c->R11,c->R12,c->R13,c->R14,c->R15);
+    /* The rare startup fault in the task queue pop (docs/ENGINE_RE.md): rbx = queue, [rbx] = its
+     * header (head +0, tail +0x40, free list +0x80, count +0xc0), [rbx+0x148] = node array. */
+    if (image && c->Rip==(uintptr_t)image+0x20aa22) {
+        uintptr_t header=0, nodes=0, words[4]={0};
+        ReadProcessMemory(GetCurrentProcess(),(void *)c->Rbx,&header,8,NULL);
+        ReadProcessMemory(GetCurrentProcess(),(void *)(c->Rbx+0x148),&nodes,8,NULL);
+        for (int i=0;i<4;++i) ReadProcessMemory(GetCurrentProcess(),(void *)(header+i*0x40),&words[i],8,NULL);
+        fprintf(stderr,"  task queue %p: header %p head=%016llx tail=%016llx free=%016llx count=%lld nodes %p\n",
+                (void *)c->Rbx,(void *)header,(unsigned long long)words[0],(unsigned long long)words[1],
+                (unsigned long long)words[2],(long long)words[3],(void *)nodes);
+    }
     print_unwound_stack(c);
     if (image) {
         fprintf(stderr, "  globals: [0x16b1df0]=%p [0x16b3420]=%p [0x16b3418]=%p\n",

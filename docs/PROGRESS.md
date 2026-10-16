@@ -16,9 +16,20 @@ downloading it. The MCP entry now runs that package (Claude Code reaches the too
 frame. `THEORDER_WATCH=<hex address>:<bytes>` (new diagnostic, runtime_memory.c) saw the 60 bytes
 at 0x1059c18988 written once and unchanged for 80 s; the same address in all 20 captured frames.
 Next: look at the port side (buffer cache copy of that range, or the V# of the bad frame).
-**Startup fault 0x20aa22:** decompiled (docs/ENGINE_RE.md, "Task system queue"); the bad head
-index predates the pop. Next: decompile the push `sub_20b010`; a fault dump of the queue header
-would show whether head or the node array is wrong.
+**Startup fault 0x20aa22:** decompiled (docs/ENGINE_RE.md, "Task system queue"); the push
+(`sub_20b010`) follows the same tagged Michael-Scott scheme, so the bad head index comes from
+outside the algorithm. A fault there now prints r8-r15 and the queue header (head, tail, free
+list, count, node array); not seen in 40 short startups.
+**Startup crash in iertutil.dll (fixed):** 1 of those 40 runs died on GLib's `pool-0` thread
+inside iertutil.dll (via mrmcorer.dll). libgio's DllMain starts a thread that enumerates the
+installed UWP apps (gwin32appinfo.c); GIO came in only through FFmpeg's SVG decoder (avcodec ->
+librsvg -> gio, pango, gdk-pixbuf). `packaging/windows/rsvg_stub.c` builds a librsvg-2-2.dll with
+the three functions avcodec imports; beside the executable (out/ and the package's bin/) it is
+loaded instead, and libgio, pango, gdk-pixbuf, iertutil and mrmcorer no longer load (checked on
+a running game).
+**`-startlevel`:** still the title screen with `pro_010` + `pro_010_checkpoint_005`, also with
+the `*(game+0x208)` gate at 0x4480cf patched out and after one ✕ press. Next: find where the
+stored level hash (`param_1[6]`) is used after the title.
 
 ## 2026-10-16: God of War leftovers removed, aspect ratio option
 

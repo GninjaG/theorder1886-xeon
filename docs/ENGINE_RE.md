@@ -72,7 +72,18 @@ spaces). Help texts at 0x148a000.. (file offset 0x148e000..):
 | `-photomode`, `-nogameui`, `-disableuiindicators`, `-gamechaptersonly`, `-usedlc`, `-enablesubtitles`, `-gamma` | | |
 
 Checkpoint names follow `<level>_<nnn>_checkpoint_<nnn>`: `pro` (prologue), `wch`
-(Whitechapel), `bwy`, `air`, `frl`, `tsl`, `eih`, `cat`, `may`, `wmp`.
+(Whitechapel), `bwy`, `air`, `frl`, `tsl`, `eih`, `cat`, `may`, `wmp`, `emb`; the complete list
+is a debug symbol table at 0x14a9b00.. (`RaDsSyMbOlPrEfIx<name>` strings beside 8-byte name
+hashes).
+
+How the options get in (decompiled with REA): `main` (0x2981b0) formats every argv entry with
+`snprintf(" %s ")` (0x299a80) into one 2 KiB string and stores it at 0x165ae00; the engine then
+builds the sorted table of hashed option names. `-startlevel`/`-startcheckpoint` are read by
+0x447880, only while `*(*(0x16b31d8) + 0x208) == 0`: the level argument loses every `.radlvl`
+(the level file extension), is hashed with the option-name hash and stored with the
+checkpoint before the level starts (virtual call +0x330); without `-startlevel` and
+`-frontend` the game goes to the front end. The port forwards THEORDER_ARGS as separate argv
+entries (probe.c), which this concatenation handles.
 
 ## Rendering facts used by fixes
 

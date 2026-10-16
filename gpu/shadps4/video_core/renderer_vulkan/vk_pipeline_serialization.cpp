@@ -317,14 +317,18 @@ static void TrimPipelineBinaries(const std::filesystem::path& directory) {
 void ReportPipelineBinaryCache() {
     const auto hits = binary_hits.load();
     const auto misses = binary_misses.load();
+    const double per_pipeline = 1e6 * std::max(u64{1}, hits + misses);
     std::printf("Pipeline binary cache: %llu hits, %llu compiled, %llu rejected, %llu saved, "
-                "%llu cache errors (restore %.3f ms, compile %.3f ms each)\n",
+                "%llu cache errors (restore %.3f ms, compile %.3f ms each; per pipeline: key "
+                "%.3f ms, file %.3f ms, binary handles %.3f ms)\n",
                 static_cast<unsigned long long>(hits), static_cast<unsigned long long>(misses),
                 static_cast<unsigned long long>(binary_rejected.load()),
                 static_cast<unsigned long long>(binary_saved.load()),
                 static_cast<unsigned long long>(binary_errors.load()),
                 binary_restore_ns.load() / 1e6 / std::max(u64{1}, binary_restore_calls.load()),
-                binary_compile_ns.load() / 1e6 / std::max(u64{1}, binary_compile_calls.load()));
+                binary_compile_ns.load() / 1e6 / std::max(u64{1}, binary_compile_calls.load()),
+                binary_key_ns.load() / per_pipeline, binary_load_ns.load() / per_pipeline,
+                binary_handles_ns.load() / per_pipeline);
 }
 
 namespace {
