@@ -81,7 +81,8 @@ if [[ ${running:-0} != 0 ]]; then
     echo "dist/theorder1886-windows is in use ($running processes): not refreshed; the zip is ready." >&2
 else
     mkdir -p "$play"
-    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name theorder.ini \
+    # gow3.ini: the settings of releases up to 0.2.0, moved to theorder.ini at the next start.
+    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name theorder.ini ! -name gow3.ini \
         ! -name mods.json ! -name patches.json -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
