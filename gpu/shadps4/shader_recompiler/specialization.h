@@ -238,7 +238,12 @@ struct StageSpecialization {
         // handles this case and prevents generation of redundant permutations. This is also safe
         // for other types of shaders with no bindings.
         if (bitset.none() && other.bitset.none()) {
-            return true;
+            // port: its user data registers are still read from the push constants at
+            // start.user_data. The Order's fullscreen clear VS adds s0 to x: reusing the
+            // permutation compiled after a fragment shader without user data, it read that
+            // fragment shader's descriptor pointer (~1982.0) and drew nowhere, so a fog buffer
+            // kept the loading screen and gameplay turned into one flat color.
+            return start.user_data == other.start.user_data || !info->ud_mask.mask;
         }
 
         if (start != other.start) {

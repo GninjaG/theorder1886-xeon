@@ -39,8 +39,19 @@ twice. Direct memory then ran out when a save loads (`direct_allocate loop rejec
 on the old build at 36 s. probe.c now leaves the initializer to the entry (`entry_calls`); with
 the same save the game runs 7 min, 4.22 of 5.3 GB of direct memory in use, allocations only at
 start and at the load. The watchdog stop prints the direct memory still in use.
-**Found:** from that save the gameplay (cover tutorial) shows a flat light blue picture
-(171,211,242) with only the HUD, ~480 draws per frame.
+**Flat light blue gameplay fixed (`specialization.h`):** from that save the gameplay (cover
+tutorial) showed one flat color (171,211,242) with the HUD. Per-pass dumps of a captured frame
+(`THEORDER_DIAG_IMAGES=1`, now with depth, `THEORDER_DIAG_SAMPLED=1` for sampled textures and
+`THEORDER_DIAG_DRAW_TARGET=<address>` for every draw into one target) showed the scene fine until
+a half-res fog buffer (0x104ea60000) added ~185 everywhere; a simulation of its analytic
+in-scattering shader with the captured constants gave ~0.004. The buffer still held the loading
+screen: its clear (fullscreen VS e5979e2b, x = s0 + {-1,3}) never drew. Captures now note each
+stage's user data registers: the VS read ud_regs0.x, the fragment shader's descriptor pointer
+(~1982.0 as a float), while its own s0 (0.0) was pushed at ud_regs0.z. StageSpecialization
+ignored the start bindings of shaders without resources, so the permutation compiled after a
+fragment shader without user data was reused after one with two registers. Now compared.
+Also (not the cause): V_MAC_LEGACY/V_MAD_LEGACY use the legacy multiply (0 * Inf = 0) and the
+_CLAMP rcp/rsq/log clamp infinities to max_float (ShaderBinaryVersion 8).
 
 ## 2026-10-15 (night): windows-v0.2.0
 
