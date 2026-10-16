@@ -40,6 +40,8 @@ public:
 
     void Load(BlobType type, const std::string& name, std::vector<u8>& data);
     void Load(BlobType type, const std::string& name, std::vector<u32>& data);
+    /// gow3: whether the blob is stored (plain files only; false for the archive).
+    [[nodiscard]] bool Exists(BlobType type, const std::string& name) const;
 
     /// gow3: `stop` returning true ends the walk early (background warm-up at exit).
     void ForEachBlob(BlobType type, const std::function<void(std::vector<u8>&& data)>& func,

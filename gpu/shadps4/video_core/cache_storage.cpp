@@ -239,6 +239,16 @@ void DataBase::Load(BlobType type, const std::string& name, std::vector<u32>& da
     return LoadVector(type, path, data);
 }
 
+bool DataBase::Exists(BlobType type, const std::string& name) const {
+    if (!opened || EmulatorSettings.IsPipelineCacheArchived()) {
+        return false;
+    }
+    auto path = cache_path / name;
+    path.replace_extension(GetBlobFileExtension(type));
+    std::error_code error;
+    return std::filesystem::exists(path, error);
+}
+
 size_t DataBase::CountBlobs(BlobType type) {
     const auto& ext = GetBlobFileExtension(type);
     size_t count = 0;

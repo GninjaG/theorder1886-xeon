@@ -527,6 +527,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &done});
         DumpRaw(instance, draw_scheduler, cmdbuf, frame->image, vk::ImageLayout::eGeneral,
                 frame->width, frame->height, "output", frame_dump_index);
+        std::printf("Frame dump %d at flip %llu\n", frame_dump_index,
+                    static_cast<unsigned long long>(Gow3Stats::flips.load()));
         ++frame_dump_index;
     }
 

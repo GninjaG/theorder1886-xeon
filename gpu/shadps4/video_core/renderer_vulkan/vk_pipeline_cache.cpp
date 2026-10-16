@@ -836,11 +836,18 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         return nullptr;
     }
-    if (AsyncCompilation() && !sel.regs->stage_enable.hs_en && !EmulatorSettings.IsShaderCollect()) {
-        const auto found = graphics_pipelines.find(sel.graphics_key);
-        if (found != graphics_pipelines.end()) {
-            return found->second.get();
-        }
+    // gow3: a pipeline an earlier session built (its key is stored) comes back from the
+    // pipeline binary cache in 1-2 ms: built here, its draws are not skipped meanwhile. Skipped
+    // draws were the flicker of objects and effects every time a session met them again.
+    const auto known = [this] {
+        return Storage::DataBase::Instance().Exists(
+            Storage::BlobType::PipelineKey,
+            fmt::format("g_{:#018x}", std::hash<GraphicsPipelineKey>{}(sel.graphics_key)));
+    };
+    if (AsyncCompilation() && !sel.regs->stage_enable.hs_en &&
+        !EmulatorSettings.IsShaderCollect() &&
+        (pending_graphics.contains(sel.graphics_key) ||
+         (!graphics_pipelines.contains(sel.graphics_key) && !known()))) {
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
             PhaseTimer capture{g_gow3_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
@@ -914,8 +921,19 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         CountComputeRun(pgm_hash);
         return found->second.get();
     }
-    if (SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
+    // A pipeline an earlier session built is restored in 1-2 ms: built here (GetGraphicsPipeline).
+    const bool known = !pending_compute.contains(compute_key) &&
+                       Storage::DataBase::Instance().Exists(
+                           Storage::BlobType::PipelineKey,
+                           fmt::format("c_{:#018x}", compute_key.value));
+    if (!known && SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
         !EmulatorSettings.IsShaderCollect() && !sync_compute_keys.contains(compute_key.value)) {
+        static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        if (log && !pending_compute.contains(compute_key)) {
+            LOG_WARNING(Render_Vulkan, "gow3: compute pipeline of {:#x} built in the background "
+                        "from flip {}: its dispatches are skipped until it is ready",
+                        pgm_hash, Gow3Stats::flips.load(std::memory_order_relaxed));
+        }
         if (!pending_compute.contains(compute_key) && compiler->HasCapacity()) {
             auto build = std::make_shared<AsyncComputeCompilation>();
             build->key = compute_key;
@@ -1502,6 +1520,11 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             return {};
         }
         if (compile_async) {
+            if (!program->modules.empty()) {
+                LogNewPermutation(params.hash, perm_idx, spec,
+                                  program->modules[std::min(program->last_used,
+                                                            program->modules.size() - 1)].spec);
+            }
             QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, perm_idx, false,
                         std::move(spec));
             return {};
