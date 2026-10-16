@@ -965,6 +965,24 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
     DrawRecord(pipeline, used_prepared, is_indexed, index_offset);
 }
 
+// port diagnostics: a recorded frame notes the user data registers each stage reads (the
+// push constant ud_regs, from first_slot on), for checking what the guest passed a shader.
+static void NoteUserData(const Shader::Info& stage, u32 first_slot) {
+    if (!FrameCapture::IsRecording()) {
+        return;
+    }
+    const auto ud = stage.UserData();
+    std::string text = fmt::format("ud {:016x}:", stage.pgm_hash);
+    u32 mask = stage.ud_mask.mask, slot = first_slot;
+    while (mask) {
+        const u32 index = std::countr_zero(mask);
+        mask &= ~(1U << index);
+        text += fmt::format(" s{}(ud_regs{}.{})={:#x}", index, slot / 4, "xyzw"[slot % 4], ud[index]);
+        ++slot;
+    }
+    FrameCapture::Note(text.c_str());
+}
+
 void Rasterizer::DiagPassBoundary(bool force) {
     static const bool enabled = [] {
         const char* env = std::getenv("THEORDER_DIAG_IMAGES");
@@ -980,7 +998,22 @@ void Rasterizer::DiagPassBoundary(bool force) {
             addresses[cb] = regs.color_buffers[cb].Address();
         }
     }
-    if (!force && addresses == diag_addresses) {
+    // THEORDER_DIAG_DRAW_TARGET=<hex address>: also after every draw into that color target.
+    static const VAddr per_draw_target = [] {
+        const char* env = std::getenv("THEORDER_DIAG_DRAW_TARGET");
+        return env && *env ? static_cast<VAddr>(std::strtoull(env, nullptr, 16)) : VAddr{0};
+    }();
+    const bool same_pass = !force && addresses == diag_addresses;
+    const bool per_draw = same_pass && per_draw_target && diag_addresses[0] == per_draw_target;
+    if (same_pass && !per_draw) {
+        return;
+    }
+    if (per_draw) {
+        if (FrameCapture::IsRecording() && !diag_targets.empty()) {
+            char tag[16];
+            std::snprintf(tag, sizeof(tag), "d%03u", diag_pass++);
+            texture_cache.DiagDumpImage(diag_targets[0], tag);
+        }
         return;
     }
     if (FrameCapture::IsRecording() && !diag_targets.empty()) {
@@ -990,6 +1023,15 @@ void Rasterizer::DiagPassBoundary(bool force) {
         for (const auto image_id : targets) {
             texture_cache.DiagDumpImage(image_id, tag);
         }
+        const auto sampled = std::move(diag_sampled);
+        diag_sampled.clear();
+        for (const auto image_id : sampled) {
+            texture_cache.DiagDumpImage(image_id, "tex");
+        }
+    }
+    if (!FrameCapture::IsRecording()) {
+        diag_sampled.clear();
+        diag_sampled_done.clear();
     }
     diag_targets.clear();
     diag_addresses = force ? std::array<VAddr, 8>{} : addresses;
@@ -1676,6 +1718,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             }
             set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
                               stage->samplers.size());
+            NoteUserData(*stage, binding.user_data);
             stage->PushUd(binding, push_data);
             const PreparedStage* prepared = FindPreparedStage(*stage);
             BindBuffers(*stage, prepared, binding, push_data, set_write_index);
@@ -1705,6 +1748,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             const u32 num_descriptors =
                 num_buffers + static_cast<u32>(stage->images.size() + stage->samplers.size());
             set_writes.resize(set_writes.size() + num_descriptors);
+            NoteUserData(*stage, binding.user_data);
             stage->PushUd(binding, push_data);
             const PreparedStage* prepared = FindPreparedStage(*stage);
             buffer_stages[task.count] = {stage, prepared, binding, set_write_index};
@@ -2547,6 +2591,17 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             image.usage.texture |= !is_storage;
             if (FrameCapture::Active()) {
                 FrameCapture::Sampled(image.info, is_storage);
+                static const bool diag_sampled_on = [] {
+                    const char* env = std::getenv("THEORDER_DIAG_SAMPLED");
+                    return env && *env == '1';
+                }();
+                if (diag_sampled_on && FrameCapture::IsRecording() && !is_storage &&
+                    !image.info.props.is_block &&
+                    std::find(diag_sampled_done.begin(), diag_sampled_done.end(), image_id) ==
+                        diag_sampled_done.end()) {
+                    diag_sampled.push_back(image_id);
+                    diag_sampled_done.push_back(image_id);
+                }
             }
 
             vk::ImageView view = *image_view.image_view;
@@ -3127,6 +3182,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             if (cb_descs[cb].first) {
                 diag_targets.push_back(cb_descs[cb].first);
             }
+        }
+        if (db_desc.first) {
+            diag_targets.push_back(db_desc.first);
         }
     }
     // port: object motion vector attachment of G-buffer pipelines.

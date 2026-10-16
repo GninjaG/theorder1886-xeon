@@ -333,8 +333,12 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
 
 void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
     Image& image = slot_images[image_id];
-    const u32 bytes_per_pixel = image.info.num_bits / 8;
-    if (image.info.props.is_depth || image.info.props.is_block || bytes_per_pixel == 0) {
+    // Depth: the 32-bit float depth aspect only.
+    const bool depth = image.info.props.is_depth;
+    const bool float_depth = image.info.pixel_format == vk::Format::eD32Sfloat ||
+                             image.info.pixel_format == vk::Format::eD32SfloatS8Uint;
+    const u32 bytes_per_pixel = depth ? 4 : image.info.num_bits / 8;
+    if ((depth && !float_depth) || image.info.props.is_block || bytes_per_pixel == 0) {
         return;
     }
     const u32 size = image.info.pitch * image.info.size.height * bytes_per_pixel;
@@ -343,7 +347,8 @@ void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
         .bufferOffset = download.offset,
         .bufferRowLength = image.info.pitch,
         .bufferImageHeight = image.info.size.height,
-        .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .imageSubresource = {depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
+                             0, 0, 1},
         .imageOffset = {0, 0, 0},
         .imageExtent = {image.info.size.width, image.info.size.height, 1},
     };

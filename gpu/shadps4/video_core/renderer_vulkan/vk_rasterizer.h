@@ -352,6 +352,10 @@ private:
     std::array<VAddr, 8> diag_addresses{};
     boost::container::static_vector<VideoCore::ImageId, 8> diag_targets;
     u32 diag_pass{};
+    /// THEORDER_DIAG_SAMPLED=1: textures the recorded frame samples, written once at the next
+    /// pass boundary (block-compressed ones are skipped).
+    std::vector<VideoCore::ImageId> diag_sampled;
+    std::vector<VideoCore::ImageId> diag_sampled_done;
     struct BoundBuffer {
         const VideoCore::Buffer* buffer;
         u64 offset;
