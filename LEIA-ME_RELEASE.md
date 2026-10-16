@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.1
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,21 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (16/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.1:
+
+- **Crash raro ao iniciar corrigido** (~1 em 40 inicializações): um componente do Windows
+  (`iertutil.dll`) travava numa thread que o GIO, do GLib, abre ao ser carregado para listar os
+  apps da Microsoft Store. O GIO só vinha junto com o decodificador de SVG do FFmpeg, que o jogo
+  nunca usa. O pacote agora traz um `librsvg-2-2.dll` mínimo no lugar do original, e GIO, Pango e
+  GDK-Pixbuf não são mais carregados.
+- **Pausas menores ao carregar cenas**: os pipelines guardados (arquivos de ~2 MB) agora são lidos
+  com stdio, e a leitura caiu de 10,4 para 2,1–2,6 ms por pipeline; cada pipeline refeito durante
+  uma pausa custa 11–16 ms em vez de 22.
+- Diagnóstico para desenvolvedores: `THEORDER_WATCH=<endereço>:<bytes>` registra cada mudança de
+  um trecho da memória do jogo; os relatórios de crash mostram mais registradores e o estado da
+  fila de tarefas do motor.
+- Desta vez o cache de shaders não é refeito.
 
 Novidades da 0.3.0:
 
@@ -44,10 +59,10 @@ Novidades da 0.3.0:
 
 Problemas conhecidos:
 
-- A primeira sessão depois da atualização refaz o cache de shaders: objetos podem aparecer com um
-  instante de atraso e há pausas curtas.
-- Raramente um triângulo preto pisca por um quadro (um passe de tela cheia lê vértices que o
-  motor reescreve a cada quadro; em investigação).
+- Vindo de uma versão anterior à 0.3.0, a primeira sessão refaz o cache de shaders: objetos podem
+  aparecer com um instante de atraso e há pausas curtas.
+- Raramente um triângulo preto pisca por um quadro. Os vértices na memória do jogo estão certos
+  (o motor os escreve uma única vez); a causa está do lado do port, em investigação.
 - Ainda não verificado: a maior parte da campanha depois do primeiro capítulo, som, placas AMD e
   Intel.
 
