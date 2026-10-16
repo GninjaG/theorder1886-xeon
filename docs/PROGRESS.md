@@ -32,8 +32,13 @@ file 10.4 ms (a cold file cache), binary handles 0.26 ms, driver 1.3 ms. fread i
 std::ifstream (e3909ef), 3+3 interleaved prologue runs: file 3.2-3.4 -> 1.8-2.2 ms per pipeline
 (the first ifstream run, colder: 6.0), the prologue-start burst of ~95 pipelines 477-501 ->
 262-390 ms (first run 1001).
-Next if still worth it: read the binaries of the upcoming draws ahead on a few threads (needs
-an emulator key -> driver binary name index; the name comes from vkGetPipelineKeyKHR).
+Tried and reverted: draw-preparation workers starting the restore of stored pipelines on the
+compiler threads (the GPU thread waiting for them). 3+3 interleaved runs: no change in the
+bursts (validation clean). A count showed why: in a 120 s prologue run workers started 12 such
+restores while the GPU thread restored 525 stored pipelines itself; at a scene load the draws'
+shader programs are not loaded yet (LoadCachedProgram runs on the GPU thread), so workers cannot
+select their pipelines. Next, if the pauses still matter: let workers load cached programs, or
+read the binaries ahead from an emulator key -> driver binary name index.
 **`-startlevel`:** still the title screen with `pro_010` + `pro_010_checkpoint_005`, also with
 the `*(game+0x208)` gate at 0x4480cf patched out and after one ✕ press. Next: find where the
 stored level hash (`param_1[6]`) is used after the title.
