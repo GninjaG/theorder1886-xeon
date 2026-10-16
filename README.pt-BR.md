@@ -127,7 +127,7 @@ alterados. Todos os patches vêm desligados.
 
   ```powershell
   Set-Content fps60.ini 'engine_fps=120'   # a lógica do launcher cai para o patch de 60 FPS
-  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:THEORDER_CONFIG = $env:THEORDER_CONFIG
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini)
   $env:THEORDER_FLIP_RATE = '0'; $env:THEORDER_FPS_LIMIT = '60'
   python run.py
   ```
@@ -136,6 +136,14 @@ alterados. Todos os patches vêm desligados.
   30 FPS). Logos e título ficam em 60 FPS; numa sessão de 240 s do prólogo cada janela de 5 s ficou
   entre 41 e 60 FPS (57 na média), com as quedas onde a thread de comandos da GPU fica ocupada o
   quadro todo (600 a 700 draws por quadro).
+- **Aspect Ratio - 16:9 / 16:10 / 21:9** (launcher e menu do jogo: *Proporção da imagem*, vale ao
+  reiniciar): o jogo desenha uma imagem 2.40:1 com faixas pretas. Estes patches mudam o formato da
+  imagem (o float 2.4 em 0x44ce8c) e o fator 0.5625 com que cada câmera converte o campo de visão
+  horizontal (definido para 16:9) em vertical, então a visão mantém a largura original e mostra mais
+  em cima e embaixo (Vert+) em vez de ser cortada nas laterais. O port mostra só a imagem, ajustada
+  à janela: telas 16:10 e 21:9 também ficam cheias. A cena tem mais pixels (1920x1080 em vez de
+  1920x800 em 16:9); a 60 FPS no prólogo (RTX 5060 Laptop) isso custou cerca de 1% (57,8 contra 58,3
+  FPS na média).
 - Os outros patches escritos em sessões anteriores foram retirados depois de testados: pular
   logos não mudava nada, dispensar a tela de título deixava a tela preta, os dois de pular o
   prólogo não puderam ser verificados, e os de 900p, 720p e de remover as faixas pretas escreviam

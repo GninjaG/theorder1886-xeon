@@ -23,4 +23,61 @@
             <Line Type="bytes" Address="0x0044904c" Value="1b410000"/>
         </PatchList>
     </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Aspect Ratio - 16:9"
+              Note="Fills a 16:9 screen without black bars: the picture keeps the original horizontal view and shows more above and below."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="float32" Address="0x0044ce8c" Value="1.77777778"/>
+            <Line Type="float64" Address="0x0147f2b0" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f2d0" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f3c0" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f3d0" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f5e8" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f610" Value="0.759375"/>
+            <Line Type="float64" Address="0x0147f670" Value="0.759375"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Aspect Ratio - 16:10"
+              Note="Fills a 16:10 screen without black bars: the picture keeps the original horizontal view and shows more above and below."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="float32" Address="0x0044ce8c" Value="1.6"/>
+            <Line Type="float64" Address="0x0147f2b0" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f2d0" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f3c0" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f3d0" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f5e8" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f610" Value="0.84375"/>
+            <Line Type="float64" Address="0x0147f670" Value="0.84375"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Aspect Ratio - 21:9"
+              Note="Fills a 21:9 screen without black bars: the picture keeps the original horizontal view and shows more above and below."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="float32" Address="0x0044ce8c" Value="2.37037037"/>
+            <Line Type="float64" Address="0x0147f2b0" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f2d0" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f3c0" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f3d0" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f5e8" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f610" Value="0.56953125"/>
+            <Line Type="float64" Address="0x0147f670" Value="0.56953125"/>
+        </PatchList>
+    </Metadata>
 </Patch>

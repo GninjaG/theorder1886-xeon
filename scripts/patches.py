@@ -229,8 +229,8 @@ def available_patches(xml, app_version):
     return {m.get('Name') for m in ET.parse(xml).getroot().iter('Metadata') if m.get('AppVer')==app_version}
 
 
-# Resolution patches set the same values: one at a time.
-EXCLUSIVE_PREFIX='Resolution Patch'
+# Aspect ratio patches set the same values: one at a time.
+EXCLUSIVE_PREFIX='Aspect Ratio'
 
 
 def selected_patches(xml, app_version, extra, only=False):
@@ -241,7 +241,7 @@ def selected_patches(xml, app_version, extra, only=False):
     names+=[n for n in (n.strip() for n in extra.split(';')) if n and n not in names]
     exclusive=[n for n in names if n.startswith(EXCLUSIVE_PREFIX)]
     if len(exclusive)>1:
-        raise ValueError(f'choose one resolution patch, not {exclusive}')
+        raise ValueError(f'choose one aspect ratio patch, not {exclusive}')
     return names
 
 

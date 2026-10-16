@@ -255,7 +255,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
-                'render_resolution': 'native', 'engine_fps': '60',
+                'aspect_ratio': 'original', 'engine_fps': '60',
                 'frames_queued': '1'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
@@ -742,6 +742,9 @@ TEXT, MUTED, ACCENT, ACCENT_HI = '#e8e2d6', '#8d877c', '#a8803c', '#c9a051'
 # '60' runs the game at its own 30 FPS (no frame rate patch); '120' asks for the frame rate patch,
 # which for this game is the 60 FPS one (run.py presents every vblank, capped at 60).
 ENGINE_FPS_CHOICES = [('60', ('30 (original)',)), ('120', ('60 (experimental)',))]
+# The game's 2.40:1 picture, or a game patch that fills a screen of that shape (Vert+).
+ASPECT_CHOICES = [('original', ('Original (2.40:1, black bars)',)), ('16:9', ('16:9',)), ('16:10', ('16:10',)),
+                  ('21:9', ('21:9',))]
 
 
 def window_icon(root, tk, game_icon, own_icon, ico_file):
@@ -1096,7 +1099,7 @@ class Launcher:
             row=0, column=0, columnspan=4, sticky='w')
         tk.Frame(quick, bg=LINE, height=1).grid(row=1, column=0, columnspan=4, sticky='we', pady=(2, 6))
         items = ((_('Display mode'), 'display_mode', DISPLAY_MODES), (_('Frame rate limit'), 'fps_limit', FPS_LIMITS),
-                 (_('Engine frame rate'), 'engine_fps', ENGINE_FPS_CHOICES))
+                 (_('Engine frame rate'), 'engine_fps', ENGINE_FPS_CHOICES), (_('Aspect ratio'), 'aspect_ratio', ASPECT_CHOICES))
         for index, (title, key, options) in enumerate(items):
             r, c = 2 + index // 2, (index % 2) * 2
             ttk.Label(quick, text=title).grid(row=r, column=c, sticky='w', pady=6, padx=(0, 12))
@@ -1181,6 +1184,8 @@ class Launcher:
         self.row(f, _('Display mode'), self.choice(f, 'display_mode', 'ini', DISPLAY_MODES),
                  _('Borderless covers the screen without changing the display mode.'))
         self.check(f, 'vsync', 'ini', _('VSync'), _('Off allows tearing for the lowest latency.'))
+        self.row(f, _('Aspect ratio'), self.choice(f, 'aspect_ratio', 'ini', ASPECT_CHOICES),
+                 _("The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below."), restart=True)
         self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))

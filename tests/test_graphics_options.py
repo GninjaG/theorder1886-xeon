@@ -17,10 +17,10 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_defaults_and_invalid_values(self):
-        self.ini.write_text('render_resolution=8K\nengine_fps=90\nstale_readback=yes\n', encoding='utf-8')
+        self.ini.write_text('aspect_ratio=32:9\nengine_fps=90\nstale_readback=yes\n', encoding='utf-8')
         options, reverted = g.prepare(self.ini, self.state)
         self.assertFalse(reverted)
-        self.assertEqual(options, {'render_resolution': 'native', 'engine_fps': '120', 'deferred_readback': '1',
+        self.assertEqual(options, {'aspect_ratio': 'original', 'engine_fps': '120', 'deferred_readback': '1',
                                    'stale_readback': '1', 'async_shaders': '1'})
 
     def test_write_keys_keeps_other_lines(self):
@@ -29,17 +29,17 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.assertEqual(self.ini.read_text(encoding='utf-8'), '# comment\nshow_fps=1\nengine_fps=240\nvsync=0\n')
 
     def test_unconfirmed_restart_is_tried_once_then_reverted(self):
-        self.ini.write_text('render_resolution=1440p\nengine_fps=120\n', encoding='utf-8')
+        self.ini.write_text('aspect_ratio=16:10\nengine_fps=120\n', encoding='utf-8')
         good, _ = g.prepare(self.ini, self.state)  # a normal, confirmed launch
-        g.write_keys(self.ini, {'render_resolution': '4K', 'engine_fps': '240', 'restart_unconfirmed': '1'})
+        g.write_keys(self.ini, {'aspect_ratio': '21:9', 'engine_fps': '240', 'restart_unconfirmed': '1'})
         tried, reverted = g.prepare(self.ini, self.state)  # the launch of "Apply and restart"
         self.assertFalse(reverted)
-        self.assertEqual((tried['render_resolution'], tried['engine_fps']), ('4K', '240'))
+        self.assertEqual((tried['aspect_ratio'], tried['engine_fps']), ('21:9', '240'))
         back, reverted = g.prepare(self.ini, self.state)  # it never confirmed: back to the good ones
         self.assertTrue(reverted)
         self.assertEqual(back, good)
         ini = g.read_ini(self.ini)
-        self.assertEqual((ini['render_resolution'], ini['restart_unconfirmed']), ('1440p', '0'))
+        self.assertEqual((ini['aspect_ratio'], ini['restart_unconfirmed']), ('16:10', '0'))
 
     def test_confirmed_restart_becomes_the_last_good(self):
         g.prepare(self.ini, self.state)
@@ -51,11 +51,11 @@ class GraphicsOptionsTest(unittest.TestCase):
 
     def test_patch_names(self):
         launcher = ['Frame Rate Patch - 120 FPS', 'Skip Intro Logos']
-        options = g.startup_options({'render_resolution': '1440p', 'engine_fps': '240'})
+        options = g.startup_options({'aspect_ratio': '16:9', 'engine_fps': '240'})
         self.assertEqual(g.patch_names(launcher, options),
-                         ['Skip Intro Logos', 'Resolution Patch - 1440p', 'Frame Rate Patch - 240 FPS'])
-        native = g.startup_options({'engine_fps': '60'})
-        self.assertEqual(g.patch_names(['Resolution Patch - 4K', 'Skip Intro Logos'], native),
+                         ['Skip Intro Logos', 'Aspect Ratio - 16:9', 'Frame Rate Patch - 240 FPS'])
+        original = g.startup_options({'engine_fps': '60'})
+        self.assertEqual(g.patch_names(['Aspect Ratio - 21:9', 'Skip Intro Logos'], original),
                          ['Skip Intro Logos'])
 
     def test_applied_engine_fps(self):

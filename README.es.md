@@ -132,7 +132,7 @@ modifican. Todos los parches vienen desactivados.
 
   ```powershell
   Set-Content fps60.ini 'engine_fps=120'   # la lógica del lanzador recurre al parche de 60 FPS
-  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:THEORDER_CONFIG = $env:THEORDER_CONFIG
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini)
   $env:THEORDER_FLIP_RATE = '0'; $env:THEORDER_FPS_LIMIT = '60'
   python run.py
   ```
@@ -141,6 +141,14 @@ modifican. Todos los parches vienen desactivados.
   con una ejecución a 30 FPS). Logos y título se mantienen a 60 FPS; en una sesión de 240 s del
   prólogo cada ventana de 5 s quedó entre 41 y 60 FPS (57 de media), con las caídas donde el hilo de
   comandos de la GPU está ocupado todo el fotograma (600 a 700 draws por fotograma).
+- **Aspect Ratio - 16:9 / 16:10 / 21:9** (lanzador y menú del juego: *Relación de aspecto*, al
+  reiniciar): el juego dibuja una imagen 2.40:1 con franjas negras. Estos parches cambian la forma
+  de la imagen (el float 2.4 en 0x44ce8c) y el factor 0.5625 con el que cada cámara convierte su
+  campo de visión horizontal (definido para 16:9) en vertical, así que la vista conserva el ancho
+  original y muestra más arriba y abajo (Vert+) en lugar de recortarse por los lados. El port
+  muestra solo la imagen, ajustada a la ventana: las pantallas 16:10 y 21:9 también se llenan. La
+  escena tiene más píxeles (1920x1080 en lugar de 1920x800 en 16:9); a 60 FPS en el prólogo (RTX
+  5060 Laptop) eso costó alrededor de un 1% (57,8 frente a 58,3 FPS de media).
 - Los demás parches escritos en sesiones anteriores se retiraron tras probarlos: saltar logos no
   cambiaba nada, cerrar la pantalla de título dejaba la pantalla en negro, los dos de saltar el
   prólogo no se pudieron comprobar, y los de 900p, 720p y de quitar las franjas negras escribían en

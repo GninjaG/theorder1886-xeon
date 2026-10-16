@@ -766,7 +766,6 @@ EXTRA = {
         'Borderless covers the screen without changing the display mode.': 'Sem bordas cobre a tela inteira sem alterar o modo de vídeo.',
         'VSync': 'VSync',
         'Off allows tearing for the lowest latency.': 'Desligado permite tearing, para a menor latência.',
-        'Enlarges a smaller game image to the window. With Render resolution 720p (Performance) it raises the FPS; at the size of the window it does nothing.': 'Amplia uma imagem menor do jogo até a janela. Com Resolução de renderização em 720p (Desempenho) aumenta o FPS; no tamanho da janela não faz nada.',
         'Overlay': 'Sobreposição',
         'Show performance overlay': 'Mostrar sobreposição de desempenho',
         'Items, size and corner: in-game menu (Insert / R3+L2) > Overlay.': 'Itens, tamanho e canto: menu do jogo (Insert / R3+L2) > Sobreposição.',
@@ -777,8 +776,10 @@ EXTRA = {
         '1 is the lowest input latency; more can raise FPS when the graphics card is the limit.': '1 dá a menor latência de entrada; mais pode aumentar o FPS quando a placa de vídeo é o limite.',
         'Engine frame rate': 'Taxa de quadros do motor',
         'The highest frame rate the game itself runs at (a game patch).': 'A maior taxa de quadros em que o próprio jogo roda (um patch do jogo).',
-        'Render resolution': 'Resolução de renderização',
-        'The size the game draws at; higher is sharper and slower. A resolution patch replaces the texture fix and reserves the memory it needs.': 'O tamanho em que o jogo desenha; maior é mais nítido e mais lento. Um patch de resolução substitui a correção de texturas e reserva a memória de que precisa.',
+        'Aspect ratio': 'Proporção da imagem',
+        'Original (2.40:1, black bars)': 'Original (2.40:1, com barras pretas)',
+        "The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below.":
+            'O formato da imagem do jogo. Escolha o da sua tela para preenchê-la sem barras pretas: a visão mantém a largura original e mostra mais em cima e embaixo.',
         'Shaders': 'Shaders',
         'Use pipeline binary cache (A/B test)': 'Usar cache binário de pipelines (teste A/B)',
         'Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. Takes effect on the next launch; saved caches are preserved.': 'Reutiliza pipelines Vulkan salvos. Desative para comparar o FPS com a compilação normal. Vale a partir da próxima inicialização; os caches salvos são mantidos.',
@@ -918,8 +919,6 @@ EXTRA = {
         'VSync': 'VSync',
         'Off allows tearing for the lowest latency.':
             'Desactivado permite cortes (tearing) para obtener la menor latencia.',
-        'Enlarges a smaller game image to the window. With Render resolution 720p (Performance) it raises the FPS; at the size of the window it does nothing.':
-            'Amplía una imagen del juego más pequeña hasta la ventana. Con Resolución de render en 720p (Rendimiento) sube los FPS; al tamaño de la ventana no hace nada.',
         'Overlay': 'Overlay',
         'Show performance overlay': 'Mostrar el overlay de rendimiento',
         'Items, size and corner: in-game menu (Insert / R3+L2) > Overlay.':
@@ -934,9 +933,10 @@ EXTRA = {
         'Engine frame rate': 'Velocidad de fotogramas del motor',
         'The highest frame rate the game itself runs at (a game patch).':
             'La mayor velocidad de fotogramas a la que corre el propio juego (un parche del juego).',
-        'Render resolution': 'Resolución de render',
-        'The size the game draws at; higher is sharper and slower. A resolution patch replaces the texture fix and reserves the memory it needs.':
-            'El tamaño al que dibuja el juego; más alto es más nítido y más lento. Un parche de resolución reemplaza la corrección de texturas y reserva la memoria que necesita.',
+        'Aspect ratio': 'Relación de aspecto',
+        'Original (2.40:1, black bars)': 'Original (2.40:1, con barras negras)',
+        "The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below.":
+            'La forma de la imagen del juego. Elige la de tu pantalla para llenarla sin barras negras: la vista conserva el ancho original y muestra más arriba y abajo.',
         'Shaders': 'Shaders',
         'Use pipeline binary cache (A/B test)': 'Usar caché binaria de pipelines (prueba A/B)',
         'Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. Takes effect on the next launch; saved caches are preserved.':

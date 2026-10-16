@@ -127,7 +127,7 @@ Every patch is off by default.
 
   ```powershell
   Set-Content fps60.ini 'engine_fps=120'   # the launcher logic falls back to the 60 FPS patch
-  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:THEORDER_CONFIG = $env:THEORDER_CONFIG
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini)
   $env:THEORDER_FLIP_RATE = '0'; $env:THEORDER_FPS_LIMIT = '60'
   python run.py
   ```
@@ -135,6 +135,14 @@ Every patch is off by default.
   Game speed stays correct (frame dumps line up in time with a 30 FPS run). The logos and the
   title hold 60 FPS; in a 240 s run of the prologue every 5 s window averaged 41-60 FPS (57 overall),
   the dips where the GPU command thread is busy all frame (600-700 draws per frame).
+- **Aspect Ratio - 16:9 / 16:10 / 21:9** (launcher and in-game menu: *Aspect ratio*, applied on
+  restart): the game draws a 2.40:1 picture with black bars. These patches change the shape of the
+  picture (the float 2.4 at 0x44ce8c) and the factor 0.5625 with which every camera turns its
+  horizontal field of view (defined for 16:9) into a vertical one, so the view keeps the original
+  width and shows more above and below (Vert+) instead of being cropped at the sides. The port shows
+  only the picture, fitted to the window: a 16:10 or 21:9 screen is filled too. The scene has more
+  pixels (1920x1080 instead of 1920x800 at 16:9); at 60 FPS in the prologue (RTX 5060 Laptop) that
+  cost about 1% (57.8 against 58.3 FPS on average).
 - The other patches written during earlier development were removed after testing: Skip Intro
   Logos changed nothing, Auto-Dismiss Title Screen left a black screen, the two Skip Prologue
   patches could not be verified, and the 900p, 720p and letterbox removal patches wrote inside

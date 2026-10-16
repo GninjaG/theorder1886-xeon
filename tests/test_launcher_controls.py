@@ -109,7 +109,7 @@ class ControlMapTest(unittest.TestCase):
             self.assertIn(key, launcher.APP_DEFAULTS)
         env = launcher.game_environment({**launcher.APP_DEFAULTS, 'player_name': ' Galahad '})
         self.assertEqual(env['THEORDER_USER_NAME'], 'Galahad')
-        for key in ('display_mode', 'fps_limit', 'render_resolution', 'engine_fps'):
+        for key in ('display_mode', 'fps_limit', 'aspect_ratio', 'engine_fps'):
             self.assertIn(key, launcher.INI_DEFAULTS)
 
     def test_graphics_defaults_match_the_game(self):
@@ -117,6 +117,10 @@ class ControlMapTest(unittest.TestCase):
         # The Order runs at its own 30 FPS by default ('60': no frame rate patch, see ENGINE_FPS_CHOICES).
         self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '60'))
         self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120'])
+        # The launcher's aspect ratios are the game's (gpu/shim/port_graphics.h, scripts/graphics_options.py).
+        from graphics_options import ASPECTS
+        self.assertEqual(tuple(v for v, _t in launcher.ASPECT_CHOICES), ASPECTS)
+        self.assertEqual(d['aspect_ratio'], 'original')
         self.assertEqual([v for v, _t in launcher.FPS_LIMITS], ['30', '60', '120', '240', '0'])
         self.assertEqual(d['frames_queued'], '1')
         self.assertEqual([v for v, _t in launcher.FRAMES_QUEUED], ['1', '2', '0'])

@@ -10,11 +10,12 @@ never did, the next start goes back to the last confirmed values.
 import json
 from pathlib import Path
 
-RESOLUTIONS = ('native', '480p', '720p', '1440p', '1800p', '4K')
+# The game's 2.40:1 picture, or the "Aspect Ratio - <name>" patch that fills a screen of that shape.
+ASPECTS = ('original', '16:9', '16:10', '21:9')
 ENGINE_FPS = (60, 120, 240)
-DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
+DEFAULTS = {'aspect_ratio': 'original', 'engine_fps': '60', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1'}
-RESOLUTION_PREFIX = 'Resolution Patch'
+ASPECT_PREFIX = 'Aspect Ratio'
 FPS_PREFIX = 'Frame Rate Patch'
 
 
@@ -53,8 +54,8 @@ def write_keys(path, updates):
 def startup_options(ini):
     """The startup options, normalized; unknown values fall back to the defaults."""
     options = {key: ini.get(key, value) for key, value in DEFAULTS.items()}
-    if options['render_resolution'] not in RESOLUTIONS:
-        options['render_resolution'] = 'native'
+    if options['aspect_ratio'] not in ASPECTS:
+        options['aspect_ratio'] = 'original'
     if options['engine_fps'] not in {str(f) for f in ENGINE_FPS}:
         options['engine_fps'] = '120'
     for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
@@ -88,11 +89,10 @@ def prepare(config, state_path):
 
 
 def patch_names(names, options):
-    """The launcher's patch list with the resolution and frame rate patches of `options`."""
-    names = [n for n in names if not n.startswith(RESOLUTION_PREFIX) and not n.startswith(FPS_PREFIX)]
-    resolution = options['render_resolution']
-    if resolution != 'native':
-        names.append(f'{RESOLUTION_PREFIX} - {resolution}')
+    """The launcher's patch list with the aspect ratio and frame rate patches of `options`."""
+    names = [n for n in names if not n.startswith(ASPECT_PREFIX) and not n.startswith(FPS_PREFIX)]
+    if options['aspect_ratio'] != 'original':
+        names.append(f'{ASPECT_PREFIX} - {options["aspect_ratio"]}')
     if options['engine_fps'] != '60':
         names.append(f'{FPS_PREFIX} - {options["engine_fps"]} FPS')
     return names

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <deque>
 
 #include <condition_variable>
@@ -112,6 +113,9 @@ private:
 
 private:
     float expected_ratio{1920.0 / 1080.0f};
+    /// port: where the game's picture is in its image (x, y, width, height as fractions): with
+    /// an aspect ratio patch, a centered rect with black bars around it. See PrepareFrame.
+    std::array<float, 4> picture{0.0f, 0.0f, 1.0f, 1.0f};
     u32 expected_frame_width{1920};
     u32 expected_frame_height{1080};
 

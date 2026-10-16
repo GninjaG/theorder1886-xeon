@@ -127,6 +127,21 @@ static vk::Rect2D FitImage(s32 frame_width, s32 frame_height, s32 swapchain_widt
                          dst_rect.offset.x, dst_rect.offset.y);
 }
 
+// port: the picture part of the frame (Presenter::picture), fitted to the swapchain: the black
+// bars an aspect ratio patch leaves around the game's picture are not shown.
+[[nodiscard]] vk::ImageBlit MakeImageBlitPicture(s32 frame_width, s32 frame_height,
+                                                 const std::array<float, 4>& picture,
+                                                 s32 swapchain_width, s32 swapchain_height) {
+    const s32 x = std::clamp(s32(std::lround(picture[0] * frame_width)), 0, frame_width - 1);
+    const s32 y = std::clamp(s32(std::lround(picture[1] * frame_height)), 0, frame_height - 1);
+    const s32 w = std::clamp(s32(std::lround(picture[2] * frame_width)), 1, frame_width - x);
+    const s32 h = std::clamp(s32(std::lround(picture[3] * frame_height)), 1, frame_height - y);
+    auto blit = MakeImageBlitFit(w, h, swapchain_width, swapchain_height);
+    blit.srcOffsets[0] = vk::Offset3D{x, y, 0};
+    blit.srcOffsets[1] = vk::Offset3D{x + w, y + h, 1};
+    return blit;
+}
+
 // port: screenshot capture and ImGui overlays removed; the port presents directly.
 
 Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_)
@@ -493,17 +508,31 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             runtime.FlushBarriers();
         }
     }
-    expected_ratio = image_size.height > 0 ? static_cast<float>(image_size.width) / static_cast<float>(image_size.height) : (16.0f / 9.0f);
+    // port: with an aspect ratio patch the engine draws its picture in a centered rect of the
+    // image. The frame is sized so that rect fills the window (SetExpectedGameSize), FSR and the
+    // post pass work on the whole image as before, and Present shows only the picture.
+    if (image_size.width > 0 && image_size.height > 0) {
+        const int aspect = std::clamp(PortSettings::Get().startup_aspect, 0,
+                                      int(PortGraphics::AspectValues.size()) - 1);
+        const auto rect = PortGraphics::PictureRect(int(image_size.width), int(image_size.height),
+                                                    aspect ? PortGraphics::AspectValues[aspect] : 0.0f);
+        const float w = float(image_size.width), h = float(image_size.height);
+        picture = {float(rect.x) / w, float(rect.y) / h, float(rect.w) / w, float(rect.h) / h};
+        expected_ratio = float(rect.w) / float(rect.h);
+    } else {
+        expected_ratio = 16.0f / 9.0f;
+    }
 
     // port: FSR 1, RCAS and its strength come from the in-game menu, every frame.
     const auto& graphics = PortSettings::Get();
     fsr_settings.enable = graphics.fsr1;
     fsr_settings.use_rcas = graphics.rcas;
     fsr_settings.rcas_attenuation = PortGraphics::RcasAttenuation(graphics.rcas_strength);
-    PortSettings::Get().image_width = int(image_size.width);
-    PortSettings::Get().image_height = int(image_size.height);
-    PortSettings::Get().window_width = int(frame->width);
-    PortSettings::Get().window_height = int(frame->height);
+    // The menu shows the picture's size in the game's image and on screen.
+    PortSettings::Get().image_width = int(std::lround(image_size.width * picture[2]));
+    PortSettings::Get().image_height = int(std::lround(image_size.height * picture[3]));
+    PortSettings::Get().window_width = int(std::lround(frame->width * picture[2]));
+    PortSettings::Get().window_height = int(std::lround(frame->height * picture[3]));
     PortSettings::Get().rcas_applied =
         fsr_settings.use_rcas &&
         PortGraphics::FsrPassRuns(fsr_settings.enable, true, int(image_size.width), int(image_size.height),
@@ -789,7 +818,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                                vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
         cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
                          vk::ImageLayout::eTransferDstOptimal,
-                         MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
+                         MakeImageBlitPicture(s32(frame->width), s32(frame->height), picture,
+                                              s32(extent.width), s32(extent.height)),
                          vk::Filter::eLinear);
         // port: the settings menu / FPS counter over the frame, at display resolution.
         const bool overlay = PortOverlay::Visible();
@@ -910,13 +940,15 @@ void Presenter::SetExpectedGameSize(s32 width, s32 height) {
     }
     const float ratio = (float)width / (float)height;
 
-    expected_frame_height = height;
-    expected_frame_width = width;
+    // The picture fitted to the window; the frame is the whole image at that scale.
+    float fit_width = float(width), fit_height = float(height);
     if (ratio > expected_ratio) {
-        expected_frame_width = static_cast<s32>(height * expected_ratio);
+        fit_width = height * expected_ratio;
     } else {
-        expected_frame_height = static_cast<s32>(width / expected_ratio);
+        fit_height = width / expected_ratio;
     }
+    expected_frame_width = static_cast<u32>(std::max(1L, std::lround(fit_width / picture[2])));
+    expected_frame_height = static_cast<u32>(std::max(1L, std::lround(fit_height / picture[3])));
 }
 
 } // namespace Vulkan

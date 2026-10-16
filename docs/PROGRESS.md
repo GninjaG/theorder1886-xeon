@@ -2,6 +2,35 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-16: God of War leftovers removed, aspect ratio option
+
+**Cleanup (18c2ae5, d36f8f4, 90a0060):** God of War III's cheats, patches, glyphs, fonts, icons,
+tools and docs are gone; the launcher only offers options that work for The Order. Every
+`GOW3_*` variable is `THEORDER_*`, the executables are `theorder-*`, the settings file is
+`theorder.ini` (run.py and the launcher move an old `gow3.ini` once), code identifiers `Port*`/
+`port_*`.
+
+**Aspect ratio (launcher Graphics/home, in-game menu Image tab; applied on restart):**
+`aspect_ratio=original|16:9|16:10|21:9` in theorder.ini; run.py adds "Aspect Ratio - <name>".
+- The engine's video setup stores the picture aspect 2.4f (immediate at 0x44ce8c) and centers a
+  picture of that shape in the 1920x1080 display buffer (measured: 2.4 -> 1920x800 at y 140,
+  64:27 -> 1920x810 at y 135, 1.6 -> 1728x1080 at x 96). Its scene targets take the picture's
+  size (1920x810 render targets at 21:9).
+- Cameras keep a horizontal FOV defined for 16:9 and turn it into a vertical one with
+  `2*atan(tan(h/2) * 0.5625)` (doubles in each function's constant pool: 0x147f2b0, 0x147f2d0,
+  0x147f3c0/0x147f3d0 projection builders at 0x8c6a44/0x8c7a42, 0x147f5e8, 0x147f610, 0x147f670).
+  The aspect patch alone kept the vertical view and cropped the sides (Hor-); the patches also
+  scale those constants by 2.4/aspect, so the view keeps the original width and shows more above
+  and below (Vert+, checked on the title menu's background: same logo size and position).
+  0x147f5d0 stays: its function converts back with 2.4 (0x147f5d8), still right under Vert+.
+- The presenter keeps only the picture (`Presenter::picture`, `PortGraphics::PictureRect`): the
+  frame is sized so the picture fills the window (FSR 1 and the post pass still see the whole
+  image) and the swapchain blit copies the picture. Checked with 21:9 (1280x540) and 16:10
+  (1152x720) windows: no bars, no edge lines; validation layer: no new messages.
+- Cost at 60 FPS in the prologue (RTX 5060 Laptop): the scene has 35% more pixels at 16:9; 57.8
+  against 58.3 FPS on average over 3+3 interleaved 70 s runs, 3960 flips in both (the GPU command
+  thread, not the GPU, limits this machine).
+
 ## 2026-10-15 (night): windows-v0.2.0
 
 **State:** 70 s prologue runs (warm cache): 0 faults in 30+ runs this session, 30 FPS after the
@@ -42,21 +71,14 @@ draws per frame: the GPU thread is then busy all frame).
    compute dispatch skipped then. Likely vertex data read after the guest rewrote it (a fade
    quad). Check what the GPU reads in place vs copies before the EOP fence
    (`RunEventWriteEop`, `SignalAfterHostCopies`, THEORDER_STREAM_MEMORY).
-2. **Aspect ratio (16:9 / 16:10 / 21:9)**: the engine's video setup at 0x44ce86 stores 2.4f
-   (`movl $0x4019999a, -0x3e8(%rbp)`, immediate at 0x44ce8c) next to the 1080p mode
-   (0x780/0x438 at 0x44cf3d-0x44cf6f): the 1920x800 letterbox likely derives from it. Try
-   float32 patches there (16:9 = 1.7777778; 16:10 needs a 1920x1200 display mode or a 1728-wide
-   scene), and for 21:9 a presenter option that crops the letterbox (native 2.4:1 nearly fills
-   2560x1080). Tools: scratchpad-style frame captures (THEORDER_FRAME_DUMP_TRIGGER, now logging
-   "Frame dump N at flip M").
-3. Scene-load pauses: restoring ~200 known pipelines on the GPU thread costs ~5 ms each (2 MB
+2. Scene-load pauses: restoring ~200 known pipelines on the GPU thread costs ~5 ms each (2 MB
    binary read + checksum + driver). Prefetch them from the draw-preparation workers' keys
    (PreparedDraw::key) onto the compiler threads before the GPU thread needs them.
-4. Remaining particle shader permutations (2D vs 3D T#s in DA=0 slots): a dual 2D/3D
+3. Remaining particle shader permutations (2D vs 3D T#s in DA=0 slots): a dual 2D/3D
    declaration per slot, selected at run time, would end them.
-5. Rare guest fault at startup: `guest offset 0x20aa22` (lock-free queue pop in a Task Kernel
+4. Rare guest fault at startup: `guest offset 0x20aa22` (lock-free queue pop in a Task Kernel
    thread, garbage head index), 1 in ~40 runs.
-6. 60 FPS: the GPU thread is the limit in heavy scenes (~25-30 us per draw).
+5. 60 FPS: the GPU thread is the limit in heavy scenes (~25-30 us per draw).
 
 ## 2026-10-15 (release): windows-v0.1.0
 

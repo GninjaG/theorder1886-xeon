@@ -63,7 +63,7 @@ class GameProfileTests(unittest.TestCase):
         available = {'Skip Intro Logos', 'Frame Rate Patch - 60 FPS'}
         self.assertEqual(restrict_to_available(['Skip Intro Logos', 'Frame Rate Patch - 120 FPS'], available),
                          ['Skip Intro Logos', 'Frame Rate Patch - 60 FPS'])
-        self.assertEqual(restrict_to_available(['Resolution Patch - 8K'], available), [])
+        self.assertEqual(restrict_to_available(['Aspect Ratio - 32:9'], available), [])
 
     def test_defaults_and_extras(self):
         # Every built-in patch of The Order is off by default; the launcher's selection is exact.
@@ -73,7 +73,7 @@ class GameProfileTests(unittest.TestCase):
         self.assertEqual(selected_patches(ORDER, '01.02', 'Skip Intro Logos', only=True), ['Skip Intro Logos'])
         self.assertEqual(selected_patches(ORDER, '01.00', '', only=True), [])
         with self.assertRaises(ValueError):
-            selected_patches(ORDER, '01.02', 'Resolution Patch - 4K;Resolution Patch - 720p')
+            selected_patches(ORDER, '01.02', 'Aspect Ratio - 16:9;Aspect Ratio - 21:9')
 
     def test_profile_by_title_for_any_region(self):
         from unittest import mock

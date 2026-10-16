@@ -100,8 +100,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas_strength = PortGraphics::ParseRcasStrength(value.empty() ? -1 : i);
     } else if (key == "frames_queued") {
         v.frames_queued = PortGraphics::ParseFramesQueued(value.empty() ? -1 : i);
-    } else if (key == "render_resolution") {
-        v.render_resolution = PortGraphics::ParseResolution(value);
+    } else if (key == "aspect_ratio") {
+        v.aspect = PortGraphics::ParseAspect(value);
     } else if (key == "engine_fps") {
         v.engine_fps = PortGraphics::ParseEngineFps(i);
     } else if (key == "deferred_readback") {
@@ -174,7 +174,7 @@ void Load() {
     v.startup_object_motion = v.object_motion;
     v.startup_output_res = v.output_res;
     v.startup_live_resolution = v.live_resolution;
-    v.startup_render_resolution = v.render_resolution;
+    v.startup_aspect = v.aspect;
     v.startup_engine_fps = v.engine_fps;
     const char* applied = std::getenv("THEORDER_ENGINE_FPS");
     v.applied_engine_fps = applied && applied[0] ? PortGraphics::ParseEngineFps(std::atoi(applied))
@@ -185,7 +185,7 @@ void Load() {
 
 bool GraphicsNeedRestart() {
     const auto& v = Get();
-    return v.render_resolution != v.startup_render_resolution ||
+    return v.aspect != v.startup_aspect ||
            v.engine_fps != v.startup_engine_fps ||
            v.deferred_readback != v.startup_deferred_readback ||
            v.stale_readback != v.startup_stale_readback;
@@ -268,12 +268,12 @@ void Save() {
     std::fprintf(file,
                  "display_mode=%s\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
-                 "render_resolution=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
+                 "aspect_ratio=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
                  PortGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
-                 PortGraphics::Resolutions[std::clamp(v.render_resolution.load(), 0, 5)].data(),
+                 PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, 3)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     // Read by run.sh at start.

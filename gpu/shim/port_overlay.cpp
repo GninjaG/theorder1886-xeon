@@ -287,6 +287,13 @@ void ImageTab() {
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
     const bool downscaling = iw > ww || ih > wh;
     const bool rcas_blocked = s.rcas && !s.rcas_applied;
+    ImGui::SeparatorText("Applied on restart");
+    if (BeginRows("##image_restart")) {
+        ChoiceRow("Aspect ratio", s.aspect, G::AspectNames.data(), nullptr, int(G::AspectNames.size()),
+                  "The shape of the game's picture. Pick your screen's to fill it without black bars: "
+                  "the view keeps the original width and shows more above and below.");
+        ImGui::EndTable();
+    }
     ImGui::SeparatorText("Sharpening");
     if (BeginRows("##scaling")) {
         ImGui::BeginDisabled(rcas_blocked);
@@ -414,7 +421,7 @@ void OverlayTab() {
 // Startup options changed since this launch (applied by "Apply and restart").
 int RestartChanges() {
     const auto& s = PortSettings::Get();
-    return (s.render_resolution != s.startup_render_resolution) + (s.engine_fps != s.startup_engine_fps) +
+    return (s.aspect != s.startup_aspect) + (s.engine_fps != s.startup_engine_fps) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback);
 }
 
