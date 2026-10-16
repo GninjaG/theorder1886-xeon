@@ -28,7 +28,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import unicodedata
 import time
 import urllib.request
 import webbrowser
@@ -62,10 +61,6 @@ RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/la
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'mods', 'gow3.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
-# A face for titles next to the icons, registered by main() for this process only. The God of War
-# III face is not used for this game: without the file the titles use the serif font (Georgia).
-FONT_FILE = PORT_DIR / 'launcher' / 'theorder_font.ttf'
-FR_PRIVATE = 0x10
 
 
 # ---------------------------------------------------------------------------------------------
@@ -166,7 +161,6 @@ import button_icons  # noqa: E402
 import gow3_lang  # noqa: E402
 
 LANG = 'en'
-FONT_LOADED = False  # set by main() for the window; the command-line roles never need the font
 
 
 WARN = '  ⚠'  # marks a risky choice; the text before it is translated as usual
@@ -241,57 +235,20 @@ def windows_language():
     return gow3_lang.WINDOWS_LANGUAGES.get(primary, 'en')
 
 
-def register_font(path):
-    """Makes a font file available to this process (nothing else sees it). False when the file is missing or
-    GDI refuses it: the launcher then keeps its standard fonts."""
-    if not WINDOWS:
-        return False
-    try:
-        return path.is_file() and bool(ctypes.windll.gdi32.AddFontResourceExW(str(path), FR_PRIVATE, 0))
-    except (AttributeError, OSError):
-        return False
-
-
-# The God of War face has ASCII letters only: the Latin-script languages use it for headings with
-# the accents stripped (heading_text); the other scripts keep the launcher's usual families.
-LATIN_UI_LANGUAGES = ('en', 'es', 'pt', 'fr', 'de', 'it', 'pl', 'tr')
-HEADING_LETTERS = {'ß': 'ss', 'ẞ': 'SS', 'œ': 'oe', 'Œ': 'OE', 'æ': 'ae', 'Æ': 'AE', 'ø': 'o', 'Ø': 'O',
-                   'ł': 'l', 'Ł': 'L', 'ı': 'i', 'đ': 'd', 'Đ': 'D'}
-
-
-def heading_face(every_language=False):
-    """Whether headings are drawn with the God of War face: once its file is registered, in the
-    Latin-script languages, or in every language for the game's name."""
-    return FONT_LOADED and (every_language or LANG in LATIN_UI_LANGUAGES)
-
-
 def heading_font(size, fallback=None, every_language=False):
-    if heading_face(every_language):
-        return ('GodOfWar', size)
+    """Titles use the serif font (or `fallback`); every_language is kept for the callers."""
     return (fallback or SERIF_FONT, size)
 
 
-def plain_letter(c):
-    """c without its accents when its base letter is ASCII (Á becomes A). The other scripts keep
-    their letters whole: Й is not И, ゴ is not コ, a hangul syllable is not its jamo."""
-    base = unicodedata.normalize('NFD', c)[0]
-    return base if base.isascii() else c
-
-
 def heading_text(text, every_language=False):
-    """A heading's text for its font: in the God of War face the accents go (GRÁFICOS becomes
-    GRAFICOS) and the letters it lacks become their plain pair (ß becomes ss)."""
-    if not heading_face(every_language):
-        return text
-    text = ''.join(HEADING_LETTERS.get(c, c) for c in text)
-    return ''.join(plain_letter(c) for c in text)
+    return text
 
 
 # ---------------------------------------------------------------------------------------------
 # Settings. gow3.ini keys (the game reads them, the in-game menu edits them) and the
 # launcher's own settings.json (passed to run.py as environment variables).
 
-INI_FLAGS = {'cheat_double_jumps', 'cheat_very_hard', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
+INI_FLAGS = {'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
              'stale_readback'}
 # The graphics keys are also in the in-game menu (Insert / R3+L2); run.py reads the startup ones.
 INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
@@ -299,7 +256,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
                 'render_resolution': 'native', 'engine_fps': '60',
-                'frames_queued': '1', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
+                'frames_queued': '1'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
@@ -312,8 +269,7 @@ APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_D
                 'gpu_id': '', 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True,
                 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False,
-                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
-                'glyph_style': 'off'}
+                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and the left touchpad click (photo mode) from L1 + the right click's
@@ -760,10 +716,6 @@ def game_environment(s):
     for kind, name in (('key', 'GOW3_KEY_MAP'), ('pad', 'GOW3_PAD_MAP')):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
-    glyph_style = s.get('glyph_style')
-    env.pop('GOW3_GLYPH_STYLE', None)
-    if glyph_style in ('auto', 'xbox', 'nintendo'):
-        env['GOW3_GLYPH_STYLE'] = glyph_style
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -1366,7 +1318,7 @@ class Launcher:
 
     def refresh_game_patches(self):
         import xml.etree.ElementTree as ET
-        from patches import ALWAYS_ON, EXCLUSIVE_PREFIX
+        from patches import EXCLUSIVE_PREFIX
         tk, f = self.tk, self.game_patch_frame
         self.store_game_patches()
         for widget in f.winfo_children():
@@ -1387,7 +1339,7 @@ class Launcher:
                        '{} · версия {} · {}.').format(title_id, version, xml.name), top=0)
         for meta in metas:
             name = meta.get('Name')
-            if name.startswith(EXCLUSIVE_PREFIX) or name.startswith('Frame Rate Patch') or name in ALWAYS_ON:
+            if name.startswith(EXCLUSIVE_PREFIX) or name.startswith('Frame Rate Patch'):
                 continue
             var = tk.BooleanVar(value=name in on)
             self.game_patch_vars[name] = var
@@ -1430,7 +1382,6 @@ class Launcher:
             ttk.Radiobutton(names, text=label, value=value, variable=self.pad_style,
                             command=self.relabel_pad_controls).pack(side='left', padx=(0, 14))
         self.row(f, _('Gamepad names'), names)
-        # The in-game button icon replacement patches God of War III's files: not offered here.
         table = ttk.Frame(f)
         table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(16, 0))
         for column, span, title in ((0, 2, _('GAME BUTTON')), (2, 1, _('KEYBOARD')), (3, 2, _('GAMEPAD'))):
@@ -2369,7 +2320,7 @@ def install_update(target, wait_pid):
 
 
 def main():
-    global LANG, FONT_LOADED
+    global LANG
     args = sys.argv[1:]
     if args and args[0] in ('--run', '--script'):
         sys.exit(run_role(args))
@@ -2390,7 +2341,6 @@ def main():
             ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on scaled displays
         except (AttributeError, OSError):
             pass
-    FONT_LOADED = register_font(FONT_FILE)  # titles keep the usual serif without it
     import tkinter as tk
     from tkinter import filedialog, font, messagebox, ttk
     root = tk.Tk() if WINDOWS else tk.Tk(className='gow3')

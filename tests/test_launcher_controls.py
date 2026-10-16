@@ -22,15 +22,14 @@ def sfo_bytes(**values):
             + entries + keys + data)
 
 
-BASE_SFO = sfo_bytes(TITLE_ID='CUSA01623', APP_VER='01.00')
+BASE_SFO = sfo_bytes(TITLE_ID='CUSA00035', APP_VER='01.00')
 
 
 class ControlMapTest(unittest.TestCase):
-    def test_new_cheats_default_to_disabled(self):
-        self.assertEqual(launcher.INI_DEFAULTS['cheat_double_jumps'], '0')
-        self.assertEqual(launcher.INI_DEFAULTS['cheat_very_hard'], '0')
-        self.assertIn('cheat_double_jumps', launcher.INI_FLAGS)
-        self.assertIn('cheat_very_hard', launcher.INI_FLAGS)
+    def test_no_cheat_settings(self):
+        # God of War III's cheats are gone: neither the launcher nor the game knows their keys.
+        self.assertFalse([k for k in launcher.INI_DEFAULTS if k.startswith('cheat_')])
+        self.assertFalse([k for k in launcher.INI_FLAGS if k.startswith('cheat_')])
 
     def test_pipeline_binary_cache_switch(self):
         settings = {**launcher.APP_DEFAULTS}
@@ -103,35 +102,13 @@ class ControlMapTest(unittest.TestCase):
             env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
             self.assertEqual(env['GOW3_EXPERIMENTAL_UPSCALER'], '0')
 
-    def test_glyph_style_is_off_by_default(self):
-        self.assertEqual(launcher.APP_DEFAULTS['glyph_style'], 'off')
-        self.assertNotIn('GOW3_GLYPH_STYLE', launcher.game_environment({**launcher.APP_DEFAULTS}))
-
-    def test_glyph_style_choices_reach_the_game(self):
-        for style in ('auto', 'xbox', 'nintendo'):
-            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'glyph_style': style})
-            self.assertEqual(env['GOW3_GLYPH_STYLE'], style)
-
-    def test_unknown_glyph_style_is_off(self):
-        for style in ('playstation', 'XBOX', 7, None, ''):
-            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'glyph_style': style})
-            self.assertNotIn('GOW3_GLYPH_STYLE', env)
-
-    def test_inherited_glyph_style_is_dropped_when_off(self):
-        from unittest import mock
-
-        with mock.patch.dict(launcher.os.environ, {'GOW3_GLYPH_STYLE': 'xbox'}):
-            self.assertNotIn('GOW3_GLYPH_STYLE', launcher.game_environment({**launcher.APP_DEFAULTS}))
-            self.assertEqual(launcher.game_environment({**launcher.APP_DEFAULTS, 'glyph_style': 'nintendo'})
-                             ['GOW3_GLYPH_STYLE'], 'nintendo')
-
     def test_settings_keys_kept(self):
         # The redesign hides some options (player name) but keeps every saved setting working.
         for key in ('game_dir', 'user_dir', 'mods_dir', 'patches_dir', 'language', 'player_name', 'hdr',
-                    'draw_pipe', 'readbacks', 'background_warmup', 'parallel_warmup', 'controls', 'pad_style', 'glyph_style'):
+                    'draw_pipe', 'readbacks', 'background_warmup', 'parallel_warmup', 'controls', 'pad_style'):
             self.assertIn(key, launcher.APP_DEFAULTS)
-        env = launcher.game_environment({**launcher.APP_DEFAULTS, 'player_name': ' Kratos '})
-        self.assertEqual(env['GOW3_USER_NAME'], 'Kratos')
+        env = launcher.game_environment({**launcher.APP_DEFAULTS, 'player_name': ' Galahad '})
+        self.assertEqual(env['GOW3_USER_NAME'], 'Galahad')
         for key in ('display_mode', 'fps_limit', 'render_resolution', 'engine_fps'):
             self.assertIn(key, launcher.INI_DEFAULTS)
 
@@ -321,7 +298,7 @@ class GameFilesTest(unittest.TestCase):
             self.assertEqual(base['APP_VER'], '01.00')
             beside = root / 'Base0'  # the base game beside this folder: Sc0 at its version is its own
             self.assertIsNone(launcher.system_files_beside(game, reference=base, base=beside))
-            self.assertEqual(launcher.system_files_beside(game, reference={'TITLE_ID': 'CUSA01623', 'APP_VER': '01.02'},
+            self.assertEqual(launcher.system_files_beside(game, reference={'TITLE_ID': 'CUSA00035', 'APP_VER': '01.02'},
                                                          base=beside), root / 'Sc0')
             self.assertIsNone(launcher.system_files_beside(game, reference={'TITLE_ID': 'CUSA00001', 'APP_VER': '01.02'},
                                                            base=beside))
@@ -379,7 +356,7 @@ class GameFilesTest(unittest.TestCase):
             if placeholder is not None:
                 (game / 'sce_sys/param.sfo').write_bytes(placeholder)
             (root / name / 'Sc0').mkdir()
-            (root / name / 'Sc0/param.sfo').write_bytes(sfo_bytes(TITLE_ID='CUSA01623', APP_VER=version))
+            (root / name / 'Sc0/param.sfo').write_bytes(sfo_bytes(TITLE_ID='CUSA00035', APP_VER=version))
             return game
 
         def launcher_app(game, update=''):
@@ -551,8 +528,8 @@ class GpuChoiceTest(unittest.TestCase):
 
 class ReleaseVersionTest(unittest.TestCase):
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.1.0')
-        self.assertGreater(launcher.version_tuple('windows-v0.1.1'), launcher.version_tuple(launcher.VERSION))
+        self.assertEqual(launcher.VERSION, '0.2.0')
+        self.assertGreater(launcher.version_tuple('windows-v0.2.1'), launcher.version_tuple(launcher.VERSION))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_first_start_is_in_english(self):

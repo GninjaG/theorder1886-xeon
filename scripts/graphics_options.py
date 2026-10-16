@@ -16,7 +16,6 @@ DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readbac
             'stale_readback': '1', 'async_shaders': '1'}
 RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'
-TEXTURE_FIX = 'Bug Fix - Texture Corruption Fix'
 
 
 def read_ini(path):
@@ -88,14 +87,12 @@ def prepare(config, state_path):
     return options, reverted
 
 
-def patch_names(names, options, texture_fix_available=True):
+def patch_names(names, options):
     """The launcher's patch list with the resolution and frame rate patches of `options`."""
     names = [n for n in names if not n.startswith(RESOLUTION_PREFIX) and not n.startswith(FPS_PREFIX)]
     resolution = options['render_resolution']
     if resolution != 'native':
-        names = [n for n in names if n != TEXTURE_FIX] + [f'{RESOLUTION_PREFIX} - {resolution}']
-    elif texture_fix_available and TEXTURE_FIX not in names:
-        names.insert(0, TEXTURE_FIX)
+        names.append(f'{RESOLUTION_PREFIX} - {resolution}')
     if options['engine_fps'] != '60':
         names.append(f'{FPS_PREFIX} - {options["engine_fps"]} FPS')
     return names

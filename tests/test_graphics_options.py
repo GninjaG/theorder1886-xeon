@@ -50,19 +50,19 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text())['last_good']['engine_fps'], '240')
 
     def test_patch_names(self):
-        launcher = ['Bug Fix - Texture Corruption Fix', 'Frame Rate Patch - 120 FPS', 'Skip Any Video With X Button']
+        launcher = ['Frame Rate Patch - 120 FPS', 'Skip Intro Logos']
         options = g.startup_options({'render_resolution': '1440p', 'engine_fps': '240'})
         self.assertEqual(g.patch_names(launcher, options),
-                         ['Skip Any Video With X Button', 'Resolution Patch - 1440p', 'Frame Rate Patch - 240 FPS'])
+                         ['Skip Intro Logos', 'Resolution Patch - 1440p', 'Frame Rate Patch - 240 FPS'])
         native = g.startup_options({'engine_fps': '60'})
-        self.assertEqual(g.patch_names(['Resolution Patch - 4K', 'Skip Any Video With X Button'], native),
-                         ['Bug Fix - Texture Corruption Fix', 'Skip Any Video With X Button'])
+        self.assertEqual(g.patch_names(['Resolution Patch - 4K', 'Skip Intro Logos'], native),
+                         ['Skip Intro Logos'])
 
     def test_applied_engine_fps(self):
         # The engine runs above 60 only with a frame rate patch in the applied list.
-        self.assertEqual(g.applied_engine_fps(['Skip Any Video With X Button', 'Frame Rate Patch - 240 FPS']), 240)
+        self.assertEqual(g.applied_engine_fps(['Skip Intro Logos', 'Frame Rate Patch - 240 FPS']), 240)
         self.assertEqual(g.applied_engine_fps(['Frame Rate Patch - 120 FPS']), 120)
-        self.assertEqual(g.applied_engine_fps(['Bug Fix - Texture Corruption Fix']), 60)
+        self.assertEqual(g.applied_engine_fps(['Skip Intro Logos']), 60)
         self.assertEqual(g.applied_engine_fps([]), 60)
 
     def test_environment(self):

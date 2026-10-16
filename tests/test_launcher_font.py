@@ -1,102 +1,25 @@
-"""The title font: an optional launcher asset, never a reason the launcher cannot start. The Order's
-launcher ships none (the God of War III face is not used), so titles use the serif font."""
+"""The launcher's titles use the serif font: no title face ships with it."""
 import sys
 import unittest
-from pathlib import Path
 
 from paths import ROOT
 sys.path.insert(0, str(ROOT / 'launcher'))
 import gow3_launcher_win as launcher  # noqa: E402
 
 
-class FontFileTest(unittest.TestCase):
-    def test_font_file_is_a_launcher_asset_under_port_dir(self):
-        # Frozen builds find launcher assets next to the exe (PORT_DIR / 'launcher'), like gow3.ico.
-        self.assertEqual(launcher.FONT_FILE, launcher.PORT_DIR / 'launcher' / 'theorder_font.ttf')
-
-    def test_windows_package_does_not_ship_the_god_of_war_font(self):
-        script = (ROOT / 'packaging' / 'windows' / 'package.sh').read_text(encoding='utf-8')
-        self.assertNotIn('gowfont.ttf', script)
-
-
-class RegisterFontTest(unittest.TestCase):
-    def test_missing_file_is_not_fatal(self):
-        self.assertFalse(launcher.register_font(Path('no-such-font.ttf')))
-
-    @unittest.skipUnless(sys.platform == 'win32', 'GDI font registration')
-    def test_file_that_is_not_a_font_is_refused(self):
-        self.assertFalse(launcher.register_font(Path(launcher.__file__)))
-
-    @unittest.skipUnless(sys.platform == 'win32' and launcher.FONT_FILE.is_file(), 'GDI font registration')
-    def test_font_file_registers(self):
-        self.assertTrue(launcher.register_font(launcher.FONT_FILE))
-
-
 class HeadingFontTest(unittest.TestCase):
-    def setUp(self):
-        self.saved = launcher.LANG, launcher.FONT_LOADED
-
-    def tearDown(self):
-        launcher.LANG, launcher.FONT_LOADED = self.saved
-
-    def test_english_titles_use_the_loaded_font(self):
-        launcher.LANG, launcher.FONT_LOADED = 'en', True
-        self.assertEqual(launcher.heading_font(12), ('GodOfWar', 12))
-
-    def test_other_languages_keep_the_fallback(self):
-        launcher.LANG, launcher.FONT_LOADED = 'ru', True
-        self.assertEqual(launcher.heading_font(12), ('Georgia', 12))
+    def test_titles_use_the_serif_font_or_the_fallback(self):
+        self.assertEqual(launcher.heading_font(12), (launcher.SERIF_FONT, 12))
         self.assertEqual(launcher.heading_font(11, 'Segoe UI'), ('Segoe UI', 11))
+        self.assertEqual(launcher.heading_font(15, every_language=True), (launcher.SERIF_FONT, 15))
 
-    def test_unloaded_font_keeps_the_fallback(self):
-        launcher.LANG, launcher.FONT_LOADED = 'en', False
-        self.assertEqual(launcher.heading_font(20), ('Georgia', 20))
-
-    def test_game_name_uses_the_font_in_every_language(self):
-        launcher.LANG, launcher.FONT_LOADED = 'ru', True
-        self.assertEqual(launcher.heading_font(15, every_language=True), ('GodOfWar', 15))
-        launcher.FONT_LOADED = False
-        self.assertEqual(launcher.heading_font(15, every_language=True), ('Georgia', 15))
-
-
-class LatinHeadingsTest(unittest.TestCase):
-    """The face has ASCII only: Latin-script languages use it with the accents stripped from headings."""
-    def setUp(self):
-        self.saved = launcher.LANG, launcher.FONT_LOADED
-        launcher.FONT_LOADED = True
-
-    def tearDown(self):
-        launcher.LANG, launcher.FONT_LOADED = self.saved
-
-    def test_latin_script_languages_use_the_loaded_font(self):
-        for lang in ('pt', 'es', 'fr', 'de', 'it'):
-            launcher.LANG = lang
-            self.assertEqual(launcher.heading_font(12), ('GodOfWar', 12), lang)
-
-    def test_other_scripts_keep_the_fallback(self):
-        for lang in ('ru', 'ar'):
-            launcher.LANG = lang
-            self.assertEqual(launcher.heading_font(12), ('Georgia', 12), lang)
-
-    def test_headings_lose_their_accents_in_the_loaded_font(self):
-        launcher.LANG = 'pt'
-        self.assertEqual(launcher.heading_text('GRÁFICOS'), 'GRAFICOS')
-        self.assertEqual(launcher.heading_text('Avançado'), 'Avancado')
-        self.assertEqual(launcher.heading_text('Straße · Œuvre'), 'Strasse · OEuvre')
-
-    def test_headings_keep_their_text_outside_the_font(self):
-        launcher.LANG = 'ru'
-        self.assertEqual(launcher.heading_text('Графика'), 'Графика')
-        launcher.LANG, launcher.FONT_LOADED = 'pt', False
+    def test_headings_keep_their_text(self):
         self.assertEqual(launcher.heading_text('GRÁFICOS'), 'GRÁFICOS')
+        self.assertEqual(launcher.heading_text('Графика'), 'Графика')
 
-    def test_the_game_name_keeps_other_scripts_whole(self):
-        """The game's name (every_language) only loses Latin accents: Cyrillic, kana and hangul
-        letters are not decomposed (Й is not И, ゴ is not コ)."""
-        launcher.LANG = 'ru'
-        for name in ('ГЕРОЙ ВОЙНЫ · ЁЖ', 'ゴッド・オブ・ウォーIII', '갓 오브 워 III'):
-            self.assertEqual(launcher.heading_text(name, every_language=True), name)
-        self.assertEqual(launcher.heading_text('GRÁFICOS', every_language=True), 'GRAFICOS')
+    def test_windows_package_ships_no_title_font(self):
+        script = (ROOT / 'packaging' / 'windows' / 'package.sh').read_text(encoding='utf-8')
+        self.assertNotIn('.ttf', script)
 
 
 if __name__ == '__main__':

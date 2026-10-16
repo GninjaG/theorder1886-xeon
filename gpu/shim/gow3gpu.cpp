@@ -272,7 +272,7 @@ extern "C" int gow3gpu_init(const Gow3GpuConfig *config) {
     setenv("GOW3_GPU_USER_DIR", config->user_dir, 0);
 #endif
   Core::Emulator::FillElfInfo(*config);
-  const std::string title = config->title ? config->title : "God of War III";
+  const std::string title = config->title ? config->title : "The Order: 1886";
   const s32 width = config->width, height = config->height;
   g_window_thread = std::thread([title, width, height] {
     Common::SetCurrentThreadName("gow3:window");

@@ -1,7 +1,8 @@
 """Compile selected shadPS4/GoldHEN XML patches into out/patches.bin for the loader.
 
-Patch addresses are PS4 virtual addresses (eboot base 0x400000); the loader's
-image places eboot vaddr 0 at image offset 0. Only literal writes are supported
+Patch addresses are the eboot's virtual addresses (The Order's first segment starts at 0;
+main() takes the lowest segment address as the base); the loader's image places eboot vaddr 0 at
+image offset 0. Only literal writes are supported
 (bytes, bytes16/32/64, float32/64, utf8, utf16); pattern ("mask") patches are rejected.
 The built-in file's lines carry signatures (Pattern/At) that find each site in any build.
 """
@@ -15,7 +16,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-EBOOT_BASE=0x400000
+EBOOT_BASE=0
 
 
 def game_app_version(game):
@@ -164,11 +165,9 @@ PATCHES_DIR=Path(__file__).resolve().parent.parent/'patches'
 GAMES=[
     ({'CUSA00035','CUSA00070','CUSA00076','CUSA00100','CUSA00670','CUSA00785'},
      PATCHES_DIR/'TheOrder1886-Orbis.xml','01.02','The Order 1886'),
-    ({'CUSA01623','CUSA01715','CUSA01720'},
-     PATCHES_DIR/'God_of_War_III_Remastered.xml','01.02','God of War III'),
 ]
 # The build the built-in Address values and third-party patch files are written for.
-REFERENCE_SHA256='d85c8135d330c3b601bf5dc3f1dd86bd6119fb8a9fce372bed2c9785f9a79299'
+REFERENCE_SHA256='f742eb1793f92772a5c4bdd174e29b08e0b53f68d373a37f4cda730703e558d8'  # CUSA00035 01.02
 DMEM_RETAIL_MB=5056  # runtime_memory.c POOL_SIZE default
 
 
@@ -230,27 +229,20 @@ def available_patches(xml, app_version):
     return {m.get('Name') for m in ET.parse(xml).getroot().iter('Metadata') if m.get('AppVer')==app_version}
 
 
-# God of War III notes: the texture fix and the resolution patches both resize the video arena;
-# enable one, never both. A chosen resolution patch replaces the default texture fix.
+# Resolution patches set the same values: one at a time.
 EXCLUSIVE_PREFIX='Resolution Patch'
-REPLACED_BY_EXCLUSIVE={'Bug Fix - Texture Corruption Fix'}
-# Fixes with nothing to choose: not offered in the launcher and applied even with its saved list,
-# which predates them (the startup black screen fix sets a value the game overwrites at once).
-ALWAYS_ON={'Bug Fix - Startup Black Screen'}
 
 
 def selected_patches(xml, app_version, extra, only=False):
     """The file's isEnabled patches for this version, then the names in extra (";"-separated).
-    only: extra is the whole selection (the launcher's), without the file's defaults but with
-    the ALWAYS_ON ones."""
+    only: extra is the whole selection (the launcher's), without the file's defaults."""
     metas=[m for m in ET.parse(xml).getroot().iter('Metadata') if m.get('AppVer')==app_version]
     names=[] if only else [m.get('Name') for m in metas if m.get('isEnabled','false').lower()=='true']
     names+=[n for n in (n.strip() for n in extra.split(';')) if n and n not in names]
-    names+=[m.get('Name') for m in metas if m.get('Name') in ALWAYS_ON and m.get('Name') not in names]
     exclusive=[n for n in names if n.startswith(EXCLUSIVE_PREFIX)]
     if len(exclusive)>1:
         raise ValueError(f'choose one resolution patch, not {exclusive}')
-    return [n for n in names if not (exclusive and n in REPLACED_BY_EXCLUSIVE)]
+    return names
 
 
 def patch_requirements(xml, names, app_version):
@@ -332,7 +324,7 @@ def main():
     p.add_argument('--patches-config',type=Path,help='patches.json: enabled/disabled external patches')
     p.add_argument('--extra',default='',help='additional patch names, separated by ";"')
     p.add_argument('--out',type=Path,default=Path(__file__).resolve().parent.parent/'out')
-    p.add_argument('--game-dir',type=Path,default=Path(os.environ.get('GOW3_GAME_DIR','../CUSA01623')))
+    p.add_argument('--game-dir',type=Path,default=Path(os.environ.get('GOW3_GAME_DIR','../CUSA00035')))
     a=p.parse_args()
     title=game_title_id(a.game_dir)
     profile=game_profile_for(a.game_dir)
