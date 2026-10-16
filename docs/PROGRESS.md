@@ -28,8 +28,10 @@ the three functions avcodec imports; beside the executable (out/ and the package
 loaded instead, and libgio, pango, gdk-pixbuf, iertutil and mrmcorer no longer load (checked on
 a running game).
 **Scene-load pauses:** the pipeline binary report now splits a restore: driver key 0.04 ms,
-file 10.4 ms, binary handles 0.26 ms, driver 1.3 ms. Reading the 2 MB files with fread instead
-of std::ifstream (e3909ef): file 2.1-2.6 ms, 11-16 ms per pipeline built in a stall (was 22).
+file 10.4 ms (a cold file cache), binary handles 0.26 ms, driver 1.3 ms. fread instead of
+std::ifstream (e3909ef), 3+3 interleaved prologue runs: file 3.2-3.4 -> 1.8-2.2 ms per pipeline
+(the first ifstream run, colder: 6.0), the prologue-start burst of ~95 pipelines 477-501 ->
+262-390 ms (first run 1001).
 Next if still worth it: read the binaries of the upcoming draws ahead on a few threads (needs
 an emulator key -> driver binary name index; the name comes from vkGetPipelineKeyKHR).
 **`-startlevel`:** still the title screen with `pro_010` + `pro_010_checkpoint_005`, also with

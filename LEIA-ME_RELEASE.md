@@ -28,8 +28,8 @@ Novidades da 0.3.1:
   nunca usa. O pacote agora traz um `librsvg-2-2.dll` mínimo no lugar do original, e GIO, Pango e
   GDK-Pixbuf não são mais carregados.
 - **Pausas menores ao carregar cenas**: os pipelines guardados (arquivos de ~2 MB) agora são lidos
-  com stdio, e a leitura caiu de 10,4 para 2,1–2,6 ms por pipeline; cada pipeline refeito durante
-  uma pausa custa 11–16 ms em vez de 22.
+  com stdio, cerca de 1,6× mais rápido (3,2–3,4 → 1,8–2,2 ms por pipeline, medido em execuções
+  intercaladas); a maior pausa, no início do prólogo (~95 pipelines), caiu de ~490 para ~330 ms.
 - Diagnóstico para desenvolvedores: `THEORDER_WATCH=<endereço>:<bytes>` registra cada mudança de
   um trecho da memória do jogo; os relatórios de crash mostram mais registradores e o estado da
   fila de tarefas do motor.
