@@ -89,10 +89,16 @@ draws per frame: the GPU thread is then busy all frame).
 
 **Found, not done (next):**
 1. **Black triangle flicker**: a frame dump (out/flicker/corr frame 24, flip 1776, prologue
-   ~62 s) shows a black triangle over the upper-left half of the image for one frame, with no
-   compute dispatch skipped then. Likely vertex data read after the guest rewrote it (a fade
-   quad). Check what the GPU reads in place vs copies before the EOP fence
-   (`RunEventWriteEop`, `SignalAfterHostCopies`, THEORDER_STREAM_MEMORY).
+   ~62 s) shows the display buffer's clear color (0,0,4) over the upper-left of the picture,
+   bounded by a straight diagonal: a fullscreen pass covered only part of the screen. The final
+   composite VS (b9c87fc1) and the clear VS (e5979e2b) build positions from gl_VertexID, but
+   0ece32eb (tonemap #111 and other fullscreen passes) reads position and UV from a vertex
+   buffer the engine rewrites every frame (docs/parallel_gpu.md: EOP fences are signalled at
+   record time). One wrong vertex gives exactly this shape. Not reproduced since (2 runs with
+   consecutive dumps at 55-66 s; the fast camera pans there blur legitimately). Next: find how
+   that 60-byte vertex buffer reaches the GPU (constant ring vs arena re-upload) and whether a
+   later upload can overwrite it before the GPU reads it. Captures now print the flip
+   (`presented buffer ..., flip N`) to match frame dumps.
 2. Scene-load pauses: restoring ~200 known pipelines on the GPU thread costs ~5 ms each (2 MB
    binary read + checksum + driver). Prefetch them from the draw-preparation workers' keys
    (PreparedDraw::key) onto the compiler threads before the GPU thread needs them.

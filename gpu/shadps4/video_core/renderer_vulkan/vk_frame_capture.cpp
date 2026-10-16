@@ -10,6 +10,7 @@
 
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/texture_cache/image_info.h"
+#include "port_toggles.h"
 
 namespace Vulkan {
 
@@ -117,7 +118,9 @@ void Write(VAddr presented) {
         SetResult("Capture failed: cannot write " + path);
         return;
     }
-    std::fprintf(f, "presented buffer %#llx\n", static_cast<unsigned long long>(presented));
+    // The flip the presenter prepared last, as frame dumps report it ("Frame dump N at flip M").
+    std::fprintf(f, "presented buffer %#llx, flip %llu\n", static_cast<unsigned long long>(presented),
+                 static_cast<unsigned long long>(PortStats::flips.load(std::memory_order_relaxed)));
     u32 index = 0;
     for (const auto& e : entries) {
         if (e.compute) {
