@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.2.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.0
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -18,39 +18,38 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
-## Situação (15/10/2026, RTX 5060 Laptop, Windows 11)
+## Situação (16/10/2026, RTX 5060 Laptop, Windows 11)
 
-Novidades da 0.2.0 (medidas em execuções automatizadas de 70 s até o prólogo, cache já montado):
+Novidades da 0.3.0:
 
-- **Fim do "pisca-pisca" de objetos e efeitos**: pipelines que uma sessão anterior já montou agora
-  são criados na hora (1 a 2 ms, do cache) em vez de pular os draws até ficarem prontos. Draws
-  pulados por sessão: de 1.600–2.100 para 55–111 (na sessão de 5,5 min da 0.1.0 foram 20.344).
-- **Menos travadas de shader**: o cache de permutações agora recarrega todas as variantes do
-  shader de iluminação de partículas (antes só as 256 primeiras, e o resto era recompilado a cada
-  sessão), e texturas "lixo" de slots inativos não geram mais variantes novas. Compilação no
-  thread da GPU por sessão: de 9–11 s para 1,4–2,1 s.
-- **Shaders de compute recorrentes** (iluminação de partículas) compilam em segundo plano: o
-  quadro não para ~200 ms a cada variante nova (as partículas daquele emissor somem por um
-  instante).
-- **Disco**: o cache de binários de pipeline (até 2 MB por pipeline no driver NVIDIA) chegou a
-  41 GB e encheu o disco (a sessão da 0.1.0 terminou com "No space left on device"). Agora fica
-  em até 4 GB (`THEORDER_PIPELINE_BINARY_CACHE_MB`), removendo os mais antigos ao iniciar.
-- **Crash corrigido** numa sessão longa a 60 FPS ("Unresolvable image overlap"): texturas com
-  descritores inválidos no mesmo endereço de uma textura real.
-- **Patches removidos**: 900p, 720p e "Letterbox Removal" escreviam no meio de instruções e
-  corrompiam o código se ativados.
-- 60 FPS (experimental, "Engine frame rate: 60"): 57 FPS de média numa sessão de 240 s do
-  prólogo (antes 45–58), com quedas para 41–55 FPS nas cenas mais pesadas.
+- **Crash na jogabilidade corrigido**: os construtores estáticos do jogo rodavam duas vezes (o
+  loader chamava o inicializador e o próprio `_start` do jogo também), e os pools de memória do
+  motor (1,6 GB) eram alocados em dobro. Ao carregar o save no ponto do tutorial de cobertura, a
+  memória direta acabava e o thread de streaming travava o jogo. Com o mesmo save, agora roda
+  7 minutos com 4,2 de 5,3 GB em uso.
+- **Jogabilidade "azul/estourada" corrigida**: depois do prólogo a imagem virava uma cor chapada
+  azul-clara só com o HUD. Um vertex shader sem recursos reaproveitava uma variante compilada com
+  outro deslocamento de user data e desenhava a limpeza de um buffer de neblina fora da tela; o
+  buffer guardava a tela de carregamento e estourava a exposição.
+- **Proporção da imagem** (launcher: Gráficos e configurações rápidas; menu do jogo: Imagem):
+  Original (2,40:1 com faixas pretas), **16:9**, **16:10** ou **21:9** preenchem a tela sem
+  faixas. A visão mantém a largura original e mostra mais em cima e embaixo (Vert+), e o port
+  recorta as faixas que sobram em telas 16:10 e 21:9. Custo a 60 FPS no prólogo: ~1%.
+- Shaders: as multiplicações "legacy" do GCN (0 × Inf = 0) e os rcp/rsq/log com clamp agora
+  seguem o hardware. O cache de shaders é refeito uma vez na primeira sessão.
+- Limpeza: tudo que restava do port de God of War III saiu (cheats, patches, fontes, ícones);
+  o launcher só oferece opções que funcionam no The Order. As variáveis de ambiente passaram de
+  `GOW3_*` para `THEORDER_*` e o arquivo de configurações de `gow3.ini` para `theorder.ini`
+  (movido sozinho na primeira execução).
 
 Problemas conhecidos:
 
-- A primeira sessão monta o cache: objetos podem aparecer com um instante de atraso e há pausas
-  curtas. Nas seguintes, uma pausa breve (até ~0,6 s) quando uma cena carrega.
-- Raramente um triângulo preto pisca por um quadro (dados de vértice lidos fora de hora; em
-  investigação).
-- Barras pretas (letterbox 2,4:1): suporte a 16:9, 16:10 e 21:9 em andamento.
-- Raro: uma falha na inicialização (thread "Task Kernel", ~1 em 40 execuções).
-- Ainda não verificado: gameplay depois do prólogo, som, salvar e carregar, placas AMD e Intel.
+- A primeira sessão depois da atualização refaz o cache de shaders: objetos podem aparecer com um
+  instante de atraso e há pausas curtas.
+- Raramente um triângulo preto pisca por um quadro (um passe de tela cheia lê vértices que o
+  motor reescreve a cada quadro; em investigação).
+- Ainda não verificado: a maior parte da campanha depois do primeiro capítulo, som, placas AMD e
+  Intel.
 
 ## Controles
 

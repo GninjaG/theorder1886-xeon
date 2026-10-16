@@ -1,14 +1,15 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.2.0
+The Order: 1886 for PC (theorder1886-port) - version 0.3.0
 =========================================================
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
 eboot.bin, sce_module and sce_sys. Tested: CUSA00035, version 01.02.
 
-This is a work in progress. Checked so far: the logos, the title screen and the prologue cutscene,
-at the game's own 30 FPS without crashes on an NVIDIA GeForce RTX 5060 laptop. Not checked yet:
-gameplay after the prologue, sound, saving, AMD and Intel graphics cards. Known issues: the first
-session builds the shader cache (objects can appear a moment late, and there are short pauses);
-later sessions pause briefly when a scene loads; a rare black triangle can flash for one frame.
+This is a work in progress. Checked so far: the logos, the title screen, the prologue and the first
+gameplay after it (the cover tutorial, from a save), at the game's own 30 FPS without crashes on an
+NVIDIA GeForce RTX 5060 laptop. Not checked yet: most of the campaign, sound, AMD and Intel
+graphics cards. Known issues: the first session after an update builds the shader cache again
+(objects can appear a moment late, and there are short pauses); later sessions pause briefly when
+a scene loads; a rare black triangle can flash for one frame.
 
 Requirements
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.
@@ -28,6 +29,10 @@ Starting
 Frame rate: the game runs at its original 30 FPS. "60 (experimental)" under Engine frame rate
 applies a 60 FPS patch; the speed of the game stays correct, and the prologue averages about 57
 FPS (heavy scenes dip to the 40s).
+
+Aspect ratio: the game's picture is 2.40:1 with black bars. Graphics > Aspect ratio (or the
+in-game menu, Image tab) picks 16:9, 16:10 or 21:9 to fill a screen of that shape: the view keeps
+its width and shows more above and below. Applied when the game starts again.
 
 While playing
 - Insert on the keyboard, or R3 + L2 on the controller, opens the port's menu (display, frame
