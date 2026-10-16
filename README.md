@@ -149,7 +149,8 @@ The graphics core reads these environment variables:
 | Variable | Effect |
 |---|---|
 | `GOW3_NO_MSAA=1` / `0` | single-sampled or multisampled game images (multisampled by default on NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=1` | builds compute pipelines in the background (fewer stalls, but menus can lose text and button icons) |
+| `GOW3_ASYNC_COMPUTE=0` / `1` | compute pipelines never built for this game before: always on the GPU thread / always in the background (dispatches skipped meanwhile; menus can lose text and button icons). Default: in the background only for programs that run every frame and write no image |
+| `GOW3_PIPELINE_BINARY_CACHE_MB=N` | size of the pipeline binary cache (default 4096); the oldest binaries beyond it are removed at start |
 | `GOW3_LAZY_SHADER_CACHE=0` | translates every shader again instead of loading the cached ones |
 | `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | presentation rate overrides (see the 60 FPS patch) |
 | `GOW3_VK_VALIDATION=1` | Vulkan validation layer (with `VK_ADD_LAYER_PATH` pointing to it) |

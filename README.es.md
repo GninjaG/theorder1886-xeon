@@ -155,7 +155,8 @@ El núcleo gráfico lee estas variables de entorno:
 | Variable | Efecto |
 |---|---|
 | `GOW3_NO_MSAA=1` / `0` | imágenes del juego sin o con multisampling (con, por defecto, en NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=1` | compila los pipelines de compute en segundo plano (menos tirones, pero los menús pueden perder textos e iconos de botones) |
+| `GOW3_ASYNC_COMPUTE=0` / `1` | pipelines de compute nunca creados antes para este juego: siempre en el hilo de la GPU / siempre en segundo plano (los dispatches se saltan mientras tanto; los menús pueden perder textos e iconos). Por defecto: en segundo plano solo para programas que corren cada fotograma y no escriben imágenes |
+| `GOW3_PIPELINE_BINARY_CACHE_MB=N` | tamaño de la caché de binarios de pipeline (4096 por defecto); los más antiguos por encima se borran al iniciar |
 | `GOW3_LAZY_SHADER_CACHE=0` | vuelve a traducir todos los shaders en vez de cargar los de la caché |
 | `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | tasa de presentación (ver el parche de 60 FPS) |
 | `GOW3_VK_VALIDATION=1` | capa de validación de Vulkan (con `VK_ADD_LAYER_PATH` apuntando a ella) |
