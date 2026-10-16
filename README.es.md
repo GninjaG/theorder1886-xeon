@@ -139,11 +139,14 @@ modifican. Todos los parches vienen desactivados.
   ```
 
   La velocidad del juego sigue siendo correcta (los volcados de fotogramas coinciden en el tiempo
-  con una ejecución a 30 FPS). Logos y título se mantienen a 60 FPS; el prólogo en el motor corre a
-  45-58 FPS con un ritmo irregular.
-- Saltar logos, saltar el prólogo (Westminster o Capítulo 1), cerrar la pantalla de título,
-  resolución 900p y 720p, quitar las franjas negras: escritos en sesiones anteriores de desarrollo
-  y sin comprobar.
+  con una ejecución a 30 FPS). Logos y título se mantienen a 60 FPS; en una sesión de 240 s del
+  prólogo cada ventana de 5 s quedó entre 41 y 60 FPS (57 de media), con las caídas donde el hilo de
+  comandos de la GPU está ocupado todo el fotograma (600 a 700 draws por fotograma).
+- Saltar logos, saltar el prólogo (Westminster o Capítulo 1), cerrar la pantalla de título:
+  escritos en sesiones anteriores de desarrollo y sin comprobar. Los parches de 900p, 720p y de
+  quitar las franjas negras de esa época se retiraron: sus direcciones caían en medio de
+  instrucciones (allí no estaban el tamaño ni la proporción de la imagen) y activarlos corrompía
+  el código.
 
 ## Ajustes y diagnóstico
 

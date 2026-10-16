@@ -2,6 +2,62 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-15 (night): windows-v0.2.0
+
+**State:** 70 s prologue runs (warm cache): 0 faults in 30+ runs this session, 30 FPS after the
+intro, 55-111 skipped draws per run (was 1600-2100), 1.4-2.1 s of compile on the GPU thread (was
+9-11 s), a few scene-load pauses (worst frame 470-600 ms when ~200 pipelines are restored at the
+prologue start). 60 FPS mode, 240 s: 57 FPS average, 41-55 in the heaviest windows (600-700
+draws per frame: the GPU thread is then busy all frame).
+
+**Fixed (commits 1be3d5f..):**
+1. LoadCachedProgram read at most 256 permutations; the particle lighting compute shader
+   `0x804aeead` has 500+, so each session re-translated the rest under new indices and their
+   pipelines missed the binary cache (~200 ms driver compiles each, 2 MB binaries saved again:
+   41 GB). Limit 4096; metas record the SPIR-V hash (ShaderMetaVersion 8), checked at load.
+2. That shader samples 16 SH light volumes (3D) whose inactive slots hold stale T#s (cube maps,
+   render targets, unmapped addresses): `ImageResource::GetSharp` reads as Null what the
+   rasterizer would not bind (unmapped address via `Shader::g_valid_image_address`, size limits,
+   base mip past the chain) and, for plain sampling, a cube without the MIMG DA bit or a 3D image
+   with it. New permutations per run: ~120 -> ~20.
+3. `SkippableDispatch`: a new compute permutation builds in the background (dispatches skipped)
+   when the program ran in 8+ frames up to the last 4 flips and writes no image (Iggy's one-shot
+   glyph copies keep the synchronous build). Frames counted by `Gow3Stats::flips` (gpu_frames
+   only advances with camera motion).
+4. Pipeline binary cache budget (4096 MiB, `GOW3_PIPELINE_BINARY_CACHE_MB`), trimmed by mtime on
+   the meta prefetch thread; a hit refreshes the file time. The user's 0.1.0 session ended with
+   "No space left on device".
+5. `ResolveOverlap` no longer stops the game on an equal-address overlap (stale T# with garbage
+   depth/pitch over a real texture); `ImplausibleTexture` also rejects guest size > 16 MiB and
+   64x the texels.
+6. Pipelines whose key is stored (`g_`/`c_` .key, `DataBase::Exists`) are created on the GPU
+   thread (binary restore) instead of skipping their draws while an async job runs: the skipped
+   draws were the "flicker" the user reported (20344 in their 5.5 min 0.1.0 session).
+7. Removed patches: 900p, 720p and Letterbox Removal wrote inside instructions (0xe6cfb2 is the
+   displacement of `movl 0x4710(%r9)`; 0xa57cdd/ce3 a rip-relative offset).
+
+**Found, not done (next):**
+1. **Black triangle flicker**: a frame dump (out/flicker/corr frame 24, flip 1776, prologue
+   ~62 s) shows a black triangle over the upper-left half of the image for one frame, with no
+   compute dispatch skipped then. Likely vertex data read after the guest rewrote it (a fade
+   quad). Check what the GPU reads in place vs copies before the EOP fence
+   (`RunEventWriteEop`, `SignalAfterHostCopies`, GOW3_STREAM_MEMORY).
+2. **Aspect ratio (16:9 / 16:10 / 21:9)**: the engine's video setup at 0x44ce86 stores 2.4f
+   (`movl $0x4019999a, -0x3e8(%rbp)`, immediate at 0x44ce8c) next to the 1080p mode
+   (0x780/0x438 at 0x44cf3d-0x44cf6f): the 1920x800 letterbox likely derives from it. Try
+   float32 patches there (16:9 = 1.7777778; 16:10 needs a 1920x1200 display mode or a 1728-wide
+   scene), and for 21:9 a presenter option that crops the letterbox (native 2.4:1 nearly fills
+   2560x1080). Tools: scratchpad-style frame captures (GOW3_FRAME_DUMP_TRIGGER, now logging
+   "Frame dump N at flip M").
+3. Scene-load pauses: restoring ~200 known pipelines on the GPU thread costs ~5 ms each (2 MB
+   binary read + checksum + driver). Prefetch them from the draw-preparation workers' keys
+   (PreparedDraw::key) onto the compiler threads before the GPU thread needs them.
+4. Remaining particle shader permutations (2D vs 3D T#s in DA=0 slots): a dual 2D/3D
+   declaration per slot, selected at run time, would end them.
+5. Rare guest fault at startup: `guest offset 0x20aa22` (lock-free queue pop in a Task Kernel
+   thread, garbage head index), 1 in ~40 runs.
+6. 60 FPS: the GPU thread is the limit in heavy scenes (~25-30 us per draw).
+
 ## 2026-10-15 (release): windows-v0.1.0
 
 **Fixed:** menus without text or button icons (the title's "PRESS ✕", every menu). Iggy copies

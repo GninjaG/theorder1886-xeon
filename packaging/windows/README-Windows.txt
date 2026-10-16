@@ -1,4 +1,4 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.1.0
+The Order: 1886 for PC (theorder1886-port) - version 0.2.0
 =========================================================
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
@@ -6,8 +6,9 @@ eboot.bin, sce_module and sce_sys. Tested: CUSA00035, version 01.02.
 
 This is a work in progress. Checked so far: the logos, the title screen and the prologue cutscene,
 at the game's own 30 FPS without crashes on an NVIDIA GeForce RTX 5060 laptop. Not checked yet:
-gameplay after the prologue, sound, saving, AMD and Intel graphics cards. Known issue: short
-stutters while new shaders are compiled, mostly in the first minutes of each session.
+gameplay after the prologue, sound, saving, AMD and Intel graphics cards. Known issues: the first
+session builds the shader cache (objects can appear a moment late, and there are short pauses);
+later sessions pause briefly when a scene loads; a rare black triangle can flash for one frame.
 
 Requirements
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.
@@ -25,7 +26,8 @@ Starting
    the shaders are built; later starts reuse the shader cache.
 
 Frame rate: the game runs at its original 30 FPS. "60 (experimental)" under Engine frame rate
-applies a 60 FPS patch; the speed of the game stays correct, but the 3D scenes do not hold 60 yet.
+applies a 60 FPS patch; the speed of the game stays correct, and the prologue averages about 57
+FPS (heavy scenes dip to the 40s).
 
 While playing
 - Insert on the keyboard, or R3 + L2 on the controller, opens the port's menu (display, frame
@@ -35,6 +37,7 @@ While playing
 
 Files
 - Saves, the shader cache and logs stay in this folder (user\). Reinstalling over it keeps them.
+  The pipeline cache keeps at most 4 GB (older entries are removed at start).
 
 ---------------------------------------------------------------------------------------------
 Português (Brasil)
@@ -44,8 +47,10 @@ com eboot.bin, sce_module e sce_sys). Testado: CUSA00035, versão 01.02.
 
 Em desenvolvimento. Verificado: logos, tela de título e a cinemática do prólogo, nos 30 FPS
 originais e sem crashes numa NVIDIA GeForce RTX 5060 (notebook). Ainda não verificado: gameplay
-depois do prólogo, som, salvar, placas AMD e Intel. Problema conhecido: pequenas travadas enquanto
-shaders novos são compilados, principalmente nos primeiros minutos de cada sessão.
+depois do prólogo, som, salvar, placas AMD e Intel. Problemas conhecidos: a primeira sessão monta o
+cache de shaders (objetos podem aparecer com um instante de atraso e há pausas curtas); nas
+seguintes há uma pausa breve quando uma cena carrega; raramente um triângulo preto pisca por um
+quadro.
 
 Como jogar: extraia a pasta, abra "The Order 1886.exe" (se o Windows avisar, clique em "Mais
 informações" e "Executar assim mesmo"), escolha a pasta do jogo na página Jogo e clique em JOGAR.

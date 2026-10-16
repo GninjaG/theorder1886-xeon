@@ -135,9 +135,12 @@ Every patch is off by default.
   ```
 
   Game speed stays correct (frame dumps line up in time with a 30 FPS run). The logos and the
-  title hold 60 FPS; the in-engine prologue runs at 45-58 FPS with uneven pacing.
-- Skip Intro Logos, Skip Prologue (Westminster or Chapter 1), Auto-Dismiss Title Screen,
-  900p and 720p resolution, Letterbox Removal: written during earlier development and not verified.
+  title hold 60 FPS; in a 240 s run of the prologue every 5 s window averaged 41-60 FPS (57 overall),
+  the dips where the GPU command thread is busy all frame (600-700 draws per frame).
+- Skip Intro Logos, Skip Prologue (Westminster or Chapter 1), Auto-Dismiss Title Screen: written
+  during earlier development and not verified. The 900p, 720p and letterbox removal patches of
+  that time were removed: their addresses fell inside instructions (no immediate of the size or
+  aspect ratio there), so enabling them corrupted the code.
 
 ## Settings and diagnostics
 

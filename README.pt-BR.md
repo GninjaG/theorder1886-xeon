@@ -135,10 +135,13 @@ alterados. Todos os patches vêm desligados.
   ```
 
   A velocidade do jogo continua correta (os dumps de quadros batem no tempo com uma execução a
-  30 FPS). Logos e título ficam em 60 FPS; o prólogo no motor roda a 45-58 FPS com ritmo irregular.
-- Pular logos, pular o prólogo (Westminster ou Capítulo 1), dispensar a tela de título,
-  resolução 900p e 720p, remover as faixas pretas: escritos em sessões anteriores de
-  desenvolvimento e não verificados.
+  30 FPS). Logos e título ficam em 60 FPS; numa sessão de 240 s do prólogo cada janela de 5 s ficou
+  entre 41 e 60 FPS (57 na média), com as quedas onde a thread de comandos da GPU fica ocupada o
+  quadro todo (600 a 700 draws por quadro).
+- Pular logos, pular o prólogo (Westminster ou Capítulo 1), dispensar a tela de título: escritos
+  em sessões anteriores de desenvolvimento e não verificados. Os patches de 900p, 720p e de
+  remover as faixas pretas daquela época foram retirados: seus endereços caíam no meio de
+  instruções (não havia ali o tamanho nem a proporção da tela), e ativá-los corrompia o código.
 
 ## Configurações e diagnóstico
 

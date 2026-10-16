@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.1.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.2.0
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -20,20 +20,37 @@ Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `
 
 ## Situação (15/10/2026, RTX 5060 Laptop, Windows 11)
 
-- Abertura, tela de título, menus e cinemática do prólogo funcionam; numa sessão de 4 minutos o
-  jogo manteve os 30 FPS originais, com frame time no percentil 99 de cerca de 34,5 ms.
-- Mais de 20 execuções automatizadas seguidas sem crash.
-- Corrigidos nesta versão:
-  - textos dos menus e ícones de botão do controle que não apareciam;
-  - crashes no driver da NVIDIA (duas threads gravando no mesmo command buffer, stencil anexado a
-    imagens só de profundidade, cópia de textura lida fora do buffer);
-  - congelamentos de 1 a 3 segundos causados por descritores de textura inválidos;
-  - shaders SPIR-V inválidos.
-- Problema conhecido: pequenas travadas enquanto shaders novos são compilados, principalmente nos
-  primeiros minutos de cada sessão.
+Novidades da 0.2.0 (medidas em execuções automatizadas de 70 s até o prólogo, cache já montado):
+
+- **Fim do "pisca-pisca" de objetos e efeitos**: pipelines que uma sessão anterior já montou agora
+  são criados na hora (1 a 2 ms, do cache) em vez de pular os draws até ficarem prontos. Draws
+  pulados por sessão: de 1.600–2.100 para 55–111 (na sessão de 5,5 min da 0.1.0 foram 20.344).
+- **Menos travadas de shader**: o cache de permutações agora recarrega todas as variantes do
+  shader de iluminação de partículas (antes só as 256 primeiras, e o resto era recompilado a cada
+  sessão), e texturas "lixo" de slots inativos não geram mais variantes novas. Compilação no
+  thread da GPU por sessão: de 9–11 s para 1,4–2,1 s.
+- **Shaders de compute recorrentes** (iluminação de partículas) compilam em segundo plano: o
+  quadro não para ~200 ms a cada variante nova (as partículas daquele emissor somem por um
+  instante).
+- **Disco**: o cache de binários de pipeline (até 2 MB por pipeline no driver NVIDIA) chegou a
+  41 GB e encheu o disco (a sessão da 0.1.0 terminou com "No space left on device"). Agora fica
+  em até 4 GB (`GOW3_PIPELINE_BINARY_CACHE_MB`), removendo os mais antigos ao iniciar.
+- **Crash corrigido** numa sessão longa a 60 FPS ("Unresolvable image overlap"): texturas com
+  descritores inválidos no mesmo endereço de uma textura real.
+- **Patches removidos**: 900p, 720p e "Letterbox Removal" escreviam no meio de instruções e
+  corrompiam o código se ativados.
+- 60 FPS (experimental, "Engine frame rate: 60"): 57 FPS de média numa sessão de 240 s do
+  prólogo (antes 45–58), com quedas para 41–55 FPS nas cenas mais pesadas.
+
+Problemas conhecidos:
+
+- A primeira sessão monta o cache: objetos podem aparecer com um instante de atraso e há pausas
+  curtas. Nas seguintes, uma pausa breve (até ~0,6 s) quando uma cena carrega.
+- Raramente um triângulo preto pisca por um quadro (dados de vértice lidos fora de hora; em
+  investigação).
+- Barras pretas (letterbox 2,4:1): suporte a 16:9, 16:10 e 21:9 em andamento.
+- Raro: uma falha na inicialização (thread "Task Kernel", ~1 em 40 execuções).
 - Ainda não verificado: gameplay depois do prólogo, som, salvar e carregar, placas AMD e Intel.
-- 60 FPS: opção experimental no launcher ("Engine frame rate: 60"), com a velocidade do jogo
-  correta, mas o prólogo roda a 45–58 FPS.
 
 ## Controles
 
