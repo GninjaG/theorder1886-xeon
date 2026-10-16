@@ -37,7 +37,7 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // port: interpolated integer fix (Pascal)
+static constexpr u32 ShaderBinaryVersion = 8u; // port: GCN legacy multiply-add, clamped rcp/rsq/log
 static constexpr u32 ShaderMetaVersion = 8u; // port: SPIR-V hash
 static constexpr u32 PipelineKeyVersion = 5u; // port: Info layout (ImageResource::needs_native)
 } // namespace Serialization
