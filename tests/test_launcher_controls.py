@@ -530,6 +530,22 @@ class GpuChoiceTest(unittest.TestCase):
         self.assertEqual(launcher.APP_DEFAULTS['gpu_id'], '')
 
 
+class SettingsFileMigrationTest(unittest.TestCase):
+    def test_gow3_ini_moves_to_theorder_ini_once(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / 'gow3.ini').write_text('engine_fps=120\n', encoding='utf-8')
+            self.assertEqual(launcher.migrate_ini(folder), folder / 'theorder.ini')
+            self.assertEqual((folder / 'theorder.ini').read_text(encoding='utf-8'), 'engine_fps=120\n')
+            self.assertFalse((folder / 'gow3.ini').exists())
+            # An existing theorder.ini wins; a stray gow3.ini is left alone.
+            (folder / 'gow3.ini').write_text('engine_fps=60\n', encoding='utf-8')
+            self.assertEqual(launcher.migrate_ini(folder), folder / 'theorder.ini')
+            self.assertEqual((folder / 'theorder.ini').read_text(encoding='utf-8'), 'engine_fps=120\n')
+
+
 class ReleaseVersionTest(unittest.TestCase):
     def test_the_order_release_version(self):
         self.assertEqual(launcher.VERSION, '0.2.0')
