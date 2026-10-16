@@ -709,7 +709,16 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {merged_image_id, -1, -1};
         }
 
-        // Enhanced debug logging for unreachable case
+        // gow3: what is left is a stale T# (garbage depth and pitch over a real texture's
+        // address, The Order's particle lighting slots): a chance overlap like the ones above,
+        // not a reason to stop the game. The details are logged a few times.
+        static std::atomic<u32> unresolvable_logged{0};
+        if (unresolvable_logged.fetch_add(1, std::memory_order_relaxed) >= 4) {
+            if (safe_to_delete) {
+                FreeImage(cache_image_id);
+            }
+            return {merged_image_id, -1, -1};
+        }
         // Calculate expected size based on format and dimensions
         u64 expected_size =
             (static_cast<u64>(image_info.size.width) * static_cast<u64>(image_info.size.height) *
@@ -824,7 +833,10 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                   merged_image_id.index, static_cast<int>(binding), scheduler.CurrentTick(),
                   scheduler.CurrentTick() - cache_image.tick_accessed_last);
 
-        UNREACHABLE_MSG("Encountered unresolvable image overlap with equal memory address.");
+        if (safe_to_delete) {
+            FreeImage(cache_image_id);
+        }
+        return {merged_image_id, -1, -1};
     }
 
     // Right overlap, the image requested is a possible subresource of the image from cache.
