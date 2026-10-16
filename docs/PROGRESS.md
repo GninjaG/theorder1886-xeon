@@ -53,6 +53,11 @@ fragment shader without user data was reused after one with two registers. Now c
 Also (not the cause): V_MAC_LEGACY/V_MAD_LEGACY use the legacy multiply (0 * Inf = 0) and the
 _CLAMP rcp/rsq/log clamp infinities to max_float (ShaderBinaryVersion 8).
 
+**Engine notes:** `docs/ENGINE_RE.md` collects what the executable showed: start-up order,
+video setup and display-mode flags, the FOV constants, and the developer command line the
+retail build still parses (`THEORDER_ARGS`: `-cores`, `-use4K`, `-syncinterval`, `-startlevel`
+... tried without effect so far).
+
 ## 2026-10-15 (night): windows-v0.2.0
 
 **State:** 70 s prologue runs (warm cache): 0 faults in 30+ runs this session, 30 FPS after the
