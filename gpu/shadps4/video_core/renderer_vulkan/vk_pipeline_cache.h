@@ -50,15 +50,15 @@ struct Program {
     struct Module {
         vk::ShaderModule module;
         Shader::StageSpecialization spec;
-        u64 spv_hash{}; ///< gow3: of a cached module not loaded yet (LoadDeferredModule)
+        u64 spv_hash{}; ///< port: of a cached module not loaded yet (LoadDeferredModule)
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
 
     Shader::Info info;
     ModuleList modules{};
-    size_t last_used = 0; ///< gow3: permutation of the previous lookup, compared first
-    /// gow3: `info` as translated, for draw-preparation workers (they must not read `info`,
+    size_t last_used = 0; ///< port: permutation of the previous lookup, compared first
+    /// port: `info` as translated, for draw-preparation workers (they must not read `info`,
     /// whose user data the GPU thread rewrites every draw). Guarded by programs_mutex.
     std::unique_ptr<Shader::Info> info_template;
     std::shared_ptr<AsyncShaderCompilation> pending;
@@ -93,7 +93,7 @@ union Regs;
 
 namespace Vulkan {
 
-/// gow3: state of one graphics/compute pipeline selection. The GPU thread owns one
+/// port: state of one graphics/compute pipeline selection. The GPU thread owns one
 /// (PipelineCache::sel); draw-preparation workers use their own with their register copies.
 struct PipelineSelection {
     const AmdGpu::Regs* regs{};
@@ -108,7 +108,7 @@ struct PipelineSelection {
     struct PrepWorker* worker{}; ///< set: read-only selection for a draw-preparation worker
 };
 
-/// gow3: a draw-preparation worker's own program state (see vk_draw_prep.h).
+/// port: a draw-preparation worker's own program state (see vk_draw_prep.h).
 struct PrepWorker {
     struct Stage {
         const Program* program;
@@ -131,10 +131,10 @@ public:
                            AmdGpu::Liverpool* liverpool, u32 sparse_page_shift);
     ~PipelineCache();
 
-    /// Loads the pipelines of earlier sessions. gow3: called by the presenter once the window
+    /// Loads the pipelines of earlier sessions. port: called by the presenter once the window
     /// can show a loading screen; `progress(done, total)` follows the pipelines read.
     void WarmUp(const std::function<void(u32 done, u32 total)>& progress = {});
-    /// gow3: the same load on low-priority threads while the game runs; the GPU thread takes
+    /// port: the same load on low-priority threads while the game runs; the GPU thread takes
     /// the results a few at a time (PumpWarmUp). False when it cannot (zip archive store).
     bool StartBackgroundWarmUp();
     void StartOnDemand();
@@ -144,23 +144,23 @@ public:
     bool LoadComputePipeline(Serialization::Archive& ar);
     bool LoadGraphicsPipeline(Serialization::Archive& ar);
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
-    /// gow3: the cached permutations of a program seen for the first time this session.
+    /// port: the cached permutations of a program seen for the first time this session.
     bool LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage);
-    /// gow3: the module of a cached permutation, read when its specialization is first used.
+    /// port: the module of a cached permutation, read when its specialization is first used.
     vk::ShaderModule LoadDeferredModule(Program& program, size_t perm_idx);
 
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);
 
-    /// gow3: worker side of draw preparation: selects the pipeline key for `sel.regs` without
+    /// port: worker side of draw preparation: selects the pipeline key for `sel.regs` without
     /// creating anything. False when a program or permutation does not exist yet.
     bool PrepareGraphicsPipeline(PipelineSelection& sel);
 
-    /// gow3: GPU-thread side: the pipeline for a prepared draw after checking that registers
+    /// port: GPU-thread side: the pipeline for a prepared draw after checking that registers
     /// and flattened user data match; null to take the regular path.
     const GraphicsPipeline* TryPreparedPipeline(const PreparedDraw& prepared);
 
-    /// gow3: the prepared draw the last GetGraphicsPipeline used, or null (regular path).
+    /// port: the prepared draw the last GetGraphicsPipeline used, or null (regular path).
     [[nodiscard]] const PreparedDraw* UsedPrepared() const noexcept {
         return used_prepared;
     }
@@ -199,7 +199,7 @@ private:
     bool MergeWarmStage(WarmStage& stage);
     void PumpWarmUp();
     void StopWarmUp();
-    /// gow3: the stored shader metas, read on a background thread at start so that
+    /// port: the stored shader metas, read on a background thread at start so that
     /// LoadCachedProgram does not open a file per permutation on the GPU thread (~1 ms each,
     /// a quarter of a second for a material shader with 256 cached permutations).
     struct MetaPrefetch {
@@ -240,19 +240,19 @@ private:
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
-    /// gow3: GOW3_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
+    /// port: THEORDER_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
     struct WarmupPool;
     WarmupPool* warmup_pool = nullptr;
     std::mutex warmup_results_mutex;
     std::vector<std::pair<GraphicsPipelineKey, std::unique_ptr<GraphicsPipeline>>> warmup_graphics;
     std::vector<std::pair<ComputePipelineKey, std::unique_ptr<ComputePipeline>>> warmup_compute;
-    /// gow3: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
+    /// port: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
     BackgroundWarmup* background = nullptr;
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<AsyncGraphicsCompilation>> pending_graphics;
     tsl::robin_map<ComputePipelineKey, std::shared_ptr<AsyncComputeCompilation>> pending_compute;
-    /// gow3: compute pipelines whose asynchronous build failed: built on the GPU thread instead.
+    /// port: compute pipelines whose asynchronous build failed: built on the GPU thread instead.
     std::unordered_set<u64> sync_compute_keys;
-    /// gow3: frames each compute program ran in, to tell work redone every frame (which a skipped
+    /// port: frames each compute program ran in, to tell work redone every frame (which a skipped
     /// dispatch only delays) from one-shot work (SkippableDispatch).
     struct ComputeRuns {
         u64 last_frame = 0;
@@ -263,7 +263,7 @@ private:
     void CountComputeRun(u64 pgm_hash);
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
     std::vector<Program*> pending_programs;
-    /// gow3: exclusive for program/permutation insertions, shared for worker lookups.
+    /// port: exclusive for program/permutation insertions, shared for worker lookups.
     std::shared_mutex programs_mutex;
     u64 prepared_hits = 0, prepared_misses = 0;
     const PreparedDraw* used_prepared = nullptr;

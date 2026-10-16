@@ -285,7 +285,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // Patch image instruction if image is FMask.
     if (AmdGpu::IsFmask(image.GetDataFmt())) {
         ASSERT_MSG(!is_written, "FMask storage instructions are not supported");
-        // gow3: the descriptors stay declared although the reads below become constants. The
+        // port: the descriptors stay declared although the reads below become constants. The
         // resource lists of a program must not depend on what its T#s hold: the pipeline layout
         // of every permutation comes from the first translation, and a stale FMask T# in a
         // texture slot (The Order's material shader) shifted every later binding.
@@ -306,7 +306,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         switch (inst.GetOpcode()) {
         case IR::Opcode::ImageRead:
         case IR::Opcode::ImageSampleRaw: {
-            // gow3: both return F32x4: a two-component value made the users' .z/.w reads
+            // port: both return F32x4: a two-component value made the users' .z/.w reads
             // invalid SPIR-V (VUID-VkShaderModuleCreateInfo-pCode-08737).
             IR::F32 fmaskx = ir.BitCast<IR::F32>(ir.Imm32(0x76543210));
             IR::F32 fmasky = ir.BitCast<IR::F32>(ir.Imm32(0xfedcba98));
@@ -315,7 +315,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             return;
         }
         case IR::Opcode::ImageQueryLod: {
-            // gow3: F32x4 as well (it was an integer scalar).
+            // port: F32x4 as well (it was an integer scalar).
             const IR::F32 zero = ir.Imm32(0.0f);
             inst.ReplaceUsesWith(ir.CompositeConstruct(zero, zero, zero, zero));
             return;

@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Prepares the game image and starts the native probe (Windows and Linux; run.sh wraps it on Linux).
 
-Environment variables (THEORDER_GAME_DIR / GOW3_GAME_DIR, THEORDER_DATA_DIR / GOW3_DATA_DIR,
-THEORDER_PATCHES / GOW3_PATCHES, THEORDER_MODS_* / GOW3_MODS_*, THEORDER_USER_DIR / GOW3_USER_DIR, ...).
+Environment variables (THEORDER_GAME_DIR, THEORDER_DATA_DIR,
+THEORDER_PATCHES, THEORDER_MODS_* / THEORDER_MODS_*, THEORDER_USER_DIR, ...).
 Extra arguments go to the game probe.
-The in-game "Apply and restart" runs this script again through THEORDER_RESTART_COMMAND / GOW3_RESTART_COMMAND;
+The in-game "Apply and restart" runs this script again through THEORDER_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
 import os
@@ -57,7 +57,7 @@ def no_console():
 
 
 def parse_cpu_features(output):
-    """Instruction sets `gow3-probe --cpu-features` reports missing ([] when complete)."""
+    """Instruction sets `theorder-probe --cpu-features` reports missing ([] when complete)."""
     for line in output.splitlines():
         if line.startswith('CPU: missing '):
             return [name.strip() for name in line[len('CPU: missing '):].split(',') if name.strip()]
@@ -65,7 +65,7 @@ def parse_cpu_features(output):
 
 
 def isa_rewrite_wanted(missing, env):
-    """THEORDER_ISA_REWRITE / GOW3_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
+    """THEORDER_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
     policy = get_env(env, 'ISA_REWRITE')
     if policy in ('0', '1'):
         return policy == '1'
@@ -108,12 +108,8 @@ def launch_prefix(env):
 
 
 def get_env(env, key, default=None):
-    """Retrieve environment variable checking THEORDER_<key> first, then GOW3_<key>."""
-    if f'THEORDER_{key}' in env:
-        return env[f'THEORDER_{key}']
-    if f'GOW3_{key}' in env:
-        return env[f'GOW3_{key}']
-    return default
+    """The environment variable THEORDER_<key>, or default."""
+    return env.get(f'THEORDER_{key}', default)
 
 
 def find_executable(name):
@@ -125,12 +121,8 @@ def find_executable(name):
 
 
 def find_probe_executable():
-    """Finds the probe executable (theorder-probe or gow3-probe)."""
-    for name in ('theorder-probe' + EXE_SUFFIX, 'gow3-probe' + EXE_SUFFIX):
-        found = find_executable(name)
-        if found:
-            return found
-    return None
+    """Finds the probe executable (theorder-probe)."""
+    return find_executable('theorder-probe' + EXE_SUFFIX)
 
 
 def main():
@@ -169,18 +161,23 @@ def main():
             translated_args.append(args[i])
             i += 1
     args = translated_args
-    # As run.sh: relative paths (THEORDER_GAME_DIR / GOW3_GAME_DIR, etc.) are from the port.
+    # As run.sh: relative paths (THEORDER_GAME_DIR, etc.) are from the port.
     os.chdir(PORT)
     env = os.environ
     data = Path(get_env(env, 'DATA_DIR', PORT))
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
-    config_default = data / 'theorder.ini' if (data / 'theorder.ini').is_file() else data / 'gow3.ini'
+    config_default = data / 'theorder.ini'
+    # The settings of releases up to 0.2.0 (gow3.ini) move to theorder.ini once.
+    if not config_default.exists() and (data / 'gow3.ini').is_file():
+        try:
+            (data / 'gow3.ini').replace(config_default)
+        except OSError:
+            config_default = data / 'gow3.ini'
     env.setdefault('THEORDER_CONFIG', get_env(env, 'CONFIG', str(config_default)))
-    env.setdefault('GOW3_CONFIG', env['THEORDER_CONFIG'])
     # Values this script derived on the previous start ("Apply and restart" inherits them) are
     # derived again from the new options.
-    for key in env.pop('THEORDER_DERIVED', env.pop('GOW3_DERIVED', '')).split(','):
+    for key in env.pop('THEORDER_DERIVED', '').split(','):
         env.pop(key, None)
     derived = []
     sys.path.insert(0, str(PORT / 'scripts'))
@@ -191,12 +188,11 @@ def main():
     env.update(graphics_options.environment(graphics))
     if not get_env(env, 'FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
         env['THEORDER_FSR411_DIR'] = str(data / 'fsr4_411')
-        env['GOW3_FSR411_DIR'] = str(data / 'fsr4_411')
 
     probe_env = get_env(env, 'PROBE')
     probe = Path(probe_env) if probe_env else find_probe_executable()
     if not probe or not probe.is_file():
-        fail(f'theorder-probe{EXE_SUFFIX} / gow3-probe{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
+        fail(f'theorder-probe{EXE_SUFFIX} / theorder-probe{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
     if WINDOWS and not (probe.parent / 'SDL3.dll').is_file():
         clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
@@ -272,16 +268,13 @@ def main():
             with Image.open(icon_file) as icon:
                 icon.convert('RGBA').resize((64, 64), Image.LANCZOS).save(out / 'window_icon.bmp')
             env.setdefault('THEORDER_WINDOW_ICON', str(out / 'window_icon.bmp'))
-            env.setdefault('GOW3_WINDOW_ICON', str(out / 'window_icon.bmp'))
         except (ImportError, OSError):
             pass
         # The temporal upscalers and motion vectors are not calibrated for this game yet: they stay
         # off unless the launcher's experimental switch is on; linear image readbacks fix textures.
         if get_env(env, 'EXPERIMENTAL_UPSCALER') != '1':
             env.setdefault('THEORDER_UPSCALER', 'none')
-            env.setdefault('GOW3_UPSCALER', 'none')
         env.setdefault('THEORDER_READBACK_LINEAR', '1')
-        env.setdefault('GOW3_READBACK_LINEAR', '1')
         patches_val = get_env(env, 'PATCHES', '')
         patches_only = get_env(env, 'PATCHES_ONLY') == '1'
         if profile:
@@ -289,9 +282,7 @@ def main():
             names = graphics_options.patch_names(names, graphics)
             names = graphics_options.restrict_to_available(names, patches.available_patches(profile[1], profile[2]))
             env['THEORDER_PATCHES'] = ';'.join(names)
-            env['GOW3_PATCHES'] = ';'.join(names)
             env['THEORDER_PATCHES_ONLY'] = '1'
-            env['GOW3_PATCHES_ONLY'] = '1'
         (out / 'patch_status.json').unlink(missing_ok=True)
         run_script('patches.py', '--out', out, '--extra', get_env(env, 'PATCHES', ''), '--game-dir', game,
                    '--patches-dir', get_env(env, 'PATCHES_DIR', str(data / 'patches')),
@@ -311,32 +302,24 @@ def main():
                 for key, value in (('FLIP_RATE', '0'), ('FPS_LIMIT', '60')):
                     if not get_env(env, key):
                         env[f'THEORDER_{key}'] = value
-                        env[f'GOW3_{key}'] = value
                         derived.append(f'THEORDER_{key}')
-                        derived.append(f'GOW3_{key}')
                 print('The Order 60 FPS patch: presenting every vblank, at most 60 FPS', flush=True)
             for key, value in (('DMEM_MB', dmem), ('VBLANK_HZ', vblank)):
                 if value and not get_env(env, key):
                     env[f'THEORDER_{key}'] = str(value)
-                    env[f'GOW3_{key}'] = str(value)
                     derived.append(f'THEORDER_{key}')
-                    derived.append(f'GOW3_{key}')
         if not get_env(env, 'VBLANK_HZ'):
             env['THEORDER_VBLANK_HZ'] = '60'
-            env['GOW3_VBLANK_HZ'] = '60'
             derived.append('THEORDER_VBLANK_HZ')
-            derived.append('GOW3_VBLANK_HZ')
         # Without the frame rate patch the engine steps 1/60 s per frame: the present thread must
         # not flip faster, or the game speeds up.
         env['THEORDER_ENGINE_FPS'] = str(engine_fps)
-        env['GOW3_ENGINE_FPS'] = str(engine_fps)
         derived.append('THEORDER_ENGINE_FPS')
-        derived.append('GOW3_ENGINE_FPS')
-        print(f'Engine frame rate: {engine_fps} FPS'
+        # The Order runs at half its engine setting: 30 FPS at 60, 60 with the frame rate patch.
+        print(f'Game frame rate: {engine_fps // 2} FPS'
               + ('' if fps_patched or graphics['engine_fps'] == '60' else
                  ' (the frame rate patch was not found in this eboot.bin)'), flush=True)
         env['THEORDER_DERIVED'] = ','.join(derived)
-        env['GOW3_DERIVED'] = ','.join(derived)
         # The guest memory pool is committed in full at start: a resolution patch above 1080p
         # can need more than 16 GB of RAM, and the game then closes when the page file cannot grow.
         import guest_memory
@@ -349,7 +332,6 @@ def main():
         user_dir = Path(get_env(env, 'USER_DIR', str(data / 'user'))).resolve()
         user_dir.mkdir(parents=True, exist_ok=True)
         env.setdefault('THEORDER_GPU_USER_DIR', str(user_dir))
-        env.setdefault('GOW3_GPU_USER_DIR', str(user_dir))
         from save_backup import backup
         try:
             if made := backup(user_dir):
@@ -363,7 +345,6 @@ def main():
         restart = [sys.executable, *this, *after, *args]
         restart_cmd = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
         env['THEORDER_RESTART_COMMAND'] = restart_cmd
-        env['GOW3_RESTART_COMMAND'] = restart_cmd
         timeout_val = get_env(env, 'TIMEOUT', '0')
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),

@@ -22,9 +22,9 @@ draws per frame: the GPU thread is then busy all frame).
    with it. New permutations per run: ~120 -> ~20.
 3. `SkippableDispatch`: a new compute permutation builds in the background (dispatches skipped)
    when the program ran in 8+ frames up to the last 4 flips and writes no image (Iggy's one-shot
-   glyph copies keep the synchronous build). Frames counted by `Gow3Stats::flips` (gpu_frames
+   glyph copies keep the synchronous build). Frames counted by `PortStats::flips` (gpu_frames
    only advances with camera motion).
-4. Pipeline binary cache budget (4096 MiB, `GOW3_PIPELINE_BINARY_CACHE_MB`), trimmed by mtime on
+4. Pipeline binary cache budget (4096 MiB, `THEORDER_PIPELINE_BINARY_CACHE_MB`), trimmed by mtime on
    the meta prefetch thread; a hit refreshes the file time. The user's 0.1.0 session ended with
    "No space left on device".
 5. `ResolveOverlap` no longer stops the game on an equal-address overlap (stale T# with garbage
@@ -41,13 +41,13 @@ draws per frame: the GPU thread is then busy all frame).
    ~62 s) shows a black triangle over the upper-left half of the image for one frame, with no
    compute dispatch skipped then. Likely vertex data read after the guest rewrote it (a fade
    quad). Check what the GPU reads in place vs copies before the EOP fence
-   (`RunEventWriteEop`, `SignalAfterHostCopies`, GOW3_STREAM_MEMORY).
+   (`RunEventWriteEop`, `SignalAfterHostCopies`, THEORDER_STREAM_MEMORY).
 2. **Aspect ratio (16:9 / 16:10 / 21:9)**: the engine's video setup at 0x44ce86 stores 2.4f
    (`movl $0x4019999a, -0x3e8(%rbp)`, immediate at 0x44ce8c) next to the 1080p mode
    (0x780/0x438 at 0x44cf3d-0x44cf6f): the 1920x800 letterbox likely derives from it. Try
    float32 patches there (16:9 = 1.7777778; 16:10 needs a 1920x1200 display mode or a 1728-wide
    scene), and for 21:9 a presenter option that crops the letterbox (native 2.4:1 nearly fills
-   2560x1080). Tools: scratchpad-style frame captures (GOW3_FRAME_DUMP_TRIGGER, now logging
+   2560x1080). Tools: scratchpad-style frame captures (THEORDER_FRAME_DUMP_TRIGGER, now logging
    "Frame dump N at flip M").
 3. Scene-load pauses: restoring ~200 known pipelines on the GPU thread costs ~5 ms each (2 MB
    binary read + checksum + driver). Prefetch them from the draw-preparation workers' keys
@@ -64,11 +64,11 @@ draws per frame: the GPU thread is then busy all frame).
 each glyph and button icon into its textures once, with a compute dispatch (`0xc98f383802f87e7d`,
 storage image write). The asynchronous compute pipelines of the entry below skipped dispatches
 whose pipeline was still being built, so those copies never ran and the textures stayed empty.
-Compute pipelines are built on the GPU thread again by default; `GOW3_ASYNC_COMPUTE=1` keeps the
+Compute pipelines are built on the GPU thread again by default; `THEORDER_ASYNC_COMPUTE=1` keeps the
 faster, lossy path. Cost: compile stalls of new compute permutations are back (~15 s of compile
 time in the first 70 s of a session; the "mini stutters").
 
-**Release:** the GoW3 launcher, adapted (`The Order 1886.exe`, settings in
+**Release:** the Port launcher, adapted (`The Order 1886.exe`, settings in
 `%APPDATA%/theorder1886-launcher`, frame rate 30 original / 60 experimental: `run.py` adds flip
 rate 0 and a 60 limit with the 60 FPS patch). `packaging/windows/package.sh`, run from MSYS2's own
 bash (Git Bash's runtime expands its `find` patterns), builds `dist/theorder1886-windows.zip`.
@@ -86,13 +86,13 @@ writes: if images too, it needs another rule).
 40 s); textures over 512 MiB of computed size bound as null (stale T#s with garbage pitch/layers
 uploaded 1.3-3.3 GB: 1-3 s freezes); FMask read replacements return F32x4 and Flat only on
 fragment inputs (both invalid SPIR-V); lazy load of a program's cached permutations
-(`GOW3_LAZY_SHADER_CACHE`); `GOW3_FLIP_RATE`; `GOW3_BIG_TRACK_LOG`; tools: `--game-args`, `--pad`
+(`THEORDER_LAZY_SHADER_CACHE`); `THEORDER_FLIP_RATE`; `THEORDER_BIG_TRACK_LOG`; tools: `--game-args`, `--pad`
 (`--pad "24:cross 28:cross 32:cross ..."` reaches the in-engine prologue).
 
 **60 FPS (experimental, verified):** the patch in `patches/TheOrder1886-Orbis.xml` changes the
 four 33333 us immediates of the 01.02 eboot to 16667 (checked in the binary). Recipe: an ini with
 `engine_fps=120` as `THEORDER_CONFIG` (the launcher falls back to the 60 FPS patch), plus
-`GOW3_FLIP_RATE=0 GOW3_FPS_LIMIT=60`. Game speed is correct (frame dumps line up in time with a 30
+`THEORDER_FLIP_RATE=0 THEORDER_FPS_LIMIT=60`. Game speed is correct (frame dumps line up in time with a 30
 FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93% busy.
 
 **Next:**
@@ -101,7 +101,7 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
    addresses as push constants or a fixed binding instead, so they can be cached: the remaining
    ~6.7 s of capture waits per 90 s at 60 FPS.
 2. Launcher: for The Order, 30 is native and 60 needs the patch plus flip rate 0 and a 60 limit
-   (scripts/graphics_options.py treats 60 as native, inherited from GoW3).
+   (scripts/graphics_options.py treats 60 as native, inherited from Port).
 3. `VUID-vkCmdDispatchIndirect-magFilter-04553`: linear sampler with an integer image (benign on
    NVIDIA so far).
 4. Test beyond the prologue (the only save, `Playthrough00`, is there too).
@@ -112,11 +112,11 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
 - `bash build.sh` (MSYS2 CLANG64). If the copy to `out/theorder-probe.exe` fails ("busy"), a game
   process is still alive: the build did not update the exe. `tools/batch_runs.py` kills orphans
   and prints the exe build time.
-- `python tools/batch_runs.py --runs 8 --secs 40 --cond base= --cond x=GOW3_VAR=1`: interleaved
+- `python tools/batch_runs.py --runs 8 --secs 40 --cond base= --cond x=THEORDER_VAR=1`: interleaved
   A/B runs, failure rates (fault / stopped presenting). Logs in `out/batch/`.
 - `python tools/fault_stacks.py out/batch/*.log`: symbolized fault stacks.
 - Vulkan validation (MSYS2 package `mingw-w64-clang-x86_64-vulkan-validation-layers`):
-  `GOW3_VK_VALIDATION=1 VK_ADD_LAYER_PATH='C:\msys64\clang64\bin' VK_LOADER_LAYERS_ENABLE='*validation*'`.
+  `THEORDER_VK_VALIDATION=1 VK_ADD_LAYER_PATH='C:\msys64\clang64\bin' VK_LOADER_LAYERS_ENABLE='*validation*'`.
   Count the VUIDs before and after a change; it found most of the bugs below in minutes.
 - Game dump: `C:\Users\Mateus\Downloads\games\CUSA00035`. One game run reserves ~6 GB of RAM;
   a background batch was stopped once by Claude Code for low system memory.
@@ -129,7 +129,7 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
    thread recorded into the same command buffer. Now drained per command, and the presenter
    drains right before recording into `draw_scheduler` (`liverpool.cpp`, `vk_presenter.cpp`).
    40 s runs: 5/8 failed before, 8/8 clean after (HEAD: 2/6 failed). Found with
-   `GOW3_STAGE_CHECK=1` (scheduler use while the draw thread runs a packet).
+   `THEORDER_STAGE_CHECK=1` (scheduler use while the draw thread runs a packet).
 2. Stencil attachment bound for depth-only views (VUID-VkRenderingInfo-pStencilAttachment-06548):
    depth and stencil attached independently, stencil only when the image has it
    (`vk_scheduler.cpp`, `vk_rasterizer.cpp`). Commit b0bfec1 had made both depend on either.
@@ -149,7 +149,7 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
 8. Windows watchdog prints every thread's stack and exits with TerminateProcess (ExitProcess
    deadlocked on the loader lock with threads suspended, leaving a zombie that locked the exe).
 9. Diagnostics: `Stall:` lines split compile time (translate / SPIR-V / driver); a GFX
-   `WaitRegMem` unmet for 2 s is reported; `GOW3_PERMUTATION_LOG=1` explains new permutations.
+   `WaitRegMem` unmet for 2 s is reported; `THEORDER_PERMUTATION_LOG=1` explains new permutations.
 
 **Implemented, not yet run**
 - Asynchronous compute pipeline creation (`AsyncComputeCompilation`, `vk_pipeline_cache.cpp`):
@@ -159,7 +159,7 @@ FPS run); the intro holds 60, the 3D prologue 45-58 FPS: the GPU thread is 77-93
   a batch and a look at frame dumps (`THEORDER_FRAME_DUMP_INTERVAL`, `tools/convert_dumps.py`).
 
 **Open**
-- `GOW3_STAGE_CHECK` still reports `PrepareFrame` once per run near flip #1 (counting added to
+- `THEORDER_STAGE_CHECK` still reports `PrepareFrame` once per run near flip #1 (counting added to
   tell a startup-only case from a recurring one). Temporary diagnostic: remove once settled.
 - Remaining VUIDs: `vkCmdDispatchIndirect-magFilter-04553` (linear filter on R8G8B8A8_UINT),
   an occasional invalid SPIR-V (`pCode-08737`, vector index out of bounds), one

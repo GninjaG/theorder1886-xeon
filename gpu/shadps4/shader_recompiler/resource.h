@@ -115,7 +115,7 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
-/// gow3: the GPU backend's guest memory check (MemoryManager::IsValidGpuMapping); unset in
+/// port: the GPU backend's guest memory check (MemoryManager::IsValidGpuMapping); unset in
 /// tools without a guest.
 inline bool (*g_valid_image_address)(VAddr address) = nullptr;
 
@@ -126,7 +126,7 @@ struct ImageResource {
     bool is_array{};
     bool is_written{};
     bool is_r128{};
-    /// gow3: read other than by normalized sampling without offsets (texel loads, size
+    /// port: read other than by normalized sampling without offsets (texel loads, size
     /// queries, offsets): needs the native-size image, not a reduced scene proxy.
     bool needs_native{};
     u8 constant_mip_index{};
@@ -142,7 +142,7 @@ struct ImageResource {
             image.type = u64(AmdGpu::ImageType::Color2DArray);
             image.depth = (image.depth + 1) * 6 - 1;
         }
-        // gow3: stale T#s left in slots a dispatch does not sample (The Order's material and
+        // port: stale T#s left in slots a dispatch does not sample (The Order's material and
         // lighting compute shaders) carry garbage: no format, an empty mip range, a null page.
         // The rasterizer binds them as null anyway; reading them as Null here too keeps their
         // random view types out of the shader specialization, where each combination cost a
@@ -163,7 +163,7 @@ struct ImageResource {
         return image;
     }
 
-    /// gow3: what a stale T# shows that a texture the dispatch samples cannot.
+    /// port: what a stale T# shows that a texture the dispatch samples cannot.
     constexpr bool Plausible(const AmdGpu::Image& image) const {
         const u64 width = image.width, height = image.height;
         const u64 layers = image.NumLayers();
@@ -267,7 +267,7 @@ struct PushData {
     float yscale;
     std::array<u32, NUM_USER_DATA_REGS> ud_regs;
     std::array<u8, NUM_BUFFERS> buf_offsets;
-    u32 motion_param; ///< gow3: object motion parameter index (0: off)
+    u32 motion_param; ///< port: object motion parameter index (0: off)
     u32 scene_size; ///< reduced width | height << 16; zero means native pixel coordinates
 
     void AddOffset(u32 binding, u32 offset) {

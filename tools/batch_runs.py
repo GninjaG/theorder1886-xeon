@@ -1,11 +1,11 @@
 """Repeated timed runs of the game with A/B conditions, summarized as failure rates.
 
-    python tools/batch_runs.py --runs 8 --secs 40 --cond base= --cond nomsaa=GOW3_NO_MSAA=1
+    python tools/batch_runs.py --runs 8 --secs 40 --cond base= --cond nomsaa=THEORDER_NO_MSAA=1
     python tools/batch_runs.py --runs 4 --secs 90 --game-args "--level cat_010_streets"
     python tools/batch_runs.py --runs 4 --secs 90 --pad "22:cross 26:cross 30:cross"
 
 --pad presses buttons at the given seconds after launch (SECS:TOKEN[,TOKEN][:HOLD]) through
-GOW3_PAD_FILE (src/runtime_pad.c), e.g. to get past the title screen.
+THEORDER_PAD_FILE (src/runtime_pad.c), e.g. to get past the title screen.
 
 Each --cond is LABEL=[VAR=VALUE[,VAR=VALUE...]]. Conditions are interleaved run by run, so a
 drift (shader cache warming, temperature) affects all of them alike. Logs land in out/batch/;
@@ -27,7 +27,6 @@ GAME_DIR = os.environ.get('THEORDER_GAME_DIR', r'C:\Users\Mateus\Downloads\games
 def kill_orphans():
     # A run killed by the timeout can leave the game running and the .exe locked (stale builds).
     subprocess.run(['taskkill', '/F', '/IM', 'theorder-probe.exe'], capture_output=True)
-    subprocess.run(['taskkill', '/F', '/IM', 'gow3-probe.exe'], capture_output=True)
 
 
 def summarize(log: str, secs: int):
@@ -79,21 +78,20 @@ def main():
         for label, extra in conds:
             kill_orphans()
             env = dict(os.environ)
-            env.update({'THEORDER_GAME_DIR': GAME_DIR, 'GOW3_GAME_DIR': GAME_DIR,
-                        'THEORDER_TIMEOUT': str(args.secs), 'GOW3_TIMEOUT': str(args.secs)})
+            env.update({'THEORDER_GAME_DIR': GAME_DIR, 'THEORDER_TIMEOUT': str(args.secs)})
             # A run's settings (the in-game menu writes them on exit) go to a fresh file of its
-            # own, never to the player's gow3.ini, unless the condition picks a config.
-            if 'THEORDER_CONFIG' not in extra and 'GOW3_CONFIG' not in extra:
+            # own, never to the player's theorder.ini, unless the condition picks a config.
+            if 'THEORDER_CONFIG' not in extra:
                 run_ini = out / f'{label}-{i + 1}.ini'
                 run_ini.unlink(missing_ok=True)
-                env['THEORDER_CONFIG'] = env['GOW3_CONFIG'] = str(run_ini)
+                env['THEORDER_CONFIG'] = str(run_ini)
             env.update(extra)
             log_path = out / f'{label}-{i + 1}.log'
             stop = threading.Event()
             if args.pad:
                 pad_file = out / 'pad'
                 pad_file.write_text('')
-                env['GOW3_PAD_FILE'] = env['THEORDER_PAD_FILE'] = str(pad_file)
+                env['THEORDER_PAD_FILE'] = env['THEORDER_PAD_FILE'] = str(pad_file)
                 threading.Thread(target=play_pad, args=(args.pad, pad_file, stop), daemon=True).start()
             with open(log_path, 'w', encoding='utf-8', errors='replace') as f:
                 try:

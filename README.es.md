@@ -59,7 +59,7 @@ El registro del trabajo, las correcciones y los pendientes están en
    bash build.sh
    ```
 
-   El resultado es `out/theorder-probe.exe` (también copiado como `out/gow3-probe.exe`). Si la
+   El resultado es `out/theorder-probe.exe` (también copiado como `out/theorder-probe.exe`). Si la
    compilación no puede reemplazar el ejecutable, todavía hay un proceso del juego en marcha.
 
 ## Jugar
@@ -115,7 +115,7 @@ Los mandos (DualSense, Xbox y otros) funcionan con SDL3, junto con el teclado.
 | Insert | el menú del port (R3+L2 en el mando) |
 
 El teclado aún no tiene el botón Options. En mandos sin panel táctil, View (Back) es el clic
-derecho del panel. `GOW3_KEY_MAP` y `GOW3_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
+derecho del panel. `THEORDER_KEY_MAP` y `THEORDER_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
 
 El menú del port (Insert) tiene las opciones de pantalla, límite de fotogramas y la superposición
 de rendimiento.
@@ -132,8 +132,8 @@ modifican. Todos los parches vienen desactivados.
 
   ```powershell
   Set-Content fps60.ini 'engine_fps=120'   # la lógica del lanzador recurre al parche de 60 FPS
-  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:GOW3_CONFIG = $env:THEORDER_CONFIG
-  $env:GOW3_FLIP_RATE = '0'; $env:GOW3_FPS_LIMIT = '60'
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:THEORDER_CONFIG = $env:THEORDER_CONFIG
+  $env:THEORDER_FLIP_RATE = '0'; $env:THEORDER_FPS_LIMIT = '60'
   python run.py
   ```
 
@@ -152,16 +152,16 @@ El núcleo gráfico lee estas variables de entorno:
 
 | Variable | Efecto |
 |---|---|
-| `GOW3_NO_MSAA=1` / `0` | imágenes del juego sin o con multisampling (con, por defecto, en NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=0` / `1` | pipelines de compute nunca creados antes para este juego: siempre en el hilo de la GPU / siempre en segundo plano (los dispatches se saltan mientras tanto; los menús pueden perder textos e iconos). Por defecto: en segundo plano solo para programas que corren cada fotograma y no escriben imágenes |
-| `GOW3_PIPELINE_BINARY_CACHE_MB=N` | tamaño de la caché de binarios de pipeline (4096 por defecto); los más antiguos por encima se borran al iniciar |
-| `GOW3_LAZY_SHADER_CACHE=0` | vuelve a traducir todos los shaders en vez de cargar los de la caché |
-| `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | tasa de presentación (ver el parche de 60 FPS) |
-| `GOW3_VK_VALIDATION=1` | capa de validación de Vulkan (con `VK_ADD_LAYER_PATH` apuntando a ella) |
-| `GOW3_GPU_LOG=info` | nivel del registro de la GPU |
-| `GOW3_PERMUTATION_LOG=1` | por qué se compiló cada nueva permutación de shader |
-| `GOW3_BIG_TRACK_LOG=1` | quién rastrea rangos de memoria de más de 256 MiB |
-| `GOW3_PAD_FILE=<archivo>` | entrada de mando programada para ejecuciones automatizadas |
+| `THEORDER_NO_MSAA=1` / `0` | imágenes del juego sin o con multisampling (con, por defecto, en NVIDIA) |
+| `THEORDER_ASYNC_COMPUTE=0` / `1` | pipelines de compute nunca creados antes para este juego: siempre en el hilo de la GPU / siempre en segundo plano (los dispatches se saltan mientras tanto; los menús pueden perder textos e iconos). Por defecto: en segundo plano solo para programas que corren cada fotograma y no escriben imágenes |
+| `THEORDER_PIPELINE_BINARY_CACHE_MB=N` | tamaño de la caché de binarios de pipeline (4096 por defecto); los más antiguos por encima se borran al iniciar |
+| `THEORDER_LAZY_SHADER_CACHE=0` | vuelve a traducir todos los shaders en vez de cargar los de la caché |
+| `THEORDER_FLIP_RATE`, `THEORDER_FPS_LIMIT` | tasa de presentación (ver el parche de 60 FPS) |
+| `THEORDER_VK_VALIDATION=1` | capa de validación de Vulkan (con `VK_ADD_LAYER_PATH` apuntando a ella) |
+| `THEORDER_GPU_LOG=info` | nivel del registro de la GPU |
+| `THEORDER_PERMUTATION_LOG=1` | por qué se compiló cada nueva permutación de shader |
+| `THEORDER_BIG_TRACK_LOG=1` | quién rastrea rangos de memoria de más de 256 MiB |
+| `THEORDER_PAD_FILE=<archivo>` | entrada de mando programada para ejecuciones automatizadas |
 
 Las partidas guardadas y la caché de shaders están en la carpeta `user` del proyecto
 (`user/savedata`, `user/cache/CUSA00035`).
@@ -186,7 +186,7 @@ python tools/fault_stacks.py out/batch/*.log
 | Cargador | `src/probe.c` | Carga la imagen e inicia el código original del juego |
 | Runtime | `src/runtime_*.c` | Reimplementa las funciones de sistema de la PS4: memoria, hilos, archivos, audio, vídeo, mando, partidas guardadas y servicios |
 | GPU | `gpu/shadps4/` | El núcleo de vídeo de shadPS4 con las correcciones de cuesta4 y el trabajo de los ports de God of War III y The Order (compilación asíncrona de shaders y pipelines, caché de shaders) |
-| Menú del port | `gpu/shim/gow3_overlay.cpp` | El menú Dear ImGui y la superposición de rendimiento |
+| Menú del port | `gpu/shim/port_overlay.cpp` | El menú Dear ImGui y la superposición de rendimiento |
 | Parches | `patches/TheOrder1886-Orbis.xml`, `scripts/patches.py` | Se aplican en memoria al iniciar |
 
 El lanzador de `launcher/` y el empaquetado para Linux de `packaging/linux/` vienen del port de

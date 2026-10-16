@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "gow3_settings.h"
-#include "gow3_graphics.h"
+#include "port_settings.h"
+#include "port_graphics.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -9,13 +9,13 @@
 #include <string>
 #include <string_view>
 
-namespace Gow3Settings {
+namespace PortSettings {
 
 namespace {
 
 const char* Path() {
-    const char* env = std::getenv("GOW3_CONFIG");
-    return env && env[0] ? env : "gow3.ini";
+    const char* env = std::getenv("THEORDER_CONFIG");
+    return env && env[0] ? env : "theorder.ini";
 }
 
 float Clamp(float v, float lo, float hi) {
@@ -83,11 +83,11 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "show_fps") {
         v.show_fps = i != 0;
     } else if (key == "display_mode") {
-        v.display_mode = Gow3Graphics::ParseDisplayMode(value);
+        v.display_mode = PortGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
         v.vsync = i != 0;
     } else if (key == "fps_limit") {
-        v.fps_limit = Gow3Graphics::ParseFpsLimit(i);
+        v.fps_limit = PortGraphics::ParseFpsLimit(i);
     } else if (key == "async_shaders") {
         v.async_shaders = i != 0;
     } else if (key == "fsr1") {
@@ -97,13 +97,13 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "rcas") {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
-        v.rcas_strength = Gow3Graphics::ParseRcasStrength(value.empty() ? -1 : i);
+        v.rcas_strength = PortGraphics::ParseRcasStrength(value.empty() ? -1 : i);
     } else if (key == "frames_queued") {
-        v.frames_queued = Gow3Graphics::ParseFramesQueued(value.empty() ? -1 : i);
+        v.frames_queued = PortGraphics::ParseFramesQueued(value.empty() ? -1 : i);
     } else if (key == "render_resolution") {
-        v.render_resolution = Gow3Graphics::ParseResolution(value);
+        v.render_resolution = PortGraphics::ParseResolution(value);
     } else if (key == "engine_fps") {
-        v.engine_fps = Gow3Graphics::ParseEngineFps(i);
+        v.engine_fps = PortGraphics::ParseEngineFps(i);
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
@@ -149,20 +149,20 @@ void Load() {
         std::printf("Settings: %s\n", Path());
     }
     // Environment overrides (scripts, A/B tests).
-    if (const char* env = std::getenv("GOW3_UPSCALER")) {
+    if (const char* env = std::getenv("THEORDER_UPSCALER")) {
         v.upscaler = UpscalerOff;
         for (int u = 0; u < UpscalerCount; ++u) {
             if (std::strcmp(env, UpscalerName(u)) == 0) v.upscaler = u;
         }
     }
     const std::pair<const char*, const char*> env_keys[] = {
-        {"GOW3_FSR_SHARPNESS", "sharpness"},        {"GOW3_JITTER", "jitter"},
-        {"GOW3_REACTIVE", "reactive"},              {"GOW3_REACTIVE_SCALE", "reactive_scale"},
-        {"GOW3_REACTIVE_THRESHOLD", "reactive_threshold"}, {"GOW3_REACTIVE_MAX", "reactive_max"},
-        {"GOW3_UPSCALE_PRESET", "preset"},            {"GOW3_OBJECT_MOTION", "object_motion"},
-        {"GOW3_ASYNC_SHADERS", "async_shaders"},      {"GOW3_DEFERRED_READBACK", "deferred_readback"},
-        {"GOW3_STALE_READBACK", "stale_readback"},     {"GOW3_FSR1", "fsr1"},
-        {"GOW3_RCAS", "rcas"},                        {"GOW3_FRAMES_AHEAD", "frames_queued"},
+        {"THEORDER_FSR_SHARPNESS", "sharpness"},        {"THEORDER_JITTER", "jitter"},
+        {"THEORDER_REACTIVE", "reactive"},              {"THEORDER_REACTIVE_SCALE", "reactive_scale"},
+        {"THEORDER_REACTIVE_THRESHOLD", "reactive_threshold"}, {"THEORDER_REACTIVE_MAX", "reactive_max"},
+        {"THEORDER_UPSCALE_PRESET", "preset"},            {"THEORDER_OBJECT_MOTION", "object_motion"},
+        {"THEORDER_ASYNC_SHADERS", "async_shaders"},      {"THEORDER_DEFERRED_READBACK", "deferred_readback"},
+        {"THEORDER_STALE_READBACK", "stale_readback"},     {"THEORDER_FSR1", "fsr1"},
+        {"THEORDER_RCAS", "rcas"},                        {"THEORDER_FRAMES_AHEAD", "frames_queued"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -176,8 +176,8 @@ void Load() {
     v.startup_live_resolution = v.live_resolution;
     v.startup_render_resolution = v.render_resolution;
     v.startup_engine_fps = v.engine_fps;
-    const char* applied = std::getenv("GOW3_ENGINE_FPS");
-    v.applied_engine_fps = applied && applied[0] ? Gow3Graphics::ParseEngineFps(std::atoi(applied))
+    const char* applied = std::getenv("THEORDER_ENGINE_FPS");
+    v.applied_engine_fps = applied && applied[0] ? PortGraphics::ParseEngineFps(std::atoi(applied))
                                                  : v.engine_fps.load();
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
@@ -213,13 +213,13 @@ void ConfigureDlssSupport(bool available, const char* problem) {
     v.dlss_problem = available || kept.empty() ? nullptr : kept.c_str();
     if (v.upscaler == UpscalerDlss && !available) {
         std::printf("Upscaler: DLSS unavailable (%s); falling back to FSR 3.1\n",
-                    kept.empty() ? "gow3_dlss.dll or nvngx_dlss.dll missing" : kept.c_str());
+                    kept.empty() ? "port_dlss.dll or nvngx_dlss.dll missing" : kept.c_str());
         v.upscaler = UpscalerFsr3;
     }
 }
 
 bool FixedRenderSession() {
-    const char* size = std::getenv("GOW3_RENDER_RES");
+    const char* size = std::getenv("THEORDER_RENDER_RES");
     return size && size[0];
 }
 
@@ -246,7 +246,7 @@ void Save() {
         return;
     }
     std::fprintf(file,
-                 "# gow3 settings (in-game menu: Insert / R3+L2)\n"
+                 "# port settings (in-game menu: Insert / R3+L2)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
                  "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
@@ -270,10 +270,10 @@ void Save() {
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
                  "render_resolution=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
-                 Gow3Graphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
+                 PortGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
-                 Gow3Graphics::Resolutions[std::clamp(v.render_resolution.load(), 0, 5)].data(),
+                 PortGraphics::Resolutions[std::clamp(v.render_resolution.load(), 0, 5)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     // Read by run.sh at start.
@@ -298,4 +298,4 @@ const char* UpscalerName(int upscaler) {
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 
-} // namespace Gow3Settings
+} // namespace PortSettings

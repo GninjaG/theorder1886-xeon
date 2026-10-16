@@ -47,17 +47,17 @@ struct Profile {
     bool has_broken_spirv_clamp{};
     bool lower_left_origin_mode{};
     bool needs_manual_interpolation{};
-    /// gow3: NVIDIA without fragment shader barycentrics (Pascal and older).
+    /// port: NVIDIA without fragment shader barycentrics (Pascal and older).
     bool needs_integer_interpolation_fix{};
     bool needs_lds_barriers{};
     bool needs_buffer_offsets{};
     bool needs_unorm_fixup{};
     bool needs_clip_distance_emulation{};
     bool supports_shader_stencil_export{};
-    /// gow3: GOW3_LIGHTING_TEST=dref (vk_lighting_test.h): depth comparisons return the result
+    /// port: THEORDER_LIGHTING_TEST=dref (vk_lighting_test.h): depth comparisons return the result
     /// in all four channels instead of (v, 0, 0, 0).
     bool dref_broadcast{};
-    /// gow3: bump when translation changes the resources a shader declares for the same input,
+    /// port: bump when translation changes the resources a shader declares for the same input,
     /// so a pipeline cache written by older code (whose layouts no longer match) is rebuilt.
     /// 1: stale/garbage T#s read as Image::Null (shader_recompiler/resource.h).
     /// 2: FMask reads keep their image and sampler declared (resource_patching_pass.cpp).

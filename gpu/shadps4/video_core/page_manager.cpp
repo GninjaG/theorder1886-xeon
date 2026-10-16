@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
-#include "gow3_toggles.h"
-#include "gow3_backtrace.h"
+#include "port_toggles.h"
+#include "port_backtrace.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -69,17 +69,17 @@ struct PageManager::Impl {
 
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
-        // gow3: the draw recording thread handles its faults inline too (vk_draw_pipe.h).
+        // port: the draw recording thread handles its faults inline too (vk_draw_pipe.h).
         const auto is_gpu_thread = rasterizer->IsGpuSideThread();
         if (is_gpu_thread) {
-            Gow3Stats::gpu_signal_faults.fetch_add(1, std::memory_order_relaxed);
+            PortStats::gpu_signal_faults.fetch_add(1, std::memory_order_relaxed);
         }
         if (Common::IsWriteError(context)) {
-            Gow3Stats::Timer timer{Gow3Stats::t_write_faults};
+            PortStats::Timer timer{PortStats::t_write_faults};
             return rasterizer->OnWriteFault(addr, is_gpu_thread);
         } else {
-            Gow3Stats::read_faults.fetch_add(1, std::memory_order_relaxed);
-            Gow3Stats::Timer timer{Gow3Stats::t_read_faults};
+            PortStats::read_faults.fetch_add(1, std::memory_order_relaxed);
+            PortStats::Timer timer{PortStats::t_read_faults};
             return rasterizer->ReadMemory(addr, 8, is_gpu_thread);
         }
         return false;
@@ -88,13 +88,13 @@ struct PageManager::Impl {
     template <bool track, bool is_read>
     void UpdatePageWatchers(VAddr addr, u64 size) {
         RENDERER_TRACE;
-        // gow3: GOW3_BIG_TRACK_LOG=1: who tracks a range above 256 MiB (multi-GB uploads).
-        static const bool big_track_log = std::getenv("GOW3_BIG_TRACK_LOG") != nullptr;
+        // port: THEORDER_BIG_TRACK_LOG=1: who tracks a range above 256 MiB (multi-GB uploads).
+        static const bool big_track_log = std::getenv("THEORDER_BIG_TRACK_LOG") != nullptr;
         if (big_track_log && size > (256ULL << 20)) {
             std::printf("Big track: %s %s %#llx size %llu MiB\n", track ? "track" : "untrack",
                         is_read ? "read" : "write", static_cast<unsigned long long>(addr),
                         static_cast<unsigned long long>(size >> 20));
-            Gow3PrintBacktrace("big track");
+            PortPrintBacktrace("big track");
         }
 
         size_t page = addr >> PM_PAGE_BITS;
@@ -240,12 +240,12 @@ struct PageManager::Impl {
 };
 
 #ifdef __linux__
-// gow3: write tracking with userfaultfd write-protection instead of mprotect. mprotect takes
+// port: write tracking with userfaultfd write-protection instead of mprotect. mprotect takes
 // the address space lock for writing and splits mappings; while guest threads fault on
 // per-frame buffers and the GPU thread re-protects uploaded pages, every page fault in the
 // process (copy threads included) waits for it. UFFDIO_WRITEPROTECT changes page table bits
 // under the lock for reading. Read protection (readbacks) still uses mprotect: userfaultfd
-// write-protection cannot deny reads. GOW3_UFFD=1.
+// write-protection cannot deny reads. THEORDER_UFFD=1.
 struct UffdImpl : public PageManager::Impl {
 private:
     std::jthread ufd_thread;
@@ -344,7 +344,7 @@ public:
     }
 
     void UffdHandler(std::stop_token token) {
-        Common::SetCurrentThreadName("gow3:Uffd");
+        Common::SetCurrentThreadName("port:Uffd");
         while (!token.stop_requested()) {
             pollfd pollfd{};
             pollfd.fd = uffd;
@@ -365,7 +365,7 @@ public:
             const VAddr addr = msg.arg.pagefault.address;
             const auto ptid = msg.arg.pagefault.feat.ptid;
             {
-                Gow3Stats::Timer timer{Gow3Stats::t_write_faults};
+                PortStats::Timer timer{PortStats::t_write_faults};
                 rasterizer->OnWriteFault(addr, rasterizer->IsGpuSideThreadId(ptid));
             }
             // Protect() clears with DONTWAKE (it may run for pages nobody waits on).
@@ -401,7 +401,7 @@ struct SignalImpl : public PageManager::Impl {
 
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
-    if (std::getenv("GOW3_UFFD") && std::getenv("GOW3_UFFD")[0] == '1') {
+    if (std::getenv("THEORDER_UFFD") && std::getenv("THEORDER_UFFD")[0] == '1') {
         try {
             impl = std::make_unique<UffdImpl>(rasterizer_);
             LOG_INFO(Config, "Memory tracking method: userfaultfd");

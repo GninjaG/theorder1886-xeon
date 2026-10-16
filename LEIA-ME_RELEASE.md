@@ -34,7 +34,7 @@ Novidades da 0.2.0 (medidas em execuções automatizadas de 70 s até o prólogo
   instante).
 - **Disco**: o cache de binários de pipeline (até 2 MB por pipeline no driver NVIDIA) chegou a
   41 GB e encheu o disco (a sessão da 0.1.0 terminou com "No space left on device"). Agora fica
-  em até 4 GB (`GOW3_PIPELINE_BINARY_CACHE_MB`), removendo os mais antigos ao iniciar.
+  em até 4 GB (`THEORDER_PIPELINE_BINARY_CACHE_MB`), removendo os mais antigos ao iniciar.
 - **Crash corrigido** numa sessão longa a 60 FPS ("Unresolvable image overlap"): texturas com
   descritores inválidos no mesmo endereço de uma textura real.
 - **Patches removidos**: 900p, 720p e "Letterbox Removal" escreviam no meio de instruções e
@@ -62,7 +62,7 @@ limite de quadros e overlay de desempenho).
 
 - `Jogar The Order 1886.bat`, `Jogar - Inicio Rapido.bat`, `Jogar - Modo Performance.bat`:
   atalhos para `python run.py`.
-- `launcher/gow3_launcher_win.py`: o launcher (empacotado por `packaging/windows/package.sh`).
+- `launcher/port_launcher_win.py`: o launcher (empacotado por `packaging/windows/package.sh`).
 - `out/theorder-probe.exe`: o executável do port (gerado por `bash build.sh`).
 - `user/savedata/`, `user/cache/CUSA00035/`: saves e cache de shaders e pipelines.
 - `patches/TheOrder1886-Orbis.xml`: patches do jogo, todos desligados por padrão.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// gow3: user settings changed at run time from the in-game menu (gow3_overlay.h) and kept
-// in gow3.ini (GOW3_CONFIG overrides the path). Environment variables override the file at
+// port: user settings changed at run time from the in-game menu (port_overlay.h) and kept
+// in theorder.ini (THEORDER_CONFIG overrides the path). Environment variables override the file at
 // start. Readers load the atomics every frame; writers are the menu and Load().
 
 #pragma once
@@ -8,7 +8,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace Gow3Settings {
+namespace PortSettings {
 
 enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
                       UpscalerTaa = 4, UpscalerDlss = 5, UpscalerCount };
@@ -40,13 +40,13 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
-    /// Performance overlay (gow3_perf_stats.h): items shown, font size and background opacity
+    /// Performance overlay (port_perf_stats.h): items shown, font size and background opacity
     /// in percent, corner (0 top left, 1 top right, 2 bottom left, 3 bottom right), layout
     /// (0 one line, 1 one item per line). menu_tab: the menu's last tab.
     std::atomic<unsigned> overlay_items{7};
     std::atomic<int> overlay_scale{100}, overlay_corner{1}, overlay_opacity{50}, overlay_layout{0};
     std::atomic<int> menu_tab{0};
-    // Graphics (gow3_graphics.h). Live: applied on the next frame.
+    // Graphics (port_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};
     std::atomic<int> fps_limit{0};
@@ -69,7 +69,7 @@ struct Values {
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
     int startup_render_resolution = 0, startup_engine_fps = 120;
-    /// The engine rate this launch really runs at (run.py's GOW3_ENGINE_FPS): 60 when the frame
+    /// The engine rate this launch really runs at (run.py's THEORDER_ENGINE_FPS): 60 when the frame
     /// rate patch does not apply to this game build.
     std::atomic<int> applied_engine_fps{120};
     bool startup_deferred_readback = true, startup_stale_readback = true;
@@ -84,11 +84,11 @@ struct Values {
     /// Why FSR 4 cannot run (assets, device features), or null. Set by the renderer.
     std::atomic<const char*> fsr4_problem{nullptr};
     std::atomic<bool> fsr4_supported{false}, fsr411_supported{false};
-    /// DLSS (gow3_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
+    /// DLSS (port_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
 
-    /// Startup settings for the explicit GOW3_RENDER_RES compatibility patch only.
+    /// Startup settings for the explicit THEORDER_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
     int startup_upscaler = UpscalerFsr3;
     bool startup_object_motion = true;
@@ -118,4 +118,4 @@ float PresetScale(int preset);
 const char* PresetName(int preset);
 const char* UpscalerName(int upscaler);
 
-} // namespace Gow3Settings
+} // namespace PortSettings

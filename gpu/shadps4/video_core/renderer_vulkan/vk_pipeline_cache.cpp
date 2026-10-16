@@ -10,7 +10,7 @@
 #include <ranges>
 #include <string>
 #include <unordered_set>
-#include "gow3_threads.h"
+#include "port_threads.h"
 
 #include "common/hash.h"
 #include "common/thread.h"
@@ -22,7 +22,7 @@
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
-#include "gow3_settings.h"
+#include "port_settings.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -79,7 +79,7 @@ struct AsyncGraphicsCompilation {
     bool failure_logged = false;
 };
 
-// gow3: a compute pipeline built on a compiler thread. Its driver compile took ~180 ms on the GPU
+// port: a compute pipeline built on a compiler thread. Its driver compile took ~180 ms on the GPU
 // thread per new permutation of The Order's material shader (0x804aeead); the dispatches that
 // need it are skipped until it is ready, as draws are while their graphics pipeline compiles.
 struct AsyncComputeCompilation {
@@ -388,9 +388,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
-        // gow3: older NVIDIA (Pascal) has no barycentrics; GOW3_INTERP_INT_FIX=0/1 overrides.
+        // port: older NVIDIA (Pascal) has no barycentrics; THEORDER_INTERP_INT_FIX=0/1 overrides.
         .needs_integer_interpolation_fix = [&] {
-            if (const char* env = std::getenv("GOW3_INTERP_INT_FIX")) {
+            if (const char* env = std::getenv("THEORDER_INTERP_INT_FIX")) {
                 return env[0] == '1';
             }
             return !instance.IsFragmentShaderBarycentricSupported() &&
@@ -409,25 +409,25 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
-    // gow3: the compiler threads always exist; the in-game menu switches async compilation live
-    // (Gow3Settings::async_shaders, GOW3_ASYNC_SHADERS at start).
+    // port: the compiler threads always exist; the in-game menu switches async compilation live
+    // (PortSettings::async_shaders, THEORDER_ASYNC_SHADERS at start).
     {
-        const auto count = std::clamp(Gow3Threads::Available() / 2, 1u, 6u);
-        const auto capture_count = std::min(2u, std::max(1u, Gow3Threads::Available() / 4));
+        const auto count = std::clamp(PortThreads::Available() / 2, 1u, 6u);
+        const auto capture_count = std::min(2u, std::max(1u, PortThreads::Available() / 4));
         for (unsigned i = 0; i < count; ++i) {
             auto [result, worker_cache] = instance.GetDevice().createPipelineCacheUnique({});
             ASSERT_MSG(result == vk::Result::eSuccess, "Failed to create compiler pipeline cache");
             worker_pipeline_caches.push_back(std::move(worker_cache));
         }
         capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 8, [](unsigned index) {
-            Common::SetCurrentThreadName(("gow3:ShaderCapture" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("port:ShaderCapture" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         });
         compiler = std::make_unique<AsyncCompiler>(count, 64, [](unsigned index) {
-            Common::SetCurrentThreadName(("gow3:ShaderCompile" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("port:ShaderCompile" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         });
-        LOG_INFO(Render_Vulkan, "gow3: async graphics compilation ready ({} capture, {} compile workers)",
+        LOG_INFO(Render_Vulkan, "port: async graphics compilation ready ({} capture, {} compile workers)",
                  capture_count, count);
     }
 }
@@ -437,15 +437,15 @@ PipelineCache::~PipelineCache() {
     FinishCompilations();
 }
 
-// gow3: shader/pipeline compile time on the GPU thread, reported by GOW3_FRAME_STATS.
-std::atomic<u64> g_gow3_compile_ns;
-std::atomic<u32> g_gow3_compiles;
-// gow3: the synchronous compile split: GCN translation and SPIR-V emission (CompileModule).
-std::atomic<u64> g_gow3_translate_ns, g_gow3_emit_ns;
-std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
-std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
-std::atomic<u32> g_gow3_pool_reuses;
-std::atomic<u32> g_gow3_pending_draws;
+// port: shader/pipeline compile time on the GPU thread, reported by THEORDER_FRAME_STATS.
+std::atomic<u64> g_port_compile_ns;
+std::atomic<u32> g_port_compiles;
+// port: the synchronous compile split: GCN translation and SPIR-V emission (CompileModule).
+std::atomic<u64> g_port_translate_ns, g_port_emit_ns;
+std::atomic<u64> g_port_capture_ns, g_port_async_ns, g_port_compile_wait_ns;
+std::atomic<u64> g_port_snapshot_ns, g_port_guest_wait_ns;
+std::atomic<u32> g_port_pool_reuses;
+std::atomic<u32> g_port_pending_draws;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -464,14 +464,14 @@ struct PhaseTimer {
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_gow3_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        g_port_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count());
-        ++g_gow3_compiles;
+        ++g_port_compiles;
     }
 };
 
-// gow3: GOW3_PERMUTATION_LOG names the specialization field that forced a new permutation.
+// port: THEORDER_PERMUTATION_LOG names the specialization field that forced a new permutation.
 std::string DescribeSpecDifference(const Shader::StageSpecialization& a,
                                    const Shader::StageSpecialization& b) {
     std::string out;
@@ -536,9 +536,9 @@ std::string DescribeSpecDifference(const Shader::StageSpecialization& a,
 
 void LogNewPermutation(u64 hash, size_t perm_idx, const Shader::StageSpecialization& spec,
                        const Shader::StageSpecialization& closest) {
-    static const bool enabled = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+    static const bool enabled = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
     if (enabled) {
-        LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {}: {}", hash, perm_idx,
+        LOG_WARNING(Render_Vulkan, "port: shader {:#x} permutation {}: {}", hash, perm_idx,
                     DescribeSpecDifference(spec, closest));
     }
 }
@@ -553,7 +553,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     if (!compiler->HasCapacity()) {
         return false;
     }
-    PhaseTimer snapshot{g_gow3_snapshot_ns};
+    PhaseTimer snapshot{g_port_snapshot_ns};
     auto build = std::make_shared<AsyncShaderCompilation>();
     build->device = instance.GetDevice();
     build->code.assign(params.code.begin(), params.code.end());
@@ -575,13 +575,13 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     snapshot.Stop();
     AsyncJob<bool> capture_job;
     if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-        PhaseTimer capture{g_gow3_capture_ns};
+        PhaseTimer capture{g_port_capture_ns};
         auto [pools, reused] = compiler_pools.Acquire();
         build->pools = std::move(pools);
         if (reused) {
-            ++g_gow3_pool_reuses;
+            ++g_port_pool_reuses;
         }
-        // gow3: the GPU thread waits until all guest reads and specialization are captured.
+        // port: the GPU thread waits until all guest reads and specialization are captured.
         build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
                                                    build->runtime, profile));
         build->spec = Shader::StageSpecialization(build->info, build->runtime, profile, binding);
@@ -591,7 +591,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         return false;
     }
     {
-        PhaseTimer waiting{g_gow3_guest_wait_ns};
+        PhaseTimer waiting{g_port_guest_wait_ns};
         capture_job.Wait();
     }
     if (!capture_job.Poll()) {
@@ -601,12 +601,12 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
             specialization->info = &program.info;
             program.failed_permutations.push_back(std::move(*specialization));
         }
-        LOG_ERROR(Render_Vulkan, "gow3: shader {:#x}/{} capture failed: {}", params.hash,
+        LOG_ERROR(Render_Vulkan, "port: shader {:#x}/{} capture failed: {}", params.hash,
                   permutation, capture_job.Error());
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
-        PhaseTimer compile{g_gow3_async_ns};
+        PhaseTimer compile{g_port_async_ns};
         Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch};
         auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, build->runtime, *build->ir,
                                                     build->binding);
@@ -650,7 +650,7 @@ void PipelineCache::PublishShaders(bool wait) {
                     program->failed_permutations.push_back(std::move(build->spec));
                 }
                 program->pending.reset();
-                LOG_ERROR(Render_Vulkan, "gow3: shader {:#x}/{} compilation failed: {}", hash,
+                LOG_ERROR(Render_Vulkan, "port: shader {:#x}/{} compilation failed: {}", hash,
                           build->permutation, build->job.Error());
                 retire();
             } else {
@@ -691,7 +691,7 @@ void PipelineCache::PublishGraphics(bool wait) {
         auto result = build->job.Poll();
         if (!result) {
             if (build->job.Failed() && !build->failure_logged) {
-                LOG_ERROR(Render_Vulkan, "gow3: pipeline {:#x} compilation failed: {}",
+                LOG_ERROR(Render_Vulkan, "port: pipeline {:#x} compilation failed: {}",
                           std::hash<GraphicsPipelineKey>{}(it.key()), build->job.Error());
                 build->failure_logged = true;
             }
@@ -714,7 +714,7 @@ void PipelineCache::PublishCompute(bool wait) {
             build->job.Wait();
         }
         if (build->job.Failed()) {
-            LOG_ERROR(Render_Vulkan, "gow3: compute pipeline {:#x} compilation failed: {}",
+            LOG_ERROR(Render_Vulkan, "port: compute pipeline {:#x} compilation failed: {}",
                       build->key.value, build->job.Error());
             sync_compute_keys.insert(build->key.value);
             it = pending_compute.erase(it);
@@ -745,13 +745,13 @@ void PipelineCache::FinishCompilations() {
         }
         const auto result = instance.GetDevice().mergePipelineCaches(*pipeline_cache, sources);
         if (result != vk::Result::eSuccess) {
-            LOG_ERROR(Render_Vulkan, "gow3: compiler cache merge failed: {}", vk::to_string(result));
+            LOG_ERROR(Render_Vulkan, "port: compiler cache merge failed: {}", vk::to_string(result));
         }
     }
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && PortSettings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
@@ -771,7 +771,7 @@ void PipelineCache::ReportCompilerStats() {
                     "%.1f ms, compile %.1f ms; pools retained %zu, reused %u\n",
                     capture_compiler->Depth(), compiler->Depth(),
                     capture_compiler->QueueWaitNs() / 1e6, compiler->QueueWaitNs() / 1e6,
-                    compiler_pools.Retained(), g_gow3_pool_reuses.exchange(0));
+                    compiler_pools.Retained(), g_port_pool_reuses.exchange(0));
     }
 }
 
@@ -832,11 +832,11 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     sel.draw_indirect_params = params;
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
-            ++g_gow3_pending_draws;
+            ++g_port_pending_draws;
         }
         return nullptr;
     }
-    // gow3: a pipeline an earlier session built (its key is stored) comes back from the
+    // port: a pipeline an earlier session built (its key is stored) comes back from the
     // pipeline binary cache in 1-2 ms: built here, its draws are not skipped meanwhile. Skipped
     // draws were the flicker of objects and effects every time a session met them again.
     const auto known = [this] {
@@ -849,7 +849,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         (pending_graphics.contains(sel.graphics_key) ||
          (!graphics_pipelines.contains(sel.graphics_key) && !known()))) {
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
-            PhaseTimer capture{g_gow3_snapshot_ns};
+            PhaseTimer capture{g_port_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
             build->selection.regs = nullptr;
@@ -866,7 +866,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
-                PhaseTimer compile{g_gow3_async_ns};
+                PhaseTimer compile{g_port_async_ns};
                 auto& s = build->selection;
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
@@ -878,7 +878,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_gow3_pending_draws;
+        ++g_port_pending_draws;
         return nullptr;
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
@@ -928,11 +928,11 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
                            fmt::format("c_{:#018x}", compute_key.value));
     if (!known && SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
         !EmulatorSettings.IsShaderCollect() && !sync_compute_keys.contains(compute_key.value)) {
-        static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
         if (log && !pending_compute.contains(compute_key)) {
-            LOG_WARNING(Render_Vulkan, "gow3: compute pipeline of {:#x} built in the background "
+            LOG_WARNING(Render_Vulkan, "port: compute pipeline of {:#x} built in the background "
                         "from flip {}: its dispatches are skipped until it is ready",
-                        pgm_hash, Gow3Stats::flips.load(std::memory_order_relaxed));
+                        pgm_hash, PortStats::flips.load(std::memory_order_relaxed));
         }
         if (!pending_compute.contains(compute_key) && compiler->HasCapacity()) {
             auto build = std::make_shared<AsyncComputeCompilation>();
@@ -945,7 +945,7 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
             build->live_info = sel.infos[0];
             build->module = sel.modules[0];
             const bool queued = build->job.Start(*compiler, [this, build] {
-                PhaseTimer compile{g_gow3_async_ns};
+                PhaseTimer compile{g_port_async_ns};
                 build->pipeline = std::make_unique<ComputePipeline>(
                     instance, scheduler, desc_heap, profile,
                     *worker_pipeline_caches[AsyncCompiler::WorkerIndex()], build->key,
@@ -962,15 +962,15 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (is_new) {
         const auto pipeline_hash = std::hash<ComputePipelineKey>{}(compute_key);
         LOG_INFO(Render_Vulkan, "Compiling compute pipeline {:#x}", pipeline_hash);
-        static const bool log = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
         if (log) {
             const auto runs = compute_runs.find(pgm_hash);
             LOG_WARNING(Render_Vulkan,
-                        "gow3: compute pipeline of {:#x} built on the GPU thread: {} frames, last "
+                        "port: compute pipeline of {:#x} built on the GPU thread: {} frames, last "
                         "{} of {}, writes images {}",
                         pgm_hash, runs != compute_runs.end() ? runs->second.frames : 0,
                         runs != compute_runs.end() ? runs->second.last_frame : 0,
-                        Gow3Stats::flips.load(std::memory_order_relaxed),
+                        PortStats::flips.load(std::memory_order_relaxed),
                         std::ranges::any_of(sel.infos[0]->images,
                                             [](const auto& image) { return image.is_written; }));
         }
@@ -993,7 +993,7 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
 }
 
 void PipelineCache::CountComputeRun(u64 pgm_hash) {
-    const u64 frame = Gow3Stats::flips.load(std::memory_order_relaxed);
+    const u64 frame = PortStats::flips.load(std::memory_order_relaxed);
     auto& runs = compute_runs[pgm_hash];
     if (runs.last_frame != frame) {
         runs.last_frame = frame;
@@ -1001,15 +1001,15 @@ void PipelineCache::CountComputeRun(u64 pgm_hash) {
     }
 }
 
-// gow3: a new compute permutation is built on the compiler threads, its dispatches skipped
+// port: a new compute permutation is built on the compiler threads, its dispatches skipped
 // until it is ready, only when skipping loses nothing for good: the program ran in several
 // frames up to the last few (work redone every frame, as The Order's particle lighting shader,
 // whose permutations follow the light volumes in view: ~200 ms driver compiles on the GPU
 // thread), and it writes no image (Iggy copies each glyph into its textures once: the menus
-// lost their text). GOW3_ASYNC_COMPUTE=0 never skips, 1 always does.
+// lost their text). THEORDER_ASYNC_COMPUTE=0 never skips, 1 always does.
 bool PipelineCache::SkippableDispatch(const Shader::Info& info) const {
     static const char mode = [] {
-        const char* env = std::getenv("GOW3_ASYNC_COMPUTE");
+        const char* env = std::getenv("THEORDER_ASYNC_COMPUTE");
         return env ? env[0] : '\0';
     }();
     if (mode == '0' || mode == '1') {
@@ -1018,7 +1018,7 @@ bool PipelineCache::SkippableDispatch(const Shader::Info& info) const {
     // A frame can go without the program (the guest flips one frame twice).
     constexpr u32 MinFrames = 8, MaxIdleFlips = 4;
     const auto runs = compute_runs.find(info.pgm_hash);
-    const u64 frame = Gow3Stats::flips.load(std::memory_order_relaxed);
+    const u64 frame = PortStats::flips.load(std::memory_order_relaxed);
     if (runs == compute_runs.end() || runs->second.frames < MinFrames ||
         runs->second.last_frame + MaxIdleFlips < frame) {
         return false;
@@ -1031,7 +1031,7 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
     const auto& regs = (*sel.regs);
     auto& key = sel.graphics_key;
 
-    // gow3: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
+    // port: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
     // smaller one would crop a full-screen pass (eltutz, vk_depth_stencil_state.h).
     const bool db_enabled = GetEffectiveDepthStencilState(regs).needs_attachment;
 
@@ -1111,10 +1111,10 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
                 }
             }
         }
-        // GOW3_MOTION_SELECT_LOG=1: each G-buffer vertex shader once, with its buffer sizes
+        // THEORDER_MOTION_SELECT_LOG=1: each G-buffer vertex shader once, with its buffer sizes
         // and the selection, to find animated models that the size rule leaves out.
         static const bool select_log = [] {
-            const char* value = std::getenv("GOW3_MOTION_SELECT_LOG");
+            const char* value = std::getenv("THEORDER_MOTION_SELECT_LOG");
             return value && value[0] == '1';
         }();
         if (select_log && vs) {
@@ -1135,7 +1135,7 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
         }
         // Keep the old broad path available for visual A/B tests.
         static const bool all_motion = [] {
-            const char* value = std::getenv("GOW3_OBJECT_MOTION_ALL");
+            const char* value = std::getenv("THEORDER_OBJECT_MOTION_ALL");
             return value && value[0] == '1';
         }();
         if (all_motion) {
@@ -1355,10 +1355,10 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
     CompileTimer timer;
 
-    PhaseTimer translate{g_gow3_translate_ns};
+    PhaseTimer translate{g_port_translate_ns};
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
     translate.Stop();
-    PhaseTimer emit{g_gow3_emit_ns};
+    PhaseTimer emit{g_port_emit_ns};
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     emit.Stop();
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
@@ -1391,7 +1391,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                                 Shader::Backend::Bindings& binding) {
     auto runtime_info = BuildRuntimeInfo(sel, hw_stage, sw_stage);
     if (sel.worker) {
-        // gow3: draw-preparation worker: look up only, with the worker's own Info copy.
+        // port: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
         std::shared_lock lk{programs_mutex};
         const auto found_program = program_cache.find(params.hash);
@@ -1439,7 +1439,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                !EmulatorSettings.IsShaderCollect();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
-            PhaseTimer waiting{g_gow3_compile_wait_ns};
+            PhaseTimer waiting{g_port_compile_wait_ns};
             it_pgm->second->pending->job.Wait();
         }
         PublishShaders();
@@ -1502,7 +1502,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
     vk::ShaderModule module{};
 
-    // gow3: consecutive draws of a program almost always use the same permutation.
+    // port: consecutive draws of a program almost always use the same permutation.
     auto it = program->last_used < program->modules.size() &&
                       program->modules[program->last_used].spec == spec
                   ? program->modules.begin() + program->last_used
@@ -1537,12 +1537,12 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
         u64 spv_hash{};
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding, spv_hash);
-        static const bool check_shape = std::getenv("GOW3_PERMUTATION_LOG") != nullptr;
+        static const bool check_shape = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
         if (check_shape && (new_info.buffers.size() != info.buffers.size() ||
                             new_info.images.size() != info.images.size() ||
                             new_info.samplers.size() != info.samplers.size() ||
                             new_info.fmasks.size() != info.fmasks.size())) {
-            LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {} resources {}/{}/{}/{} "
+            LOG_WARNING(Render_Vulkan, "port: shader {:#x} permutation {} resources {}/{}/{}/{} "
                         "(buffers/images/samplers/fmasks), program {}/{}/{}/{}",
                         params.hash, perm_idx, new_info.buffers.size(), new_info.images.size(),
                         new_info.samplers.size(), new_info.fmasks.size(), info.buffers.size(),
@@ -1554,7 +1554,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             const auto& b = info.images[i];
             if (a.NumBindings(new_info) != b.NumBindings(info) ||
                 a.mip_fallback_mode != b.mip_fallback_mode || a.is_written != b.is_written) {
-                LOG_WARNING(Render_Vulkan, "gow3: shader {:#x} permutation {} image {}: bindings "
+                LOG_WARNING(Render_Vulkan, "port: shader {:#x} permutation {} image {}: bindings "
                             "{}/{}, mip mode {}/{}, written {}/{} (permutation/program)",
                             params.hash, perm_idx, i, a.NumBindings(new_info),
                             b.NumBindings(info), u32(a.mip_fallback_mode),

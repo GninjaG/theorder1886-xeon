@@ -51,7 +51,7 @@ void RegisterShaderMeta(const Shader::Info& info,
                         u64 spv_hash);
 /// Returns the SPIR-V hash its meta records (SpvHash).
 u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx);
-/// gow3: a meta and its SPIR-V are separate files, written by a queue that is not drained at
+/// port: a meta and its SPIR-V are separate files, written by a queue that is not drained at
 /// exit, and permutation indices are reused across sessions: the hash pairs them.
 u64 SpvHash(std::span<const u32> spv);
 

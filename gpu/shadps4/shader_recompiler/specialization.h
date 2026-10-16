@@ -53,7 +53,7 @@ struct ImageSpecialization {
     AmdGpu::NumberConversion num_conversion{};
     // FIXME any pipeline cache changes needed?
     u32 num_bindings = 0;
-    /// gow3: an FMask T# turns the slot's reads into constants (resource_patching_pass.cpp).
+    /// port: an FMask T# turns the slot's reads into constants (resource_patching_pass.cpp).
     bool is_fmask = false;
 
     bool operator==(const ImageSpecialization&) const = default;
@@ -191,7 +191,7 @@ struct StageSpecialization {
         }
     }
 
-    // gow3: an unbound image is still declared by the SPIR-V, from the sharp GetSharp returns
+    // port: an unbound image is still declared by the SPIR-V, from the sharp GetSharp returns
     // (Image::Null: a plain 2D image, one binding). Its specialization describes that declaration
     // instead of staying empty, so a later draw that binds a texture of the same kind reuses the
     // module rather than compiling a new permutation for a num_bindings 0/1 difference. The slot
@@ -253,7 +253,7 @@ struct StageSpecialization {
         }
         for (u32 i = 0; i < images.size(); i++) {
             if (other.bitset[binding++] ? images[i] != other.images[i]
-                                        // gow3: an unbound image still takes num_bindings
+                                        // port: an unbound image still takes num_bindings
                                         // descriptors: every later binding number depends on it.
                                         : images[i].num_bindings != other.images[i].num_bindings) {
                 return false;

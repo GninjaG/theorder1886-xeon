@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// gow3: guest multisampled images created and sampled as single-sampled ones.
+// port: guest multisampled images created and sampled as single-sampled ones.
 //
 // God of War III draws with one color fragment and two depth samples, and its shaders fetch
 // that depth buffer (D32S8, 2 samples) as a multisampled texture. On the RX 6600 with AMD's
@@ -10,7 +10,7 @@
 // instead: the depth test and the shaders then use the same single-sampled buffer. Guest
 // sizes and addresses still use the real sample count (GuestNumSamples).
 //
-// On with AMD's and Intel's Windows drivers (gow3_msaa_default.h); GOW3_NO_MSAA=0 or 1 decides
+// On with AMD's and Intel's Windows drivers (port_msaa_default.h); THEORDER_NO_MSAA=0 or 1 decides
 // otherwise (vk_instance.cpp).
 
 #pragma once

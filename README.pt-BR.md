@@ -57,7 +57,7 @@ trabalho, as correções e as pendências estão em [docs/PROGRESS.md](docs/PROG
    bash build.sh
    ```
 
-   O resultado é `out/theorder-probe.exe` (também copiado como `out/gow3-probe.exe`). Se o build
+   O resultado é `out/theorder-probe.exe` (também copiado como `out/theorder-probe.exe`). Se o build
    disser que não consegue substituir o executável, ainda há um processo do jogo rodando.
 
 ## Jogando
@@ -112,7 +112,7 @@ Controles (DualSense, Xbox e outros) funcionam pelo SDL3, junto com o teclado.
 | Insert | menu do port (R3+L2 no controle) |
 
 O teclado ainda não tem o botão Options. Em controles sem touchpad, View (Back) é o clique
-direito do touchpad. `GOW3_KEY_MAP` e `GOW3_PAD_MAP` trocam os botões (`src/runtime_pad.c`).
+direito do touchpad. `THEORDER_KEY_MAP` e `THEORDER_PAD_MAP` trocam os botões (`src/runtime_pad.c`).
 
 O menu do port (Insert) tem as opções de tela, limite de quadros e o overlay de desempenho.
 
@@ -127,8 +127,8 @@ alterados. Todos os patches vêm desligados.
 
   ```powershell
   Set-Content fps60.ini 'engine_fps=120'   # a lógica do launcher cai para o patch de 60 FPS
-  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:GOW3_CONFIG = $env:THEORDER_CONFIG
-  $env:GOW3_FLIP_RATE = '0'; $env:GOW3_FPS_LIMIT = '60'
+  $env:THEORDER_CONFIG = (Resolve-Path fps60.ini); $env:THEORDER_CONFIG = $env:THEORDER_CONFIG
+  $env:THEORDER_FLIP_RATE = '0'; $env:THEORDER_FPS_LIMIT = '60'
   python run.py
   ```
 
@@ -147,16 +147,16 @@ O núcleo gráfico lê estas variáveis de ambiente:
 
 | Variável | Efeito |
 |---|---|
-| `GOW3_NO_MSAA=1` / `0` | imagens do jogo sem ou com multisampling (com, por padrão, na NVIDIA) |
-| `GOW3_ASYNC_COMPUTE=0` / `1` | pipelines de compute nunca montados antes para este jogo: sempre no thread da GPU / sempre em segundo plano (os dispatches são pulados enquanto isso; os menus podem perder textos e ícones). Padrão: em segundo plano só para programas que rodam todo quadro e não escrevem imagens |
-| `GOW3_PIPELINE_BINARY_CACHE_MB=N` | tamanho do cache de binários de pipeline (padrão 4096); os mais antigos além disso são removidos ao iniciar |
-| `GOW3_LAZY_SHADER_CACHE=0` | traduz todos os shaders de novo em vez de carregar os do cache |
-| `GOW3_FLIP_RATE`, `GOW3_FPS_LIMIT` | taxa de apresentação (ver o patch de 60 FPS) |
-| `GOW3_VK_VALIDATION=1` | camada de validação do Vulkan (com `VK_ADD_LAYER_PATH` apontando para ela) |
-| `GOW3_GPU_LOG=info` | nível do log da GPU |
-| `GOW3_PERMUTATION_LOG=1` | por que cada nova permutação de shader foi compilada |
-| `GOW3_BIG_TRACK_LOG=1` | quem rastreia faixas de memória acima de 256 MiB |
-| `GOW3_PAD_FILE=<arquivo>` | entrada de controle roteirizada para execuções automatizadas |
+| `THEORDER_NO_MSAA=1` / `0` | imagens do jogo sem ou com multisampling (com, por padrão, na NVIDIA) |
+| `THEORDER_ASYNC_COMPUTE=0` / `1` | pipelines de compute nunca montados antes para este jogo: sempre no thread da GPU / sempre em segundo plano (os dispatches são pulados enquanto isso; os menus podem perder textos e ícones). Padrão: em segundo plano só para programas que rodam todo quadro e não escrevem imagens |
+| `THEORDER_PIPELINE_BINARY_CACHE_MB=N` | tamanho do cache de binários de pipeline (padrão 4096); os mais antigos além disso são removidos ao iniciar |
+| `THEORDER_LAZY_SHADER_CACHE=0` | traduz todos os shaders de novo em vez de carregar os do cache |
+| `THEORDER_FLIP_RATE`, `THEORDER_FPS_LIMIT` | taxa de apresentação (ver o patch de 60 FPS) |
+| `THEORDER_VK_VALIDATION=1` | camada de validação do Vulkan (com `VK_ADD_LAYER_PATH` apontando para ela) |
+| `THEORDER_GPU_LOG=info` | nível do log da GPU |
+| `THEORDER_PERMUTATION_LOG=1` | por que cada nova permutação de shader foi compilada |
+| `THEORDER_BIG_TRACK_LOG=1` | quem rastreia faixas de memória acima de 256 MiB |
+| `THEORDER_PAD_FILE=<arquivo>` | entrada de controle roteirizada para execuções automatizadas |
 
 Os saves e o cache de shaders ficam na pasta `user` do projeto (`user/savedata`,
 `user/cache/CUSA00035`).
@@ -181,7 +181,7 @@ O `tools/batch_runs.py` inicia o jogo várias vezes, compara condições (`--con
 | Carregador | `src/probe.c` | Carrega a imagem e inicia o código original do jogo |
 | Runtime | `src/runtime_*.c` | Reimplementa as funções de sistema do PS4: memória, threads, arquivos, áudio, vídeo, controle, saves e serviços |
 | GPU | `gpu/shadps4/` | O núcleo de vídeo do shadPS4 com as correções do cuesta4 e o trabalho dos ports de God of War III e The Order (compilação assíncrona de shaders e pipelines, cache de shaders) |
-| Menu do port | `gpu/shim/gow3_overlay.cpp` | O menu Dear ImGui e o overlay de desempenho |
+| Menu do port | `gpu/shim/port_overlay.cpp` | O menu Dear ImGui e o overlay de desempenho |
 | Patches | `patches/TheOrder1886-Orbis.xml`, `scripts/patches.py` | Aplicados na memória ao iniciar |
 
 O launcher em `launcher/` e o empacotamento para Linux em `packaging/linux/` vêm do port de God

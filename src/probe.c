@@ -8,7 +8,7 @@
 #include "runtime.h"
 #include "cpu_check.h"
 #include "isa_rewrite.h"
-#include "gpu/gow3gpu.h"
+#include "gpu/theordergpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
 #endif
@@ -161,7 +161,7 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
         fprintf(stderr, "  globals: [0x16b1df0]=%p [0x16b3420]=%p [0x16b3418]=%p\n",
                 *(void**)(image + 0x16b1df0), *(void**)(image + 0x16b3420), *(void**)(image + 0x16b3418));
     }
-    if (gpu_enabled) gow3gpu_dump_guest_writes(info);
+    if (gpu_enabled) theordergpu_dump_guest_writes(info);
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
     for (int depth=0; depth<24 && rbp; ++depth) {
@@ -216,17 +216,17 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     }
     if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2) {
         /* GPU page tracking (write-protected guest pages) is resolved first. */
-        if (gpu_enabled && gow3gpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
+        if (gpu_enabled && theordergpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
         if (runtime_fault_recover) {
             /* A speculative guest memory read (GPU draw preparation) faulted: the thread resumes
-             * in gow3_longjmp, outside the exception dispatcher, back at its recovery point. */
+             * in port_longjmp, outside the exception dispatcher, back at its recovery point. */
             unsigned long long *buffer=*runtime_fault_recover;
             runtime_fault_recover=NULL;
             CONTEXT *c=info->ContextRecord;
             c->Rsp=((c->Rsp-128)&~(DWORD64)15)-40;
             c->Rcx=(DWORD64)(uintptr_t)buffer;
             c->Rdx=1;
-            c->Rip=(DWORD64)(uintptr_t)gow3_longjmp;
+            c->Rip=(DWORD64)(uintptr_t)port_longjmp;
             return EXCEPTION_CONTINUE_EXECUTION;
         }
     }
@@ -313,7 +313,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
         }
     }
     /* GPU page tracking (write-protected guest pages) is resolved first. */
-    if (gpu_enabled && sig == SIGSEGV && gow3gpu_handle_fault(context, info->si_addr)) return;
+    if (gpu_enabled && sig == SIGSEGV && theordergpu_handle_fault(context, info->si_addr)) return;
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
     if ((sig == SIGSEGV || sig == SIGBUS) && runtime_fault_recover) {
         sigjmp_buf *recover = runtime_fault_recover;
@@ -343,7 +343,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
-    if (gpu_enabled) gow3gpu_dump_guest_writes(context);
+    if (gpu_enabled) theordergpu_dump_guest_writes(context);
     /* Host call chain (frames with unwind info; guest frames end it). */
     void *frames[32];
     int depth = backtrace(frames, 32);
@@ -477,9 +477,9 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
 void runtime_restart(void) {
     fflush(NULL);
 #ifdef _WIN32
-    /* run.py sets THEORDER_RESTART_COMMAND / GOW3_RESTART_COMMAND: the launch command line, started again (new patches). */
+    /* run.py sets THEORDER_RESTART_COMMAND: the launch command line, started again (new patches). */
     const char *command = getenv("THEORDER_RESTART_COMMAND");
-    if (!command || !*command) command = getenv("GOW3_RESTART_COMMAND");
+    if (!command || !*command) command = getenv("THEORDER_RESTART_COMMAND");
     puts("Runtime: restarting through run.py");
     if (!command || !*command) { fputs("runtime_restart: THEORDER_RESTART_COMMAND is not set\n", stderr); _exit(1); }
     char *line = _strdup(command);
@@ -496,7 +496,7 @@ void runtime_restart(void) {
     TerminateProcess(GetCurrentProcess(), 0);
 #else
     const char *command = getenv("THEORDER_RESTART_COMMAND");
-    if (!command || !*command) command = getenv("GOW3_RESTART_COMMAND");
+    if (!command || !*command) command = getenv("THEORDER_RESTART_COMMAND");
     syscall(SYS_close_range, 3u, ~0u, 0u);
     if (command && *command) {
         puts("Runtime: restarting through restart command");
@@ -789,13 +789,12 @@ static void install_order1886_diagnostics(void) {
     hook_cond_jump(0x9b4838, 0x9b493f);
 }
 
-/* The guest code needs the PS4's instruction sets (#33, #66); GOW3_CPU_CHECK=0 skips this. A
+/* The guest code needs the PS4's instruction sets (#33, #66); THEORDER_CPU_CHECK=0 skips this. A
  * missing fatal set prints STOP and returns 0; the rewritable ones go to cpu_missing_sets, named
  * in missing. */
 static int cpu_supported(char *missing, size_t size) {
     missing[0] = 0;
     const char *check = getenv("THEORDER_CPU_CHECK");
-    if (!check) check = getenv("GOW3_CPU_CHECK");
     if (check && !strcmp(check, "0")) return 1;
     const CpuFeatureWords words = cpu_feature_words();
     if (cpu_missing_fatal(words, missing, size)) {
@@ -864,7 +863,7 @@ int main(int argc, char **argv) {
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
     }
     const char *env_guest_args = getenv("THEORDER_ARGS");
-    if (!env_guest_args) env_guest_args = getenv("GOW3_GUEST_ARGS");
+    if (!env_guest_args) env_guest_args = getenv("THEORDER_GUEST_ARGS");
     if (env_guest_args && *env_guest_args) {
         char *dup = strdup(env_guest_args);
         char *tok = strtok(dup, " ");
@@ -879,9 +878,8 @@ int main(int argc, char **argv) {
     }
     if (!cpu_supported(missing, sizeof missing)) return 20;
     if (cpu_missing_sets) printf("CPU: missing %s\n", missing);
-    /* THEORDER_ISA_REWRITE / GOW3_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks. */
+    /* THEORDER_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks. */
     const char *policy = getenv("THEORDER_ISA_REWRITE");
-    if (!policy) policy = getenv("GOW3_ISA_REWRITE");
     unsigned isa_sets = policy && !strcmp(policy, "1") ? 0xffffffffu : policy && !strcmp(policy, "0") ? 0 : cpu_missing_sets;
     if (cpu_missing_sets && !isa_sets) {
         printf("STOP: this CPU lacks %s and the rewrite is disabled (ISA_REWRITE=0)\n", missing);
@@ -921,13 +919,12 @@ int main(int argc, char **argv) {
             runtime_savedata_configure(id);
         }
     }
-    gow3gpu_register_kernel();
+    theordergpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
     AddVectoredExceptionHandler(1, vectored_fault);
     SetUnhandledExceptionFilter(unhandled_fault);
     const char *strict_handles = getenv("THEORDER_STRICT_HANDLES");
-    if (!strict_handles) strict_handles = getenv("GOW3_STRICT_HANDLES");
     if (strict_handles) {
         PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY strict={0};
         strict.RaiseExceptionOnInvalidHandleReference=1;
@@ -1074,10 +1071,10 @@ int main(int argc, char **argv) {
         sfo_value(sfo,"ATTRIBUTE",NULL,0,&attributes);
         uint64_t sdk=0;
         if (procparam) memcpy(&sdk,image+procparam+16,8); /* procparam: size, magic, count, sdk_version */
-        Gow3GpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080};
+        TheOrderGpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080};
         gpu_enabled=1; /* page tracking starts while the rasterizer registers guest memory */
-        if (gow3gpu_init(&gpu)) fail("GPU initialization failed");
-        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,gow3gpu_symbol_count());
+        if (theordergpu_init(&gpu)) fail("GPU initialization failed");
+        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,theordergpu_symbol_count());
     }
     unsigned char *traps = allocate(round_page((import_count + 1) * 32));
     unsigned char *data_traps = allocate((import_count + 1) * page_size);
@@ -1137,7 +1134,7 @@ int main(int argc, char **argv) {
             fflush(NULL);
             _exit(20); /* no destructors: GPU threads are running */
         }
-        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (GOW3_ISA_REWRITE=1), %u skipped\n", r.rewritten, r.skipped);
+        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (THEORDER_ISA_REWRITE=1), %u skipped\n", r.rewritten, r.skipped);
         else printf("ISA: CPU lacks %s: %u sites rewritten (%u jmp, %u relocated, %u int3), %u skipped\n",
                     missing, r.rewritten, r.jmp, r.relocated, r.int3, r.skipped);
         runtime_set_report_hook(isa_report_hook);

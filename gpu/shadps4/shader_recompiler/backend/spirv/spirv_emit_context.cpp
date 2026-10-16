@@ -312,7 +312,7 @@ void EmitContext::DefineInputs() {
     if (info.uses_lane_id) {
         subgroup_local_invocation_id = DefineVariable(
             U32[1], spv::BuiltIn::SubgroupLocalInvocationId, spv::StorageClass::Input);
-        // gow3: Flat is for fragment inputs only (VUID-StandaloneSpirv-Flat-06202).
+        // port: Flat is for fragment inputs only (VUID-StandaloneSpirv-Flat-06202).
         if (hw_stage == HwStage::Fragment) {
             Decorate(subgroup_local_invocation_id, spv::Decoration::Flat);
         }

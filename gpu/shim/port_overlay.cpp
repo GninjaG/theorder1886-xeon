@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "gow3_overlay.h"
+#include "port_overlay.h"
 
 #include <algorithm>
 #include <atomic>
@@ -13,9 +13,9 @@
 #include <vector>
 
 #include <SDL3/SDL.h>
-#include "gow3_settings.h"
-#include "gow3_graphics.h"
-#include "gow3_perf_stats.h"
+#include "port_settings.h"
+#include "port_graphics.h"
+#include "port_perf_stats.h"
 
 extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
 #include "common/elf_info.h"
@@ -30,28 +30,28 @@ extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends
 #ifdef _WIN32
 asm(".section .rdata,\"dr\"\n"
     ".balign 16\n"
-    ".global gow3_font_ttf\n"
-    "gow3_font_ttf:\n"
-    ".incbin \"" GOW3_FONT_PATH "\"\n"
-    ".global gow3_font_ttf_end\n"
-    "gow3_font_ttf_end:\n"
+    ".global port_font_ttf\n"
+    "port_font_ttf:\n"
+    ".incbin \"" THEORDER_FONT_PATH "\"\n"
+    ".global port_font_ttf_end\n"
+    "port_font_ttf_end:\n"
     ".text\n");
 #else
 asm(".section .rodata\n"
     ".balign 16\n"
-    ".hidden gow3_font_ttf\n"
-    ".global gow3_font_ttf\n"
-    "gow3_font_ttf:\n"
-    ".incbin \"" GOW3_FONT_PATH "\"\n"
-    ".hidden gow3_font_ttf_end\n"
-    ".global gow3_font_ttf_end\n"
-    "gow3_font_ttf_end:\n"
+    ".hidden port_font_ttf\n"
+    ".global port_font_ttf\n"
+    "port_font_ttf:\n"
+    ".incbin \"" THEORDER_FONT_PATH "\"\n"
+    ".hidden port_font_ttf_end\n"
+    ".global port_font_ttf_end\n"
+    "port_font_ttf_end:\n"
     ".previous\n");
 #endif
-extern "C" const unsigned char gow3_font_ttf[];
-extern "C" const unsigned char gow3_font_ttf_end[];
+extern "C" const unsigned char port_font_ttf[];
+extern "C" const unsigned char port_font_ttf_end[];
 
-namespace Gow3Overlay {
+namespace PortOverlay {
 
 namespace {
 
@@ -75,7 +75,7 @@ int choice_index = 0;
 std::atomic<int> choice_result{-1}; // -1 open, -2 cancelled, else the chosen index
 // Save pictures: decoded by BeginChoice, made textures on the present thread (null = none).
 // Closed lists' textures wait in choice_retired until the backend has destroyed them.
-std::vector<Gow3Png::Image> choice_pictures;
+std::vector<PortPng::Image> choice_pictures;
 std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 float base_scale = 1.0f;
@@ -90,11 +90,11 @@ void SetOpen(bool value) {
     }
     ImGui::GetIO().MouseDrawCursor = value;
     if (value) {
-        requested_tab = Gow3Settings::Get().menu_tab;
+        requested_tab = PortSettings::Get().menu_tab;
     }
     if (!value && dirty) {
         dirty = false;
-        Gow3Settings::Save();
+        PortSettings::Save();
     }
 }
 
@@ -178,10 +178,10 @@ void Choice(const char* label, std::atomic<int>& target, const char* const* labe
     }
 }
 
-// Controller button names in the help text: PlayStation unless GOW3_GLYPHS names xbox or
+// Controller button names in the help text: PlayStation unless THEORDER_GLYPHS names xbox or
 // nintendo. Read once: the environment is fixed for a run.
 static const char* PadText(const char* playstation, const char* xbox, const char* nintendo) {
-    static const char* style = std::getenv("GOW3_GLYPHS");
+    static const char* style = std::getenv("THEORDER_GLYPHS");
     if (!style) return playstation;
     return !std::strcmp(style, "xbox") ? xbox : !std::strcmp(style, "nintendo") ? nintendo : playstation;
 }
@@ -248,11 +248,11 @@ void SliderRow(const char* label, std::atomic<int>& value, int lo, int hi, const
 
 const char* UpscalerLabel(int upscaler) {
     switch (upscaler) {
-    case Gow3Settings::UpscalerFsr3: return "FSR 3.1";
-    case Gow3Settings::UpscalerFsr4: return "FSR 4";
-    case Gow3Settings::UpscalerFsr411: return "FSR 4.1.1";
-    case Gow3Settings::UpscalerTaa: return "TAA";
-    case Gow3Settings::UpscalerDlss: return "DLSS";
+    case PortSettings::UpscalerFsr3: return "FSR 3.1";
+    case PortSettings::UpscalerFsr4: return "FSR 4";
+    case PortSettings::UpscalerFsr411: return "FSR 4.1.1";
+    case PortSettings::UpscalerTaa: return "TAA";
+    case PortSettings::UpscalerDlss: return "DLSS";
     default: return "";
     }
 }
@@ -261,8 +261,8 @@ const Vulkan::Instance* overlay_instance = nullptr; // for the overlay's measure
 
 // The performance overlay's text with the current settings (also the menu's preview).
 std::string OverlayText() {
-    namespace P = Gow3PerfStats;
-    const auto& s = Gow3Settings::Get();
+    namespace P = PortPerfStats;
+    const auto& s = PortSettings::Get();
     const unsigned items = s.overlay_items;
     if ((items & (P::Gpu | P::Cpu | P::Ram | P::Vram)) && overlay_instance) {
         P::Start(*overlay_instance);
@@ -275,8 +275,8 @@ std::string OverlayText() {
 }
 
 void ImageTab() {
-    namespace G = Gow3Graphics;
-    auto& s = Gow3Settings::Get();
+    namespace G = PortGraphics;
+    auto& s = PortSettings::Get();
     ImGui::SeparatorText("Display");
     if (BeginRows("##display")) {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
@@ -313,8 +313,8 @@ void ImageTab() {
 }
 
 void PerformanceTab() {
-    namespace G = Gow3Graphics;
-    auto& s = Gow3Settings::Get();
+    namespace G = PortGraphics;
+    auto& s = PortSettings::Get();
     ImGui::SeparatorText("Live");
     if (BeginRows("##live")) {
         static const char* const fps_labels[] = {"30", "60", "120", "240", "Unlimited"};
@@ -352,8 +352,8 @@ void PerformanceTab() {
 }
 
 void OverlayTab() {
-    namespace P = Gow3PerfStats;
-    auto& s = Gow3Settings::Get();
+    namespace P = PortPerfStats;
+    auto& s = PortSettings::Get();
     if (BeginRows("##overlay_on")) {
         CheckRow("Show overlay", s.show_fps, "The performance overlay in a corner of the screen.");
         ImGui::EndTable();
@@ -413,13 +413,13 @@ void OverlayTab() {
 
 // Startup options changed since this launch (applied by "Apply and restart").
 int RestartChanges() {
-    const auto& s = Gow3Settings::Get();
+    const auto& s = PortSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) + (s.engine_fps != s.startup_engine_fps) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback);
 }
 
 void Menu() {
-    auto& s = Gow3Settings::Get();
+    auto& s = PortSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
                                    viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
@@ -428,7 +428,7 @@ void Menu() {
                                     std::min(680.0f * base_scale, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
-    // gow3: the game's own title (param.sfo), not a fixed one.
+    // port: the game's own title (param.sfo), not a fixed one.
     static const std::string heading = [] {
         const std::string_view title = Common::ElfInfo::Instance().Title();
         return std::string(title.empty() ? "The Order: 1886" : title) + PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)");
@@ -438,7 +438,7 @@ void Menu() {
         return;
     }
     footer_help = nullptr;
-    constexpr int TabCount = Gow3Settings::MenuTabCount;
+    constexpr int TabCount = PortSettings::MenuTabCount;
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_E, false) ? 1
@@ -481,18 +481,18 @@ void Menu() {
 
     ImGui::Separator();
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in gow3.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in gow3.ini.", "L / R or Q / E: switch tabs. Settings are saved in gow3.ini."));
+    ImGui::TextDisabled("%s", footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in theorder.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in theorder.ini.", "L / R or Q / E: switch tabs. Settings are saved in theorder.ini."));
     ImGui::PopTextWrapPos();
     if (const int changes = RestartChanges()) {
         ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%d change%s need%s a restart (unsaved progress is lost).",
                            changes, changes == 1 ? "" : "s", changes == 1 ? "s" : "");
         ImGui::SameLine();
-        ImGui::BeginDisabled(!std::getenv("GOW3_RESTART_COMMAND"));
+        ImGui::BeginDisabled(!std::getenv("THEORDER_RESTART_COMMAND"));
         if (ImGui::Button("Apply and restart")) {
             // The new launch confirms the options once the game shows; run.py restores the
             // previous ones if it never does (restart_unconfirmed).
             s.restart_unconfirmed = true;
-            Gow3Settings::Save();
+            PortSettings::Save();
             runtime_restart();
         }
         ImGui::EndDisabled();
@@ -612,7 +612,7 @@ void LoadingScreen() {
 }
 
 void FpsCounter() {
-    const auto& s = Gow3Settings::Get();
+    const auto& s = PortSettings::Get();
     const std::string text = OverlayText();
     if (text.empty()) {
         return;
@@ -663,7 +663,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     io.IniFilename = nullptr; // window positions are not kept
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-    io.BackendPlatformName = "gow3";
+    io.BackendPlatformName = "port";
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -674,8 +674,8 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
 
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(gow3_font_ttf),
-                                   int(gow3_font_ttf_end - gow3_font_ttf), 18.0f, &font_config);
+    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(port_font_ttf),
+                                   int(port_font_ttf_end - port_font_ttf), 18.0f, &font_config);
 
     const vk::Instance vk_instance = instance.GetInstance();
     ImGui_ImplVulkan_LoadFunctions(
@@ -747,7 +747,7 @@ void UpdateChoiceTextures() {
     if (!choice_pictures.empty()) {
         choice_textures.assign(choice_pictures.size(), nullptr);
         for (size_t i = 0; i < choice_pictures.size(); ++i) {
-            const Gow3Png::Image& picture = choice_pictures[i];
+            const PortPng::Image& picture = choice_pictures[i];
             if (picture.rgba.empty()) {
                 continue;
             }
@@ -814,7 +814,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
         static const bool capture_key = [] {
-            const char* env = std::getenv("GOW3_FRAME_CAPTURE_KEY");
+            const char* env = std::getenv("THEORDER_FRAME_CAPTURE_KEY");
             return env && *env == '1';
         }();
         if (down && !event.key.repeat && capture_key && event.key.key == SDLK_F11) {
@@ -915,12 +915,12 @@ bool HandleEvent(const SDL_Event& event) {
 // seconds of frames after loading (run.py restores the previous ones otherwise).
 void ConfirmRestart() {
     static u32 frames = 0;
-    auto& s = Gow3Settings::Get();
+    auto& s = PortSettings::Get();
     if (!s.restart_unconfirmed || loading || ++frames < 600) {
         return;
     }
     s.restart_unconfirmed = false;
-    Gow3Settings::Save();
+    PortSettings::Save();
     std::puts("Settings: graphics options confirmed after restart");
 }
 
@@ -936,7 +936,7 @@ void SetLoading(bool active, u32 done, u32 total) {
 }
 
 bool Visible() {
-    const auto& s = Gow3Settings::Get();
+    const auto& s = PortSettings::Get();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
                            choice_retiring || s.show_fps);
 }
@@ -946,7 +946,7 @@ bool CapturesInput() {
 }
 
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
-                 std::vector<Gow3Png::Image> pictures, int focus) {
+                 std::vector<PortPng::Image> pictures, int focus) {
     std::scoped_lock lock{imgui_mutex};
     RetireChoiceTextures();
     choice_pictures = std::move(pictures);
@@ -1003,7 +1003,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (menu_open) {
         Menu();
     }
-    if (Gow3Settings::Get().show_fps && !menu_open) {
+    if (PortSettings::Get().show_fps && !menu_open) {
         FpsCounter();
     }
     if (background_total && !loading && !menu_open) {
@@ -1037,4 +1037,4 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     cmdbuf.endRendering();
 }
 
-} // namespace Gow3Overlay
+} // namespace PortOverlay

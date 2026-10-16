@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Translations of the Windows launcher. KEYS holds the English texts; every language lists its
-texts in the same order. Russian lives next to the English text in gow3_launcher_win.py.
+texts in the same order. Russian lives next to the English text in port_launcher_win.py.
 Missing or empty entries fall back to English."""
 
 KEYS = [
@@ -15,7 +15,7 @@ KEYS = [
     'Preparing the game; it opens in its own window…', 'The game is running.',
     'Restarting with the new settings…', '\nThe game exited (code {}).\n', 'Could not start: {}',
     'Choose the game folder with eboot.bin (CUSA00035).',
-    'Stored in gow3.ini; the in-game menu (Insert or R3+L2) changes the same values.',
+    'Stored in theorder.ini; the in-game menu (Insert or R3+L2) changes the same values.',
     'Upscaling',
     "Temporal upscaling with the game's own motion vectors. FSR 4 needs its assets (below) and a GPU with INT8 dot products; otherwise the game falls back to FSR 3.1 by itself.",
     'Quality preset', 'Render scale per axis: Quality renders at 1/1.5 of the output size.',
@@ -83,7 +83,7 @@ TRANSLATIONS = {
         'اختر مجلد اللعبة أولًا.', 'جارٍ تجهيز اللعبة؛ ستفتح في نافذتها الخاصة…', 'اللعبة تعمل.',
         'إعادة التشغيل بالإعدادات الجديدة…', '\nأُغلقت اللعبة (الرمز {}).\n', 'تعذّر التشغيل: {}',
         'اختر مجلد اللعبة الذي يحتوي eboot.bin (CUSA00035).',
-        'محفوظة في gow3.ini؛ قائمة اللعبة (Insert أو R3+L2) تغيّر القيم نفسها.', 'التكبير',
+        'محفوظة في theorder.ini؛ قائمة اللعبة (Insert أو R3+L2) تغيّر القيم نفسها.', 'التكبير',
         'تكبير زمني باستخدام متجهات الحركة الخاصة باللعبة. يحتاج FSR 4 إلى ملفاته (بالأسفل) وبطاقة تدعم INT8؛ وإلا تعود اللعبة تلقائيًا إلى FSR 3.1.',
         'إعداد الجودة', 'مقياس الرسم لكل محور: Quality يرسم بـ 1/1.5 من دقة الإخراج.',
         'دقة الإخراج', 'ما ينتجه المكبّر؛ وتُرسم الواجهة بهذه الدقة أيضًا.',
@@ -143,7 +143,7 @@ TRANSLATIONS = {
         'Preparando el juego; se abrirá en su propia ventana…', 'El juego está en marcha.',
         'Reiniciando con los nuevos ajustes…', '\nEl juego se cerró (código {}).\n',
         'No se pudo iniciar: {}', 'Elige la carpeta del juego con eboot.bin (CUSA00035).',
-        'Se guarda en gow3.ini; el menú del juego (Insert o R3+L2) cambia los mismos valores.',
+        'Se guarda en theorder.ini; el menú del juego (Insert o R3+L2) cambia los mismos valores.',
         'Escalado',
         'Escalado temporal con los vectores de movimiento del propio juego. FSR 4 necesita sus archivos (abajo) y una GPU con INT8; si no, el juego vuelve solo a FSR 3.1.',
         'Preajuste de calidad',
@@ -219,7 +219,7 @@ TRANSLATIONS = {
         'O jogo está rodando.', 'Reiniciando com as novas configurações…',
         '\nO jogo foi fechado (código {}).\n', 'Não foi possível iniciar: {}',
         'Escolha a pasta do jogo com eboot.bin (CUSA00035).',
-        'Salvo em gow3.ini; o menu do jogo (Insert ou R3+L2) altera os mesmos valores.',
+        'Salvo em theorder.ini; o menu do jogo (Insert ou R3+L2) altera os mesmos valores.',
         'Upscaling',
         'Upscaling temporal com os vetores de movimento do próprio jogo. O FSR 4 precisa de seus arquivos (abaixo) e de uma GPU com INT8; senão o jogo volta sozinho para o FSR 3.1.',
         'Predefinição de qualidade',
@@ -294,7 +294,7 @@ TRANSLATIONS = {
         'Redémarrage avec les nouveaux réglages…', '\nLe jeu s’est fermé (code {}).\n',
         'Impossible de lancer : {}',
         'Choisissez le dossier du jeu contenant eboot.bin (CUSA00035).',
-        'Enregistré dans gow3.ini ; le menu en jeu (Insert ou R3+L2) modifie les mêmes valeurs.',
+        'Enregistré dans theorder.ini ; le menu en jeu (Insert ou R3+L2) modifie les mêmes valeurs.',
         'Upscaling',
         'Upscaling temporel avec les vecteurs de mouvement du jeu. FSR 4 nécessite ses fichiers (ci-dessous) et un GPU avec INT8 ; sinon le jeu repasse seul à FSR 3.1.',
         'Préréglage de qualité',
@@ -365,7 +365,7 @@ TRANSLATIONS = {
         'Spiel wird vorbereitet; es öffnet sich in einem eigenen Fenster…', 'Das Spiel läuft.',
         'Neustart mit den neuen Einstellungen…', '\nDas Spiel wurde beendet (Code {}).\n',
         'Start fehlgeschlagen: {}', 'Spielordner mit eboot.bin wählen (CUSA00035).',
-        'Gespeichert in gow3.ini; das Menü im Spiel (Einfg oder R3+L2) ändert dieselben Werte.',
+        'Gespeichert in theorder.ini; das Menü im Spiel (Einfg oder R3+L2) ändert dieselben Werte.',
         'Hochskalierung',
         'Temporale Hochskalierung mit den Bewegungsvektoren des Spiels. FSR 4 braucht seine Dateien (unten) und eine GPU mit INT8; sonst wechselt das Spiel selbst zu FSR 3.1.',
         'Qualitätsstufe', 'Renderauflösung je Achse: Quality rendert mit 1/1,5 der Ausgabegröße.',
@@ -432,7 +432,7 @@ TRANSLATIONS = {
         'Preparazione del gioco; si aprirà nella sua finestra…', 'Il gioco è in esecuzione.',
         'Riavvio con le nuove impostazioni…', '\nIl gioco è stato chiuso (codice {}).\n',
         'Impossibile avviare: {}', 'Scegli la cartella del gioco con eboot.bin (CUSA00035).',
-        'Salvato in gow3.ini; il menu nel gioco (Ins o R3+L2) modifica gli stessi valori.',
+        'Salvato in theorder.ini; il menu nel gioco (Ins o R3+L2) modifica gli stessi valori.',
         'Upscaling',
         'Upscaling temporale con i vettori di movimento del gioco. FSR 4 richiede i suoi file (sotto) e una GPU con INT8; altrimenti il gioco torna da solo a FSR 3.1.',
         'Preset di qualità',
@@ -503,7 +503,7 @@ TRANSLATIONS = {
         'Gra działa.', 'Ponowne uruchamianie z nowymi ustawieniami…',
         '\nGra została zamknięta (kod {}).\n', 'Nie udało się uruchomić: {}',
         'Wybierz folder gry z eboot.bin (CUSA00035).',
-        'Zapisywane w gow3.ini; menu w grze (Insert lub R3+L2) zmienia te same wartości.',
+        'Zapisywane w theorder.ini; menu w grze (Insert lub R3+L2) zmienia te same wartości.',
         'Skalowanie',
         'Skalowanie czasowe z wektorami ruchu samej gry. FSR 4 wymaga swoich plików (poniżej) i GPU z INT8; w przeciwnym razie gra sama wraca do FSR 3.1.',
         'Profil jakości',
@@ -570,7 +570,7 @@ TRANSLATIONS = {
         'Önce oyun klasörünü seçin.', 'Oyun hazırlanıyor; kendi penceresinde açılacak…',
         'Oyun çalışıyor.', 'Yeni ayarlarla yeniden başlatılıyor…', '\nOyun kapandı (kod {}).\n',
         'Başlatılamadı: {}', 'eboot.bin içeren oyun klasörünü seçin (CUSA00035).',
-        'gow3.ini içinde saklanır; oyun içi menü (Insert veya R3+L2) aynı değerleri değiştirir.',
+        'theorder.ini içinde saklanır; oyun içi menü (Insert veya R3+L2) aynı değerleri değiştirir.',
         'Ölçekleme',
         'Oyunun kendi hareket vektörleriyle zamansal ölçekleme. FSR 4 için dosyaları (aşağıda) ve INT8 destekli bir GPU gerekir; aksi halde oyun kendiliğinden FSR 3.1’e döner.',
         'Kalite ön ayarı',
@@ -629,7 +629,7 @@ TRANSLATIONS = {
         '• 暂无存档：游戏会在 {} 中创建', '✓ 显卡：{}', '• 显卡：未检查', '• 正在检查显卡…', '✗ 未找到支持 Vulkan 1.3 的显卡（请更新驱动）',
         '请先选择游戏文件夹。', '正在准备游戏，将在单独的窗口中打开…', '游戏正在运行。', '正在以新设置重新启动…', '\n— 游戏已退出（代码 {}）—\n',
         '无法启动：{}', '请选择包含 eboot.bin 的游戏文件夹（CUSA00035）。',
-        '保存在 gow3.ini 中；游戏内菜单（Insert 或 R3+L2）会修改相同的值。', '超分辨率',
+        '保存在 theorder.ini 中；游戏内菜单（Insert 或 R3+L2）会修改相同的值。', '超分辨率',
         '使用游戏自身运动矢量的时间性超分辨率。FSR 4 需要其文件（见下方）和支持 INT8 的显卡；否则游戏会自动改用 FSR 3.1。', '画质预设',
         '每轴渲染比例：Quality 以输出尺寸的 1/1.5 渲染。', '输出分辨率', '超分辨率生成的尺寸；界面也以此尺寸绘制。', '实时切换分辨率',
         '关闭：1080p 以外的输出在启动时由补丁设置（最快；在游戏中更改会重启游戏）。开启：在游戏中更改输出和预设无需重启，但有性能开销。', '锐化 (RCAS)', '锐化强度',
@@ -662,7 +662,7 @@ TRANSLATIONS = {
         '✗ Vulkan 1.3 対応のグラフィックカードが見つかりません（ドライバーを更新してください）', '先にゲームフォルダーを選択してください。',
         'ゲームを準備しています。専用のウィンドウで開きます…', 'ゲーム実行中。', '新しい設定で再起動しています…', '\n— ゲームが終了しました（コード {}）—\n',
         '起動できませんでした：{}', 'eboot.bin のあるゲームフォルダーを選択してください（CUSA00035）。',
-        'gow3.ini に保存されます。ゲーム内メニュー（Insert または R3+L2）でも同じ値を変更できます。', 'アップスケーリング',
+        'theorder.ini に保存されます。ゲーム内メニュー（Insert または R3+L2）でも同じ値を変更できます。', 'アップスケーリング',
         'ゲーム自身のモーションベクトルを使うテンポラルアップスケーリング。FSR 4 にはファイル（下記）と INT8 対応 GPU が必要です。ない場合は自動で FSR 3.1 になります。',
         '画質プリセット', '軸ごとの描画スケール：Quality は出力サイズの 1/1.5 で描画します。', '出力解像度',
         'アップスケーラーが出力するサイズ。UI もこのサイズで描画されます。', '解像度のライブ変更',
@@ -702,7 +702,7 @@ TRANSLATIONS = {
         '✗ Vulkan 1.3 그래픽 카드를 찾을 수 없음 (드라이버를 업데이트하세요)', '먼저 게임 폴더를 선택하세요.', '게임 준비 중; 별도 창에서 열립니다…',
         '게임 실행 중.', '새 설정으로 다시 시작하는 중…', '\n게임이 종료됨 (코드 {}).\n', '시작할 수 없음: {}',
         'eboot.bin이 있는 게임 폴더를 선택하세요 (CUSA00035).',
-        'gow3.ini에 저장됩니다. 게임 내 메뉴(Insert 또는 R3+L2)에서도 같은 값을 바꿉니다.', '업스케일링',
+        'theorder.ini에 저장됩니다. 게임 내 메뉴(Insert 또는 R3+L2)에서도 같은 값을 바꿉니다.', '업스케일링',
         '게임 자체의 모션 벡터를 사용한 시간적 업스케일링. FSR 4에는 파일(아래)과 INT8 지원 GPU가 필요하며, 없으면 게임이 자동으로 FSR 3.1을 사용합니다.',
         '품질 프리셋', '축별 렌더 배율: Quality는 출력 크기의 1/1.5로 렌더링합니다.', '출력 해상도',
         '업스케일러가 만드는 크기. UI도 이 크기로 그려집니다.', '실시간 해상도 변경',
@@ -885,7 +885,7 @@ EXTRA = {
         'The shortcut "{}" was updated in Steam (accounts: {}), with its icon, capsules, background and logo. Open Steam to see it in the library.': 'O atalho "{}" foi atualizado na Steam (contas: {}), com ícone, capas, fundo e logotipo. Abra a Steam para vê-lo na biblioteca.',
         'The shortcut "{}" was added to Steam (accounts: {}), with its icon, capsules, background and logo. Open Steam to see it in the library.': 'O atalho "{}" foi adicionado à Steam (contas: {}), com ícone, capas, fundo e logotipo. Abra a Steam para vê-lo na biblioteca.',
         'Menu entry and icon (AppImage)': 'Entrada no menu e ícone (AppImage)',
-        'Creates gow3.desktop in ~/.local/share/applications so the launcher and the game show their icon in the dock and the menu. Turning it off removes the entry.': 'Cria o gow3.desktop em ~/.local/share/applications para o launcher e o jogo mostrarem o ícone no dock e no menu. Desligar remove a entrada.',
+        'Creates theorder.desktop in ~/.local/share/applications so the launcher and the game show their icon in the dock and the menu. Turning it off removes the entry.': 'Cria o theorder.desktop em ~/.local/share/applications para o launcher e o jogo mostrarem o ícone no dock e no menu. Desligar remove a entrada.',
         'The game dump is incomplete. Missing or empty files:\n\n{}\n\nDump the game again, or copy these files from a complete dump.': 'O dump do jogo está incompleto. Arquivos faltando ou vazios:\n\n{}\n\nFaça o dump do jogo de novo, ou copie esses arquivos de um dump completo.',
         'The files in {} look like a PKG extraction: the system files (param.sfo, icon0.png, pic1.png and the rest) are in\n\n{}\n\nCopy all of them into its sce_sys folder now? Files already there are kept.': 'Os arquivos em {} parecem vir de um PKG extraído: os arquivos de sistema (param.sfo, icon0.png, pic1.png e os demais) estão em\n\n{}\n\nCopiar todos para a pasta sce_sys dele agora? Os arquivos que já estão lá são mantidos.',
         'Could not copy the files: {}': 'Não foi possível copiar os arquivos: {}',
@@ -1077,8 +1077,8 @@ EXTRA = {
         'The shortcut "{}" was added to Steam (accounts: {}), with its icon, capsules, background and logo. Open Steam to see it in the library.':
             'El acceso directo "{}" se añadió a Steam (cuentas: {}), con su icono, cápsulas, fondo y logotipo. Abre Steam para verlo en la biblioteca.',
         'Menu entry and icon (AppImage)': 'Entrada de menú e icono (AppImage)',
-        'Creates gow3.desktop in ~/.local/share/applications so the launcher and the game show their icon in the dock and the menu. Turning it off removes the entry.':
-            'Crea gow3.desktop en ~/.local/share/applications para que el lanzador y el juego muestren su icono en el dock y en el menú. Al desactivarlo se elimina la entrada.',
+        'Creates theorder.desktop in ~/.local/share/applications so the launcher and the game show their icon in the dock and the menu. Turning it off removes the entry.':
+            'Crea theorder.desktop en ~/.local/share/applications para que el lanzador y el juego muestren su icono en el dock y en el menú. Al desactivarlo se elimina la entrada.',
         'The game dump is incomplete. Missing or empty files:\n\n{}\n\nDump the game again, or copy these files from a complete dump.':
             'El volcado del juego está incompleto. Archivos que faltan o están vacíos:\n\n{}\n\nVuelve a volcar el juego o copia esos archivos de un volcado completo.',
         'The files in {} look like a PKG extraction: the system files (param.sfo, icon0.png, pic1.png and the rest) are in\n\n{}\n\nCopy all of them into its sce_sys folder now? Files already there are kept.':

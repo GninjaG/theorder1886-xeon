@@ -3,7 +3,7 @@
 """The Order: 1886 launcher for Windows and Linux (Tkinter), adapted from the God of War III
 port's.
 
-Every setting of the port in one window: the game folder and saves, gow3.ini (upscaler,
+Every setting of the port in one window: the game folder and saves, theorder.ini (upscaler,
 preset, output, effects), start-up options passed to run.py as environment variables
 (frame rate, presentation, HDR, ...), mods, third-party patches and controls.
 Launcher options live in %APPDATA%/theorder1886-launcher/settings.json
@@ -43,7 +43,7 @@ import save_backup  # noqa: E402  (scripts/)
 import steam_shortcut  # noqa: E402  (scripts/)
 from patches import game_profile, game_sfo  # noqa: E402  (scripts/)
 from prepare import load_sfo  # noqa: E402  (scripts/)
-DATA_DIR = Path(os.environ.get('GOW3_DATA_DIR', PORT_DIR))
+DATA_DIR = Path(os.environ.get('THEORDER_DATA_DIR', PORT_DIR))
 CONFIG_DIR = (Path(os.environ.get('APPDATA', Path.home())) if WINDOWS else
               Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')) / 'theorder1886-launcher'
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
@@ -60,7 +60,7 @@ RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/re
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
 # Never copied over an installation by an update (the package does not hold them either).
-USER_FILES = ('user', 'out', 'mods', 'gow3.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
+USER_FILES = ('user', 'out', 'mods', 'theorder.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -116,9 +116,9 @@ def find_tool(name):
 
 
 def parse_gpu_list(text):
-    """One tuple per line of `gow3-gpu-capabilities --list`: index, name, type and, from the tools
+    """One tuple per line of `theorder-gpu-capabilities --list`: index, name, type and, from the tools
     that print them, the game's multisampling default on that driver ('off' or 'on') and '1' on
-    the GPU the game picks without GOW3_GPU_ID. Other lines are skipped."""
+    the GPU the game picks without THEORDER_GPU_ID. Other lines are skipped."""
     rows = [line.split('\t') for line in text.splitlines()]
     return [tuple(row) for row in rows if len(row) >= 3 and row[0].isdigit()]
 
@@ -141,7 +141,7 @@ def no_msaa_options(gpus, gpu_id):
 
 def list_gpus():
     """The Vulkan GPUs in the order the game numbers them, or [] when the tool cannot tell."""
-    tool = find_tool('gow3-gpu-capabilities' + ('.exe' if WINDOWS else ''))
+    tool = find_tool('theorder-gpu-capabilities' + ('.exe' if WINDOWS else ''))
     if not tool:
         return []
     try:
@@ -154,11 +154,11 @@ def list_gpus():
 
 # ---------------------------------------------------------------------------------------------
 # Languages: every text is written in English with the Russian next to it; the other
-# languages are in gow3_lang.py, keyed by the English text.
+# languages are in port_lang.py, keyed by the English text.
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import button_icons  # noqa: E402
-import gow3_lang  # noqa: E402
+import port_lang  # noqa: E402
 
 LANG = 'en'
 
@@ -214,7 +214,7 @@ def _(en, ru=None):
         return _(en[:-len(WARN)], ru and ru.removesuffix(WARN)) + WARN
     if LANG == 'ru':
         return ru or en
-    return gow3_lang.table(LANG).get(en) or en
+    return port_lang.table(LANG).get(en) or en
 
 
 def environment_language():
@@ -232,7 +232,7 @@ def windows_language():
         primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3ff
     except (AttributeError, OSError):
         return 'en'
-    return gow3_lang.WINDOWS_LANGUAGES.get(primary, 'en')
+    return port_lang.WINDOWS_LANGUAGES.get(primary, 'en')
 
 
 def heading_font(size, fallback=None, every_language=False):
@@ -245,7 +245,7 @@ def heading_text(text, every_language=False):
 
 
 # ---------------------------------------------------------------------------------------------
-# Settings. gow3.ini keys (the game reads them, the in-game menu edits them) and the
+# Settings. theorder.ini keys (the game reads them, the in-game menu edits them) and the
 # launcher's own settings.json (passed to run.py as environment variables).
 
 INI_FLAGS = {'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
@@ -262,7 +262,7 @@ FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
 PAGES = ('home', 'graphics', 'performance', 'game', 'advanced')
 PAGE_REFRESH = {'home': ('refresh_status',), 'game': ('refresh_lists', 'refresh_game_patches')}
-APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_DIR', os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'CUSA00035') if WINDOWS else '')), 'update_dir': '', 'experimental_upscaler': False,
+APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_DIR', str(PORT_DIR.parent / 'CUSA00035') if WINDOWS else ''), 'update_dir': '', 'experimental_upscaler': False,
                 'video_backend': 'auto', 'gamemode': False, 'mangohud': False, 'desktop_integration': True, 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '', 'no_msaa': '', 'stream_memory': 'cached',
@@ -324,7 +324,7 @@ def control_values(controls, kind):
 
 
 def control_map(controls, kind):
-    """GOW3_KEY_MAP/GOW3_PAD_MAP value: 'cross=Q,circle=Left Shift' for the changed buttons."""
+    """THEORDER_KEY_MAP/THEORDER_PAD_MAP value: 'cross=Q,circle=Left Shift' for the changed buttons."""
     chosen = control_values(controls, kind)
     return ','.join(f'{button}={chosen[button].strip()}' for button, _key, _pad in CONTROLS
                     if button in chosen and not set(chosen[button]) & set(',='))
@@ -345,8 +345,8 @@ DRAW_PIPE = [('', ('Auto (8+ threads)', 'Авто (8+ потоков)')), ('1', 
              ('0', ('Off (more stable)', 'Выключен (стабильнее)'))]
 READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), ('0', ('Off', 'Выключены')),
              ('2', ('Precise',))]
-# GOW3_NO_MSAA: '' leaves the game's own default, off on AMD's and Intel's Windows drivers
-# (video_core/amdgpu/gow3_msaa_default.h); no_msaa_options names the chosen card in Automatic.
+# THEORDER_NO_MSAA: '' leaves the game's own default, off on AMD's and Intel's Windows drivers
+# (video_core/amdgpu/port_msaa_default.h); no_msaa_options names the chosen card in Automatic.
 NO_MSAA = [('', ('Automatic',)), ('1', ('Off (fixes black lines)',)), ('0', ('On',))]
 NO_MSAA_HINT = ("The game's multisampled (anti-aliased) images. Automatic keeps them on NVIDIA cards and turns "
                 'them off on Radeon and Arc, whose Windows drivers read multisampled depth wrong; Off and On force '
@@ -355,7 +355,7 @@ STREAM_MEMORY = [('cached', ('System RAM (cached, default)',)),
                  ('host', ('System RAM (uncached)',)),
                  ('device', ('GPU memory (previous behavior)',))]
 FRAMES_QUEUED = [('1', ('1 (lowest latency)',)), ('2', ('2',)), ('0', ('Unlimited',))]
-UI_LANGUAGES = gow3_lang.LANGUAGE_NAMES
+UI_LANGUAGES = port_lang.LANGUAGE_NAMES
 
 def fsr4_folder():
     """Next to the port; in the data directory when the port is read-only (AppImage)."""
@@ -372,7 +372,20 @@ def load_json(path, default):
 
 
 def ini_path():
-    return Path(os.environ.get('GOW3_CONFIG', DATA_DIR / 'gow3.ini'))
+    if 'THEORDER_CONFIG' in os.environ:
+        return Path(os.environ['THEORDER_CONFIG'])
+    return migrate_ini(DATA_DIR)
+
+
+def migrate_ini(folder):
+    """folder/theorder.ini; the settings of releases up to 0.2.0 (gow3.ini) move to it once."""
+    path, old = Path(folder) / 'theorder.ini', Path(folder) / 'gow3.ini'
+    if not path.exists() and old.is_file():
+        try:
+            old.replace(path)
+        except OSError:
+            return old
+    return path
 
 
 def load_ini():
@@ -417,7 +430,7 @@ def save_ini(values, lines):
                 continue
         out.append(line)
     if not lines:
-        out.append('# gow3 settings (in-game menu: Insert / R3+L2)')
+        out.append('# port settings (in-game menu: Insert / R3+L2)')
     out += [f'{key}={value}' for key, value in values.items() if key not in written]
     atomic_write(ini_path(), '\n'.join(out) + '\n')
 
@@ -601,21 +614,21 @@ def adopt_system_files(source, game):
     return copied
 
 
-DESKTOP_MARKER = 'X-GOW3-Integration=true'
+DESKTOP_MARKER = 'X-THEORDER-Integration=true'
 
 
 def desktop_entry(command, icon, marker=False):
     """The menu entry; its StartupWMClass is the application id of the launcher and of the game window."""
     return ('[Desktop Entry]\nType=Application\nName=The Order: 1886\n'
-            f'Exec={command}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupWMClass=gow3\n'
+            f'Exec={command}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupWMClass=port\n'
             + (DESKTOP_MARKER + '\n' if marker else ''))
 
 
 def integrate_desktop(enabled, appimage, icon_source, data_dir, home=None):
-    """AppImage on Linux: the menu entry the desktop matches the windows (application id gow3) to,
+    """AppImage on Linux: the menu entry the desktop matches the windows (application id port) to,
     which is what shows their icon in the dock. The entry is ours while it carries the marker; one
     without it was written by hand (the Desktop shortcut button) and is left alone."""
-    entry = Path(home or Path.home()) / '.local' / 'share' / 'applications' / 'gow3.desktop'
+    entry = Path(home or Path.home()) / '.local' / 'share' / 'applications' / 'theorder.desktop'
     try:
         ours = entry.is_file() and DESKTOP_MARKER in entry.read_text(encoding='utf-8', errors='replace')
         if not enabled:
@@ -661,58 +674,58 @@ def game_profile_of(folder):
 
 def game_environment(s):
     env = dict(os.environ)
-    env['GOW3_GAME_DIR'] = s['game_dir']
-    env.pop('GOW3_PATCH_DIR', None)
+    env['THEORDER_GAME_DIR'] = s['game_dir']
+    env.pop('THEORDER_PATCH_DIR', None)
     # Temporal upscaling is parked (build_graphics): a switch saved on by 2.1.8 has no control left to
     # turn it off, so it is ignored until the upscaler section comes back.
-    env['GOW3_EXPERIMENTAL_UPSCALER'] = '0'
+    env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'
     if s.get('update_dir'):
-        env['GOW3_PATCH_DIR'] = s['update_dir']
+        env['THEORDER_PATCH_DIR'] = s['update_dir']
     if not WINDOWS:
         backend = s.get('video_backend', 'auto')
         if backend in ('wayland', 'x11'):
             env['SDL_VIDEO_DRIVER'] = env['SDL_VIDEODRIVER'] = backend
-        env['GOW3_GAMEMODE'] = '1' if s.get('gamemode') else '0'
-        env['GOW3_MANGOHUD'] = '1' if s.get('mangohud') else '0'
+        env['THEORDER_GAMEMODE'] = '1' if s.get('gamemode') else '0'
+        env['THEORDER_MANGOHUD'] = '1' if s.get('mangohud') else '0'
     # The launcher's patch selection is the whole list (run.py, patches.py).
     title_id, profile = game_profile_of(meta_folder(s['game_dir'], s.get('update_dir')))
     chosen = s.get('game_patches', {}).get(title_id) if title_id else None
     if profile and chosen is not None:
-        env['GOW3_PATCHES'] = ';'.join(chosen)
-        env['GOW3_PATCHES_ONLY'] = '1'
+        env['THEORDER_PATCHES'] = ';'.join(chosen)
+        env['THEORDER_PATCHES_ONLY'] = '1'
     if s['user_dir']:
-        env['GOW3_USER_DIR'] = s['user_dir']
+        env['THEORDER_USER_DIR'] = s['user_dir']
     if not WINDOWS:
-        env['GOW3_FSR4_DIR'] = str(fsr4_folder())
-    env['GOW3_MODS_DIR'] = s['mods_dir'] or str(DATA_DIR / 'mods')
-    env['GOW3_MODS_CONFIG'] = str(DATA_DIR / 'mods.json')
-    env['GOW3_MODS_ENABLED'] = '1' if s['mods_enabled'] else '0'
-    env['GOW3_PATCHES_DIR'] = s['patches_dir'] or str(DATA_DIR / 'patches')
-    env['GOW3_PATCHES_CONFIG'] = str(DATA_DIR / 'patches.json')
-    env['GOW3_LANGUAGE'] = s['language']
+        env['THEORDER_FSR4_DIR'] = str(fsr4_folder())
+    env['THEORDER_MODS_DIR'] = s['mods_dir'] or str(DATA_DIR / 'mods')
+    env['THEORDER_MODS_CONFIG'] = str(DATA_DIR / 'mods.json')
+    env['THEORDER_MODS_ENABLED'] = '1' if s['mods_enabled'] else '0'
+    env['THEORDER_PATCHES_DIR'] = s['patches_dir'] or str(DATA_DIR / 'patches')
+    env['THEORDER_PATCHES_CONFIG'] = str(DATA_DIR / 'patches.json')
+    env['THEORDER_LANGUAGE'] = s['language']
     if str(s['player_name']).strip():
-        env['GOW3_USER_NAME'] = str(s['player_name']).strip()
+        env['THEORDER_USER_NAME'] = str(s['player_name']).strip()
     if s['hdr']:
-        env['GOW3_HDR'] = '1'
-    for key, name in (('draw_pipe', 'GOW3_DRAW_PIPE'), ('readbacks', 'GOW3_READBACKS'), ('no_msaa', 'GOW3_NO_MSAA')):
+        env['THEORDER_HDR'] = '1'
+    for key, name in (('draw_pipe', 'THEORDER_DRAW_PIPE'), ('readbacks', 'THEORDER_READBACKS'), ('no_msaa', 'THEORDER_NO_MSAA')):
         if s.get(key):
             env[name] = s[key]
     # The saved UI choice wins over inherited diagnostic overrides, including when reverting.
     stream_memory = s.get('stream_memory', APP_DEFAULTS['stream_memory'])
-    env['GOW3_STREAM_MEMORY'] = stream_memory if stream_memory in ('cached', 'host', 'device') else 'cached'
+    env['THEORDER_STREAM_MEMORY'] = stream_memory if stream_memory in ('cached', 'host', 'device') else 'cached'
     gpu_id = str(s.get('gpu_id', ''))
-    env.pop('GOW3_GPU_ID', None)
+    env.pop('THEORDER_GPU_ID', None)
     if gpu_id.isdigit():
-        env['GOW3_GPU_ID'] = gpu_id
-    env['GOW3_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
-    env['GOW3_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
-    env['GOW3_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'
-    env['GOW3_PERF_DIAG'] = '1' if s.get('perf_diag', False) else '0'
-    for key, name in (('frame_stats', 'GOW3_FRAME_STATS'), ('gpu_profile', 'GOW3_GPU_PROFILE'),
-                      ('vk_validation', 'GOW3_VK_VALIDATION'), ('frame_capture_key', 'GOW3_FRAME_CAPTURE_KEY')):
+        env['THEORDER_GPU_ID'] = gpu_id
+    env['THEORDER_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
+    env['THEORDER_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
+    env['THEORDER_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'
+    env['THEORDER_PERF_DIAG'] = '1' if s.get('perf_diag', False) else '0'
+    for key, name in (('frame_stats', 'THEORDER_FRAME_STATS'), ('gpu_profile', 'THEORDER_GPU_PROFILE'),
+                      ('vk_validation', 'THEORDER_VK_VALIDATION'), ('frame_capture_key', 'THEORDER_FRAME_CAPTURE_KEY')):
         if s[key]:
             env[name] = '1'
-    for kind, name in (('key', 'GOW3_KEY_MAP'), ('pad', 'GOW3_PAD_MAP')):
+    for kind, name in (('key', 'THEORDER_KEY_MAP'), ('pad', 'THEORDER_PAD_MAP')):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
     env['PYTHONUNBUFFERED'] = '1'
@@ -778,7 +791,7 @@ class Launcher:
         if sys.platform == 'win32':
             try:  # the taskbar shows this window's icon, not Python's
                 import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('gow3pc.launcher')
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('portpc.launcher')
             except (AttributeError, OSError):
                 pass
         root.configure(bg=BG)
@@ -1294,7 +1307,7 @@ class Launcher:
 
     def build_patches(self, f):
         """Community patches of the selected game's built-in XML and third-party patch files, on the
-        Game page. Resolution and frame rate patches follow Performance (gow3.ini; run.py adds them)."""
+        Game page. Resolution and frame rate patches follow Performance (theorder.ini; run.py adds them)."""
         self.section(f, _('Game patches', 'Патчи игры'))
         self.game_patch_frame = self.ttk.Frame(f)
         self.game_patch_frame.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we')
@@ -1347,7 +1360,7 @@ class Launcher:
 
     def store_game_patches(self):
         """The page's selection into settings (the whole list for this game, without the resolution
-        and frame rate patches: run.py adds those from gow3.ini)."""
+        and frame rate patches: run.py adds those from theorder.ini)."""
         if not self.game_patch_title:
             return
         self.app.setdefault('game_patches', {})[self.game_patch_title] = \
@@ -1367,8 +1380,8 @@ class Launcher:
             row=self.next_row(f), column=0, sticky='w', pady=(14, 0))
 
     def build_controls(self, f):
-        """Remapping of the PS4 buttons, on the Game page (run.py passes GOW3_KEY_MAP and
-        GOW3_PAD_MAP to the game)."""
+        """Remapping of the PS4 buttons, on the Game page (run.py passes THEORDER_KEY_MAP and
+        THEORDER_PAD_MAP to the game)."""
         tk, ttk = self.tk, self.ttk
         self.section(f, _('Controls', 'Управление'))
         self.note(f, _('Which key or gamepad button presses each button of the game.'), top=4)
@@ -1456,7 +1469,7 @@ class Launcher:
         tools = linux_tools()
         self.section(f, _('Linux'), top=4)
         self.check(f, 'desktop_integration', 'app', _('Menu entry and icon (AppImage)'),
-                   _('Creates gow3.desktop in ~/.local/share/applications so the launcher and the game show their '
+                   _('Creates theorder.desktop in ~/.local/share/applications so the launcher and the game show their '
                      'icon in the dock and the menu. Turning it off removes the entry.'))
         self.row(f, _('Window system'), self.choice(f, 'video_backend', 'app', VIDEO_BACKENDS), restart=True,
                  hint=_('Automatic lets SDL choose. Pick X11 if the window misbehaves on Wayland (it runs through '
@@ -1496,7 +1509,7 @@ class Launcher:
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(6, 0))
         ttk.Button(holder, text=_('Port folder', 'Папка порта'), command=lambda: self.open_path(DATA_DIR)).pack(side='left')
-        ttk.Button(holder, text='gow3.ini', command=lambda: self.open_path(ini_path())).pack(side='left', padx=6)
+        ttk.Button(holder, text='theorder.ini', command=lambda: self.open_path(ini_path())).pack(side='left', padx=6)
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Button(holder, text=_('Clear shader cache', 'Очистить кэш шейдеров'), command=self.clear_cache).pack(side='left')
@@ -1700,7 +1713,7 @@ class Launcher:
             self.refresh_lists()
 
     def gather(self):
-        """What collect() writes, as data: settings.json, the gow3.ini values, the mods selection and
+        """What collect() writes, as data: settings.json, the theorder.ini values, the mods selection and
         the third-party patches selection. Reads the window and changes nothing."""
         app, ini = dict(self.app), dict(self.ini)
         if self.game_patch_title:
@@ -1725,7 +1738,7 @@ class Launcher:
         return {'app': app, 'ini': ini, 'mods': mods, 'patches': patches}
 
     def collect(self):
-        """Writes settings.json, gow3.ini, mods.json and patches.json."""
+        """Writes settings.json, theorder.ini, mods.json and patches.json."""
         state = self.gather()
         _disk, lines = load_ini()
         persisted = {line.split('=', 1)[0].strip() for line in lines
@@ -2116,7 +2129,7 @@ class Launcher:
             icon_dir.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(PORT_DIR / 'launcher' / 'theorder.png', icon)
         except OSError:
-            icon = 'gow3'
+            icon = 'port'
         entry = desktop_entry(command, icon)
         folders = [Path.home() / '.local' / 'share' / 'applications']
         try:
@@ -2132,7 +2145,7 @@ class Launcher:
                     continue
                 folder.mkdir(parents=True, exist_ok=True)
                 # In the applications menu the file is named after the window's application id.
-                target = folder / ('gow3.desktop' if folder == folders[0] else 'The Order 1886.desktop')
+                target = folder / ('theorder.desktop' if folder == folders[0] else 'The Order 1886.desktop')
                 target.write_text(entry, encoding='utf-8')
                 target.chmod(0o755)
                 created.append(str(target))
@@ -2178,7 +2191,7 @@ class Launcher:
 
 
 class GameJob:
-    """A Windows job holding run.py and everything it starts: gow3-probe.exe and the launches made
+    """A Windows job holding run.py and everything it starts: theorder-probe.exe and the launches made
     by the in-game restart (no longer descendants of the first process)."""
 
     def __init__(self, process):
@@ -2343,7 +2356,7 @@ def main():
             pass
     import tkinter as tk
     from tkinter import filedialog, font, messagebox, ttk
-    root = tk.Tk() if WINDOWS else tk.Tk(className='gow3')
+    root = tk.Tk() if WINDOWS else tk.Tk(className='port')
     pick_fonts(font.families(root))
     Launcher(root, tk, ttk, filedialog, messagebox)
     root.mainloop()

@@ -4,7 +4,7 @@
 #version 450 core
 #extension GL_EXT_samplerless_texture_functions : require
 
-// gow3: integer images (R16_UINT...) need integer texture and output types: a float shader
+// port: integer images (R16_UINT...) need integer texture and output types: a float shader
 // on them is undefined behaviour (VUID-vkCmdDraw-format-07753).
 #if defined(UINT)
 #define TEXTURE2D utexture2D

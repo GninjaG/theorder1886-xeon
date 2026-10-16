@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// gow3: prints the caller chain as executable offsets, for llvm-symbolizer
+// port: prints the caller chain as executable offsets, for llvm-symbolizer
 // (tools/fault_stacks.py style: theorder-probe.exe+0x...). Diagnostics only.
 #pragma once
 
@@ -11,7 +11,7 @@
 extern "C" char __ImageBase; // PE image base (linker-defined)
 #endif
 
-inline void Gow3PrintBacktrace(const char* tag) {
+inline void PortPrintBacktrace(const char* tag) {
 #ifdef _WIN32
     void* frames[24];
     const unsigned short count = RtlCaptureStackBackTrace(1, 24, frames, nullptr);
