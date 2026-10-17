@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.6
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.7
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,14 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.7:
+
+- **Sem as travadas de ~180 ms de efeitos de compute**: shaders de compute refeitos a cada quadro
+  (como a iluminação das partículas) agora são sempre montados em segundo plano; o efeito pode
+  faltar por um quadro na primeira vez, em vez de o jogo congelar. No prólogo, essas travadas
+  sumiram (eram 1–3 por sessão).
+- O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.6:
 
