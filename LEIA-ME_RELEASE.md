@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.2
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.3
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -18,7 +18,22 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
-## Situação (16/10/2026, RTX 5060 Laptop, Windows 11)
+## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.3:
+
+- **Outras versões do jogo não fecham mais na abertura** (issue #3): o port escrevia ganchos de
+  diagnóstico e patches nos endereços do eboot 01.02 em qualquer eboot; num eboot 01.00 isso
+  corrompia o código do jogo, que fechava logo ao iniciar. Os ganchos agora só entram quando cada
+  ponto tem a instrução esperada, e uma linha de patch sem assinatura só vale na 01.02. Os patches
+  embutidos (60 FPS e proporção de tela) ganharam assinaturas e podem valer em outras versões com
+  o mesmo código. A 01.02 continua sendo a única versão testada.
+- **Texturas pretas ou faltando em algumas GPUs** (issue #1, Intel Arc): os workers que preparam
+  os draws antes da thread da GPU leem as tabelas de recursos de cada shader; quando essa leitura
+  antecipada pegava uma memória já reaproveitada, o tratador de falhas remendava o shader para
+  sempre ler zero ali. Agora essa leitura só é descartada e o draw é preparado pela thread da GPU.
+  Aqui (NVIDIA) isso nunca aconteceu, nem com o cache vazio; falta a confirmação em Intel.
+- O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.2:
 

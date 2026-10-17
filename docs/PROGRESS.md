@@ -2,6 +2,28 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17: GitHub issues #3 and #1, windows-v0.3.3
+
+**#3 (0.3.1 crashes at start, AMD RX 9070 XT, eboot 01.00, sha256 b451e437...):** fault at guest
+offset 0x9b47f9, next to 0x9b47fc, one of the sound engine bring-up trace hooks probe.c
+installed at the 01.02 offsets in any eboot (install_order1886_diagnostics). Those hooks now go in
+only where every site holds the call/branch/sequence they replace (order1886_hook_sites_match).
+Patch lines without a Pattern fell back to their 01.02 Address in any build: scripts/patches.py
+now skips them outside the reference build (`reference`, sha256 == REFERENCE_SHA256). The 60 FPS
+and aspect ratio patches got signatures (scratchpad generator: instructions before the site, rip
+displacements and branch offsets as ??; the FOV float64 constants as Targets through the vmulsd
+that loads each one, Ref="1"); on 01.02 they write exactly what the Addresses did
+(test_builtin_signatures_find_the_reference_sites, needs out/eboot.elf). Not tested on 01.00.
+**#1 (0.2.0, Intel Arc iGPU, characters black in the prologue cell):** the log has 58
+"Patched SRT walker" in the frame with the first compiles. The shadPS4 SRT walker fault handler
+patches a faulting load to `xor reg, reg` for good, and it ran before runtime_fault_recover
+(probe.c dispatches to Core::Signals first): a speculative walk (draw preparation workers,
+vk_pipeline_cache.cpp; the verify path in vk_rasterizer.cpp) reading reused memory zeroed that
+table entry for every later draw of the shader. It now returns to the recovery point. Never seen
+here on NVIDIA (0 patches, warm or cold cache, out/user_cold), so the Intel effect is unconfirmed.
+Patched walker code is also written into later permutations' .meta (RegisterShaderMeta copies
+the live code); caches from 0.2.0 are dropped anyway (ShaderBinaryVersion changed in d5ee454).
+
 ## 2026-10-16 (evening): gameplay below 30 FPS, the memory map lock
 
 **What the player saw:** the user's 9.5-minute 0.3.0 session (dist user/last_run.log, 60 FPS
