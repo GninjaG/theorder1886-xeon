@@ -2,6 +2,22 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (later): what the graphics queue waits on
+
+**Measured** (rooftop, 60 FPS mode, THEORDER_FRAME_STATS=1, new "GFX memory waits" line in
+liverpool.cpp): the graphics queue's WaitRegMem drains (37-40% of the GPU command thread) are all
+for three labels the compute queues write (0x10661a53f8, 0x1066182010, 0x1066182020; one compute
+write per wait). A drain never met the wait: the compute queues run only when the graphics task
+yields, and before every packet they drain themselves ("compute work uses the caches").
+**Tried, not kept:** compute queue dispatches, WriteData, DmaData, ReleaseMem and Rewind handed
+to the draw recording thread in order (RunInOrder, ReleaseMem labels noted as pending fences),
+pending labels counted as written on both queues, the graphics wait yielding before it drains.
+The WaitRegMem drains went from ~495 to ~2 ms/s, but the rooftop went from 55-65k to 48-50k
+draws/s (two A/Bs of 3+3 interleaved runs): the compute recording moved onto stage B, the limit
+(76-78% busy before, 87-90% after). While stage B is the bottleneck, stage A's drains are where
+it records the compute work itself, not lost time.
+**Next:** stage B's cost per draw (backlog 1).
+
 ## 2026-10-17: GitHub issues #3 and #1, windows-v0.3.3
 
 **#3 (0.3.1 crashes at start, AMD RX 9070 XT, eboot 01.00, sha256 b451e437...):** fault at guest

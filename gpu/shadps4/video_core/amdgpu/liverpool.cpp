@@ -202,6 +202,48 @@ void Liverpool::Process(std::stop_token stoken) {
 }
 
 namespace {
+/// port: THEORDER_FRAME_STATS: GFX memory waits not met at once, by address: whether a fence
+/// or a GPU write handed to the draw recording thread covered it, whether draining that thread
+/// met it, the time waited in all and after that drain, and how often a compute queue wrote it.
+struct WaitNote {
+    u64 waits = 0, fence = 0, gpu_write = 0, met_by_drain = 0, unmet_after_drain = 0;
+    double ms = 0, after_drain_ms = 0;
+};
+std::unordered_map<VAddr, WaitNote> wait_notes;
+/// Labels the compute queues wrote (ReleaseMem, WriteData), to tell them from the CPU's.
+std::unordered_map<VAddr, u64> compute_writes;
+
+bool FrameStats() {
+    static const bool on = std::getenv("THEORDER_FRAME_STATS") != nullptr;
+    return on;
+}
+
+void PrintWaitNotes() {
+    static auto window = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(now - window).count();
+    if (seconds < 5.0) {
+        return;
+    }
+    std::vector<std::pair<VAddr, WaitNote>> top(wait_notes.begin(), wait_notes.end());
+    std::ranges::sort(top, [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
+    std::printf("GFX memory waits by time, per second:");
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 6); ++i) {
+        const auto& [address, n] = top[i];
+        const auto written = compute_writes.find(address);
+        std::printf(" %#llx: %.0f waits %.1f ms (fence %.0f, GPU write %.0f; drain met %.0f, not %.0f, "
+                    "then %.1f ms; compute wrote %.0f);",
+                    static_cast<unsigned long long>(address), n.waits / seconds, n.ms / seconds,
+                    n.fence / seconds, n.gpu_write / seconds, n.met_by_drain / seconds,
+                    n.unmet_after_drain / seconds, n.after_drain_ms / seconds,
+                    written == compute_writes.end() ? 0.0 : written->second / seconds);
+    }
+    std::printf("\n");
+    wait_notes.clear();
+    compute_writes.clear();
+    window = now;
+}
+
 /// port: packets the GPU command thread handles while the draw recording thread may still
 /// work on earlier draws (register state, draws it hands over, nested buffers). Every other
 /// packet first waits for that thread to run dry (Rasterizer::DrainDrawPipe).
@@ -1259,9 +1301,30 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 // catch up before yielding to other queues.
                 const auto wait_started = std::chrono::steady_clock::now();
                 bool wait_reported = false;
+                // The note is filled here and added to wait_notes after the wait: other tasks
+                // run while this one yields.
+                const bool noted =
+                    FrameStats() &&
+                    wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
+                    !wait_reg_mem->Test(regs.reg_array);
+                WaitNote note{.waits = 1};
+                if (noted) {
+                    u32 pending;
+                    note.fence = PendingFenceValue(wait_reg_mem->Address<VAddr>(), pending);
+                    note.gpu_write = rasterizer && rasterizer->PendingWriteOverlaps(
+                                                       wait_reg_mem->Address<VAddr>(), 4);
+                }
+                bool drained = false;
+                auto drained_at = wait_started;
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     if (rasterizer && !rasterizer->DrawPipeIdle()) {
                         rasterizer->DrainDrawPipe(static_cast<u32>(opcode));
+                        if (noted && !drained) {
+                            drained = true;
+                            drained_at = std::chrono::steady_clock::now();
+                            ++(wait_reg_mem->Test(regs.reg_array) ? note.met_by_drain
+                                                                  : note.unmet_after_drain);
+                        }
                         continue;
                     }
                     // port: a wait that never ends freezes the game with no other trace.
@@ -1283,6 +1346,21 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         std::fflush(stdout);
                     }
                     YIELD_GFX();
+                }
+                if (noted) {
+                    const auto end = std::chrono::steady_clock::now();
+                    auto& sum = wait_notes[wait_reg_mem->Address<VAddr>()];
+                    sum.waits += note.waits;
+                    sum.fence += note.fence;
+                    sum.gpu_write += note.gpu_write;
+                    sum.met_by_drain += note.met_by_drain;
+                    sum.unmet_after_drain += note.unmet_after_drain;
+                    sum.ms += std::chrono::duration<double, std::milli>(end - wait_started).count();
+                    if (drained) {
+                        sum.after_drain_ms +=
+                            std::chrono::duration<double, std::milli>(end - drained_at).count();
+                    }
+                    PrintWaitNotes();
                 }
                 break;
             }
@@ -1614,6 +1692,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             } else {
                 UNREACHABLE();
             }
+            if (FrameStats()) {
+                ++compute_writes[write_data->Address<VAddr>()];
+            }
             break;
         }
         case PM4ItOpcode::MemSemaphore: {
@@ -1654,6 +1735,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 [this](VAddr dst, u16 gds_index, u16 num_dwords) {
                     rasterizer->CopyBuffer(dst, gds_index, num_dwords * sizeof(u32), false, true);
                 });
+            if (FrameStats()) {
+                ++compute_writes[release_mem->Address<VAddr>()];
+            }
             break;
         }
         case PM4ItOpcode::EventWrite: {

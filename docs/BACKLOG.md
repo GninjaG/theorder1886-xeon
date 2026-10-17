@@ -16,15 +16,14 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit
 (1430 draws x 14-17 us = 20-24 ms per frame of its own CPU time, plus waits).
-- Next: profile again after the SRWLOCK change (THEORDER_SAMPLE) and cut the top self-time items.
+- Stage B (port:DrawRec) is the limit in the 60 FPS mode: 76-78% busy at 55-65k draws/s.
+- Next: profile it (THEORDER_SAMPLE=DrawRec) and cut the top self-time items.
 - Check: us/draw and FPS on the rooftop, 60 FPS mode, interleaved runs.
 
-## 2. Draw pipe drains at WaitRegMem — todo
-22% of the GPU thread's time (~90/s) waiting for the draw recording thread to empty its queue
-before a WAIT_REG_MEM whose value is not yet met (liverpool.cpp ProcessGraphics).
-- Next: log the waited addresses and who writes them (stage B fence, compute queue, CPU); drain
-  only when stage B can write the value.
-- Check: drain report (THEORDER_FRAME_STATS=1), FPS, no new hangs or faults (8-run batches).
+## 2. Draw pipe drains at WaitRegMem — done (finding, 2026-10-17)
+They wait for labels the compute queues write; the compute queues drain before every packet
+anyway. Handing compute work to the recording thread removed the drains but lost ~15% (it moved
+work onto stage B, the limit). Details: docs/PROGRESS.md 2026-10-17 (later).
 
 ## 3. GPU readback waits for the whole GPU — todo
 BufferCache::DownloadMemory -> Scheduler::Finish: 11% of the GPU thread on the rooftop.
