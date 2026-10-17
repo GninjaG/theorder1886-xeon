@@ -899,6 +899,12 @@ EXTRA = {
         'The update folder {} is incomplete. Missing or empty files:\n\n{}\n\nChoose the folder of the update (eboot.bin, sce_sys), or leave it empty.': 'A pasta do update {} está incompleta. Arquivos faltando ou vazios:\n\n{}\n\nEscolha a pasta do update (eboot.bin, sce_sys), ou deixe em branco.',
         'Original (default)': 'Original (padrão)',
         'Match my controller': 'Igual ao meu controle',
+        'Windows could not reserve the memory the game needs. Close other programs, or let the Windows page file grow (for example 16384 MB initial, 32768 MB maximum), and start again.':
+            'O Windows não conseguiu reservar a memória que o jogo precisa. Feche outros programas, ou deixe o arquivo de paginação do Windows crescer (por exemplo 16384 MB inicial, 32768 MB máximo), e inicie de novo.',
+        'The graphics driver ran out of memory. Close other programs, let the Windows page file grow (System managed), and update the graphics driver.':
+            'O driver de vídeo ficou sem memória. Feche outros programas, deixe o arquivo de paginação do Windows crescer (gerenciado pelo sistema) e atualize o driver de vídeo.',
+        'The game stopped while reading its files: the game dump may be incomplete. Extract the pkg again.':
+            'O jogo parou ao ler os próprios arquivos: o dump do jogo pode estar incompleto. Extraia o pkg de novo.',
     },
     'es': {
         '30 (original)': '30 (original)',
@@ -1095,6 +1101,12 @@ EXTRA = {
             'La carpeta de la actualización {} está incompleta. Archivos que faltan o están vacíos:\n\n{}\n\nElige la carpeta de la actualización (eboot.bin, sce_sys) o déjala vacía.',
         'Original (default)': 'Original (predeterminado)',
         'Match my controller': 'Igual que mi mando',
+        'Windows could not reserve the memory the game needs. Close other programs, or let the Windows page file grow (for example 16384 MB initial, 32768 MB maximum), and start again.':
+            'Windows no pudo reservar la memoria que necesita el juego. Cierra otros programas, o deja que el archivo de paginación de Windows crezca (por ejemplo 16384 MB inicial, 32768 MB máximo), y vuelve a iniciarlo.',
+        'The graphics driver ran out of memory. Close other programs, let the Windows page file grow (System managed), and update the graphics driver.':
+            'El controlador gráfico se quedó sin memoria. Cierra otros programas, deja que el archivo de paginación de Windows crezca (administrado por el sistema) y actualiza el controlador gráfico.',
+        'The game stopped while reading its files: the game dump may be incomplete. Extract the pkg again.':
+            'El juego se detuvo al leer sus archivos: el volcado del juego puede estar incompleto. Vuelve a extraer el pkg.',
     },
 }
 

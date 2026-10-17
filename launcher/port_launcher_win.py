@@ -36,6 +36,9 @@ import zipfile
 WINDOWS = sys.platform == 'win32'
 if WINDOWS:
     import ctypes
+    # AMD iGPU + NVIDIA laptops: this layer hides the NVIDIA GPU from Vulkan and the game stays
+    # black (gow3_pc #310).
+    os.environ.setdefault('VK_LOADER_LAYERS_DISABLE', 'VK_LAYER_AMD_switchable_graphics')
 FROZEN = getattr(sys, 'frozen', False)
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
@@ -1913,6 +1916,8 @@ class Launcher:
             self.show('game')
             return
         self.set_log('')
+        self.hidden_for_game = False
+        self.exit_hint = None
         # The same last_run.log as --play, so a report from the PLAY button has the file too.
         run_log = open_play_log(self.app)
         try:
@@ -1930,7 +1935,15 @@ class Launcher:
         self.status.configure(text=_('Preparing the game; it opens in its own window…',
                                      'Подготовка игры; она откроется в своём окне…'), fg=TEXT)
         if self.app.get('close_on_play'):
-            self.root.after(5000, self.root.destroy)  # the game keeps running
+            self.root.after(5000, self.hide_for_game, self.process)
+
+    def hide_for_game(self, process):
+        """'Close on play' (as gow3_pc #554): the window hides but the reader thread keeps
+        writing last_run.log until the game exits; then the launcher exits. A game that already
+        stopped keeps its error visible, and an old timer leaves a newer launch alone."""
+        if self.process is process and process.poll() is None:
+            self.hidden_for_game = True
+            self.root.withdraw()
 
     def read_output(self, process, run_log=None):
         try:
@@ -1958,11 +1971,17 @@ class Launcher:
                 item = self.output.get_nowait()
                 if isinstance(item, tuple):
                     self.append(_('\nThe game exited (code {}).\n', '\nИгра завершилась (код {}).\n').format(item[0]))
+                    if getattr(self, 'exit_hint', None):
+                        self.append(self.exit_hint + '\n')
                     self.process = None
                     if self.job:
                         self.job.close()
+                    if getattr(self, 'hidden_for_game', False):
+                        self.root.destroy()
+                        return
                     self.refresh_status()
                 else:
+                    self.exit_hint = exit_hint(item) or getattr(self, 'exit_hint', None)
                     if 'Entering original x86-64 code' in item:
                         self.status.configure(text=_('The game is running.', 'Игра запущена.'), fg=TEXT)
                     elif 'restarting through run.py' in item:
@@ -2271,12 +2290,28 @@ def open_run_log(settings):
 
 
 def open_play_log(settings):
-    """The run log for the PLAY button. With 'close_on_play' the launcher exits 5 s after the
-    start and the reader thread dies with it: a truncated file would replace the previous full
-    log, so that mode leaves the file alone."""
-    if settings.get('close_on_play'):
-        return _NullLog()
+    """The PLAY log stays open while the game runs, also behind a hidden launcher."""
     return open_run_log(settings)
+
+
+def exit_hint(line):
+    """Advice for an output line that explains why the game closed, or None (gow3_pc #310)."""
+    if 'of guest memory (error ' in line:
+        return _('Windows could not reserve the memory the game needs. Close other programs, or let the '
+                 'Windows page file grow (for example 16384 MB initial, 32768 MB maximum), and start again.',
+                 'Windows не смог выделить память для игры. Закройте другие программы или дайте файлу '
+                 'подкачки Windows расти (например, 16384 МБ исходный, 32768 МБ максимальный) и запустите снова.')
+    if 'ErrorOutOfHostMemory' in line or 'ErrorOutOfDeviceMemory' in line:
+        return _('The graphics driver ran out of memory. Close other programs, let the Windows page file '
+                 'grow (System managed), and update the graphics driver.',
+                 'Графическому драйверу не хватило памяти. Закройте другие программы, дайте файлу подкачки '
+                 'Windows расти (по выбору системы) и обновите драйвер видеокарты.')
+    if 'guest raised debug exception code=0xa0020001' in line:
+        return _('The game stopped while reading its files: the game dump may be incomplete. Extract the pkg '
+                 'again.',
+                 'Игра остановилась при чтении своих файлов: дамп игры может быть неполным. Распакуйте pkg '
+                 'заново.')
+    return None
 
 
 def _close_quietly(log):
