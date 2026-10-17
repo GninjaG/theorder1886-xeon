@@ -461,12 +461,35 @@ struct PhaseTimer {
     }
     ~PhaseTimer() { Stop(); }
 };
+// port: known pipelines (binaries an earlier session stored) are built on the GPU thread so
+// their draws are not skipped; a scene start restored ~100 one after another, a 0.8-1.4 s
+// freeze. Past 8 ms of such builds in a 33 ms window the rest go to the compiler workers, in
+// parallel, and their draws wait a frame or two (PortToggle::SyncBuildBudget turns it off).
+// Builds on the compiler workers do not count.
+std::atomic<u64> g_sync_build_ns{0};
+
+bool SyncBuildBudgetLeft() {
+    static auto window = std::chrono::steady_clock::now();
+    static u64 window_start_ns = 0;
+    const auto now = std::chrono::steady_clock::now();
+    const u64 spent = g_sync_build_ns.load(std::memory_order_relaxed);
+    if (now - window > std::chrono::milliseconds(33)) {
+        window = now;
+        window_start_ns = spent;
+    }
+    return PortToggle::Disabled(PortToggle::SyncBuildBudget) || spent - window_start_ns < 8'000'000;
+}
+
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_port_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                   std::chrono::steady_clock::now() - start)
-                                   .count());
+        const u64 ns = u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - start)
+                               .count());
+        g_port_compile_ns += ns;
+        if (!AsyncCompiler::OnWorker()) {
+            g_sync_build_ns.fetch_add(ns, std::memory_order_relaxed);
+        }
         ++g_port_compiles;
     }
 };
@@ -843,7 +866,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         // A stage permutation made this session took the next free index: a stored key with
         // that index may be another session's permutation, whose binary does not fit (a full
         // driver compile here, 130-190 ms, every session).
-        return !sel.fresh_permutation && Storage::DataBase::Instance().Exists(
+        return !sel.fresh_permutation && SyncBuildBudgetLeft() && Storage::DataBase::Instance().Exists(
             Storage::BlobType::PipelineKey,
             fmt::format("g_{:#018x}", std::hash<GraphicsPipelineKey>{}(sel.graphics_key)));
     };
@@ -925,7 +948,8 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         return found->second.get();
     }
     // A pipeline an earlier session built is restored in 1-2 ms: built here (GetGraphicsPipeline).
-    const bool known = !sel.fresh_permutation && !pending_compute.contains(compute_key) &&
+    const bool known = !sel.fresh_permutation && SyncBuildBudgetLeft() &&
+                       !pending_compute.contains(compute_key) &&
                        Storage::DataBase::Instance().Exists(
                            Storage::BlobType::PipelineKey,
                            fmt::format("c_{:#018x}", compute_key.value));
