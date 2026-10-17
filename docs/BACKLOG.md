@@ -6,6 +6,13 @@ Status: `todo`, `doing`, `done (commit)`, `parked (why)`. Details and history: d
 Measuring scene: the London rooftop from the user's save (THEORDER_USER_DIR=out/user_gameplay,
 default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/draw.
 
+## GitHub issues (2026-10-17)
+- #3 (01.00 eboot crashed at start): fixed in 0.3.3 (01.02-only hooks and patch sites); asked
+  the reporter to test.
+- #1 (Intel Arc, black/missing textures): 0.3.3 stops speculative SRT walks from patching the
+  walker for good; not reproducible here, asked the reporter to test.
+- #2 (Linux): answered, no Linux build yet; left open to track it.
+
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit
 (1430 draws x 14-17 us = 20-24 ms per frame of its own CPU time, plus waits).
@@ -38,9 +45,9 @@ about 4-5 ms each (file read ~2 ms, driver 1.2 ms). Early restores from workers 
 The engine's fullscreen vertex buffer is static; the cause is on the port's side.
 - Next: a detector that compares the vertex data a draw read with guest memory.
 
-## 7. Settings file leftovers from God of War — todo
-theorder.ini still gets God of War keys (red_orb_multiplier, cheat_*, enemy_health_bar...).
-- Next: stop writing them; drop them when reading.
+## 7. Settings file leftovers from God of War — done (9b79d7f)
+The in-game menu already rewrote the file without them; the launcher and run.py kept them.
+Both writers now drop them (graphics_options.clean_lines).
 
 ## 8. `-startlevel` ignored — parked (testing convenience only)
 Reaches the title screen even with the gate patched; see docs/ENGINE_RE.md.
