@@ -1209,6 +1209,42 @@ void TextureCache::RefreshImage(Image& image) {
     const u32 num_mips = image.info.resources.levels;
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
+    // port: THEORDER_FRAME_STATS: the images refreshed most (each refresh hashes or uploads all
+    // of the guest copy), by bytes, every 5 s.
+    static const bool refresh_stats = std::getenv("THEORDER_FRAME_STATS") != nullptr;
+    if (refresh_stats) {
+        struct Refreshes {
+            u64 count = 0, bytes = 0;
+            u32 width = 0, height = 0;
+            bool gpu_modified = false, cpu_dirty = false, gpu_dirty = false;
+        };
+        static std::unordered_map<VAddr, Refreshes> refreshes;
+        static auto since = std::chrono::steady_clock::now();
+        auto& entry = refreshes[image.info.guest_address];
+        ++entry.count;
+        entry.bytes += image.info.guest_size;
+        entry.width = image.info.size.width;
+        entry.height = image.info.size.height;
+        entry.gpu_modified = is_gpu_modified;
+        entry.cpu_dirty = True(image.flags & ImageFlagBits::CpuDirty);
+        entry.gpu_dirty = is_gpu_dirty;
+        const auto now = std::chrono::steady_clock::now();
+        if (const double seconds = std::chrono::duration<double>(now - since).count(); seconds >= 5) {
+            std::vector<std::pair<VAddr, Refreshes>> top(refreshes.begin(), refreshes.end());
+            std::ranges::sort(top, [](const auto& a, const auto& b) { return a.second.bytes > b.second.bytes; });
+            std::printf("Image refreshes by bytes, per second:");
+            for (size_t i = 0; i < std::min<size_t>(top.size(), 6); ++i) {
+                const auto& [address, n] = top[i];
+                std::printf(" %#llx %ux%u: %.0f, %.1f MB%s%s%s;", static_cast<unsigned long long>(address),
+                            n.width, n.height, n.count / seconds, n.bytes / seconds / 1e6,
+                            n.gpu_modified ? ", GPU-modified" : "", n.cpu_dirty ? ", CPU-dirty" : "",
+                            n.gpu_dirty ? ", GPU-dirty" : "");
+            }
+            std::printf("\n");
+            refreshes.clear();
+            since = now;
+        }
+    }
 
     PortStats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;

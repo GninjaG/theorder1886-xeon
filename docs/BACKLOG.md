@@ -18,7 +18,14 @@ The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the li
 (1430 draws x 14-17 us = 20-24 ms per frame of its own CPU time, plus waits).
 - Stage B (port:DrawRec) is the limit in the 60 FPS mode. The mapped range check's lock was a
   fifth of it: per-thread copies (0.3.4) took the rooftop from ~57k to ~71k draws/s (~33 -> ~39 FPS).
-- Next: profile again; then BindTextures (21% inclusive), GetBarriers, the descriptor hashing.
+- After 0.3.4 stage B is idle about half the time: the GPU command thread's waits (drains,
+  item 3's Finish) set the pace; stage B's cost per draw still sets how long a drain waits.
+- Image refreshes (THEORDER_FRAME_STATS "Image refreshes by bytes"): 0x1053e00000 (1728x1080 and
+  864x540 at one address) is GPU-dirty ~110 times/s, ~800 MB/s of buffer-to-image copies on the
+  GPU (written as a buffer, read as a texture); 0x1057eb0000 (1024x1024, GPU-modified and
+  CPU-dirty) ~20 times/s has every mip hashed, ~650 MB/s of xxhash on stage B.
+- Next: hash only the pages the CPU wrote (MaybeCpuDirty/CpuDirty refresh); look at why the
+  1728x1080 target is written as a buffer.
 - Check: us/draw and FPS on the rooftop, 60 FPS mode, interleaved runs.
 
 ## 2. Draw pipe drains at WaitRegMem — done (finding, 2026-10-17)
@@ -48,9 +55,9 @@ about 4-5 ms each (file read ~2 ms, driver 1.2 ms). Early restores from workers 
 (their programs are not loaded yet).
 - Next: let workers load cached programs, or prefetch binaries via an emulator key -> file index.
 
-## 5. Rare startup fault in the task queue (0x20aa22) — todo
-1 in ~40 starts (not seen in 40 recent ones). The fault report now prints the queue header.
-- Next: wait for a report; if it never shows, close as not reproduced.
+## 5. Rare startup fault in the task queue (0x20aa22) — closed (not reproduced, 2026-10-17)
+Seen once in ~40 starts before 0.3.1; none in the ~100 batch runs of 2026-10-16/17. The fault
+report prints the queue header if it returns.
 
 ## 6. One-frame black triangle — parked (no reproduction)
 The engine's fullscreen vertex buffer is static; the cause is on the port's side.
