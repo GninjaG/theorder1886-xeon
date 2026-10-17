@@ -57,6 +57,9 @@ about 4-5 ms each (file read ~1.3 ms, driver ~0.8 ms). Early restores from worke
 as known and compiled on the GPU thread, 130-190 ms each, 4-8 a run). Left: 2-4 a run
 (unskippable compute dispatches; stored keys whose index a later session reused), and the
 permutation count itself (hundreds per material shader: image type and sRGB per texture).
+0.3.6: past 8 ms of known-pipeline builds in a 33 ms window the rest build in the background:
+the scene start burst is gone (prologue 67 ms, rooftop load 300-399 ms instead of 833 ms).
+What is left are single ~180 ms compiles (unskippable compute dispatches, reused-index keys).
 - Next: permutations identified by their specialization instead of the order they appear
   (cache format change), or fewer specializations (2D views of array images).
 

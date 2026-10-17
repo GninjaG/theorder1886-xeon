@@ -2,6 +2,16 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18: scene start pipeline bursts, windows-v0.3.6
+
+Known pipelines (stored keys) build on the GPU thread for a 1-2 ms binary restore; a scene start
+needs ~100 at once (0.3-1.4 s frames). vk_pipeline_cache.cpp SyncBuildBudgetLeft: past 8 ms of
+such builds in a 33 ms window (CompileTimer off the compiler workers) the rest build in the
+background (PortToggle::SyncBuildBudget, bit 59). Prologue A/B 3+3: worst frames 167-366 vs
+267-300 ms; rooftop load 300-399 vs 833 ms. Frames dumped right after the burst
+(scratchpad dump_after_burst.py: THEORDER_FRAME_DUMP_TRIGGER re-created after a "Stall:" line)
+are complete: the waiting draws fall in the load.
+
 ## 2026-10-17 (late night): a code buffer crash and pipeline freezes, windows-v0.3.5
 
 **Crash:** a prologue run stopped with "code is too big" (Xbyak) in a GPU thread coroutine.

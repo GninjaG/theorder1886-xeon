@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.5
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.6
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,16 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.6:
+
+- **Início de cena sem a pausa longa**: ao entrar numa cena, o port restaurava ~100 pipelines
+  salvas, uma após a outra, travando um quadro por 0,3 a 1,4 segundo. Agora, passados 8 ms
+  dessas restaurações num quadro, as demais são feitas em paralelo em segundo plano. No prólogo, o
+  pior quadro do início de cena caiu de 300+ ms para ~67 ms; ao carregar o telhado de Londres, de
+  833 ms para 300–400 ms. Nos quadros logo depois, a cena aparece completa (as restaurações
+  acontecem durante o carregamento).
+- O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.5:
 
