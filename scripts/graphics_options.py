@@ -17,6 +17,10 @@ DEFAULTS = {'aspect_ratio': 'original', 'engine_fps': '60', 'deferred_readback':
             'stale_readback': '1', 'async_shaders': '1'}
 ASPECT_PREFIX = 'Aspect Ratio'
 FPS_PREFIX = 'Frame Rate Patch'
+HEADER = '# port settings (in-game menu: Insert / R3+L2)'
+# God of War III port keys older versions wrote (plus cheat_*); the writers drop them.
+LEFTOVER_KEYS = ('red_orb_multiplier', 'green_orb_multiplier', 'blue_orb_multiplier', 'gold_orb_multiplier',
+                 'damage_dealt', 'damage_taken', 'enemy_health_bar')
 
 
 def read_ini(path):
@@ -32,15 +36,26 @@ def read_ini(path):
     return values
 
 
+def clean_lines(lines):
+    """Settings file lines without the God of War III port's header and keys."""
+    out = []
+    for line in lines:
+        key = line.split('=', 1)[0].strip() if '=' in line and not line.lstrip().startswith('#') else None
+        if key and (key in LEFTOVER_KEYS or key.startswith('cheat_')):
+            continue
+        out.append(HEADER if line.startswith('# gow3 settings') else line)
+    return out
+
+
 def write_keys(path, updates):
     """Rewrites `updates` in place and appends missing keys, keeping every other line."""
     path = Path(path)
     try:
         lines = path.read_text(encoding='utf-8').splitlines()
     except OSError:
-        lines = ['# port settings (in-game menu: Insert / R3+L2)']
+        lines = [HEADER]
     done, out = set(), []
-    for line in lines:
+    for line in clean_lines(lines):
         key = line.split('=', 1)[0].strip() if '=' in line and not line.lstrip().startswith('#') else None
         if key in updates:
             out.append(f'{key}={updates[key]}')

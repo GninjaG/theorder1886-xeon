@@ -28,6 +28,12 @@ class GraphicsOptionsTest(unittest.TestCase):
         g.write_keys(self.ini, {'engine_fps': '240', 'vsync': '0'})
         self.assertEqual(self.ini.read_text(encoding='utf-8'), '# comment\nshow_fps=1\nengine_fps=240\nvsync=0\n')
 
+    def test_write_keys_drops_god_of_war_leftovers(self):
+        self.ini.write_text('# gow3 settings (in-game menu: Insert / R3+L2)\nshow_fps=1\nred_orb_multiplier=1.000\n'
+                            'cheat_health=0\nenemy_health_bar=0\n', encoding='utf-8')
+        g.write_keys(self.ini, {'engine_fps': '120'})
+        self.assertEqual(self.ini.read_text(encoding='utf-8'), f'{g.HEADER}\nshow_fps=1\nengine_fps=120\n')
+
     def test_unconfirmed_restart_is_tried_once_then_reverted(self):
         self.ini.write_text('aspect_ratio=16:10\nengine_fps=120\n', encoding='utf-8')
         good, _ = g.prepare(self.ini, self.state)  # a normal, confirmed launch

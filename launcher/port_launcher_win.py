@@ -39,6 +39,7 @@ if WINDOWS:
 FROZEN = getattr(sys, 'frozen', False)
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
+import graphics_options  # noqa: E402  (scripts/)
 import save_backup  # noqa: E402  (scripts/)
 import steam_shortcut  # noqa: E402  (scripts/)
 from patches import game_profile, game_sfo  # noqa: E402  (scripts/)
@@ -421,7 +422,7 @@ def atomic_write(path, text):
 def save_ini(values, lines):
     """Rewrites the edited keys in place, appends missing ones, keeps comments and other keys."""
     written, out = set(), []
-    for line in lines:
+    for line in graphics_options.clean_lines(lines):
         if '=' in line and not line.lstrip().startswith('#'):
             key = line.split('=', 1)[0].strip()
             if key in values:
@@ -430,7 +431,7 @@ def save_ini(values, lines):
                 continue
         out.append(line)
     if not lines:
-        out.append('# port settings (in-game menu: Insert / R3+L2)')
+        out.append(graphics_options.HEADER)
     out += [f'{key}={value}' for key, value in values.items() if key not in written]
     atomic_write(ini_path(), '\n'.join(out) + '\n')
 
