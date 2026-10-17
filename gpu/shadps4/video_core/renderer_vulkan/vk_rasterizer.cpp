@@ -3349,14 +3349,27 @@ bool Rasterizer::IsMapped(VAddr addr, u64 size) {
     }
     const auto range = decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
 
-    Common::RecursiveSharedLock lock{mapped_ranges_mutex};
-    return boost::icl::contains(mapped_ranges, range);
+    // port: each thread checks its own copy, taken again after a map or unmap: the shared lock
+    // (a mutex and a condition variable per call) was a fifth of the draw recording thread.
+    if (PortToggle::Disabled(PortToggle::MappedRangeCopies)) {
+        Common::RecursiveSharedLock lock{mapped_ranges_mutex};
+        return boost::icl::contains(mapped_ranges, range);
+    }
+    thread_local decltype(mapped_ranges) ranges;
+    thread_local u64 generation = ~u64{0};
+    if (mapped_ranges_generation.load(std::memory_order_acquire) != generation) {
+        Common::RecursiveSharedLock lock{mapped_ranges_mutex};
+        ranges = mapped_ranges;
+        generation = mapped_ranges_generation.load(std::memory_order_relaxed);
+    }
+    return boost::icl::contains(ranges, range);
 }
 
 void Rasterizer::MapMemory(VAddr addr, u64 size) {
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges += decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
+        mapped_ranges_generation.fetch_add(1, std::memory_order_release);
     }
 }
 
@@ -3371,6 +3384,7 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges -= decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
+        mapped_ranges_generation.fetch_add(1, std::memory_order_release);
     }
 }
 

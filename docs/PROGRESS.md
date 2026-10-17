@@ -2,6 +2,19 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (evening): the mapped range check, windows-v0.3.4
+
+**Profile** (THEORDER_SAMPLE='DrawRec|VkRecorder|GpuCommand', rooftop, 60 FPS mode): a fifth of
+the draw recording thread (stage B) and a tenth of the GPU command thread went to
+Rasterizer::IsMapped (behind MemoryManager::IsValidGpuMapping, checked for every resource of
+every draw): its Common::RecursiveSharedLock on a SharedFirstMutex takes a std::mutex and a
+condition variable per call, plus the recursive lock's per-thread hash map; the interval lookup
+itself is cheap.
+**Change** (PortToggle::MappedRangeCopies, bit 58): each thread checks its own copy of
+mapped_ranges, taken again when mapped_ranges_generation (bumped under the lock by MapMemory
+and UnmapMemory) moved. Rooftop, 60 FPS mode, 3+3 interleaved runs: ~57k -> ~71k draws/s,
+~33 -> ~39 FPS, stage B 73-81% -> 68-74% busy.
+
 ## 2026-10-17 (later): what the graphics queue waits on
 
 **Measured** (rooftop, 60 FPS mode, THEORDER_FRAME_STATS=1, new "GFX memory waits" line in

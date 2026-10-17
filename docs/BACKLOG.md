@@ -16,8 +16,9 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit
 (1430 draws x 14-17 us = 20-24 ms per frame of its own CPU time, plus waits).
-- Stage B (port:DrawRec) is the limit in the 60 FPS mode: 76-78% busy at 55-65k draws/s.
-- Next: profile it (THEORDER_SAMPLE=DrawRec) and cut the top self-time items.
+- Stage B (port:DrawRec) is the limit in the 60 FPS mode. The mapped range check's lock was a
+  fifth of it: per-thread copies (0.3.4) took the rooftop from ~57k to ~71k draws/s (~33 -> ~39 FPS).
+- Next: profile again; then BindTextures (21% inclusive), GetBarriers, the descriptor hashing.
 - Check: us/draw and FPS on the rooftop, 60 FPS mode, interleaved runs.
 
 ## 2. Draw pipe drains at WaitRegMem — done (finding, 2026-10-17)

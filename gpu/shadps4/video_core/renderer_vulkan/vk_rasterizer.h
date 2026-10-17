@@ -326,6 +326,8 @@ private:
     Core::MemoryManager* memory;
     boost::icl::interval_set<VAddr> mapped_ranges;
     Common::SharedFirstMutex mapped_ranges_mutex;
+    /// port: bumped (under the lock) by every change of mapped_ranges: IsMapped's per-thread copies.
+    std::atomic<u64> mapped_ranges_generation{0};
     PipelineCache pipeline_cache;
     std::unique_ptr<DrawPreparation> draw_prep;
     std::unique_ptr<CameraMotion> camera_motion; // port: motion vectors (docs/upscaler.md)
