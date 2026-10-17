@@ -42,8 +42,8 @@ and the eboot at 0xcc8791): the page is GPU-modified, so the write faults and a 
 downloaded after a Finish (~4.6 ms). The CPU never needs those bytes; the download only keeps the
 page consistent (a later upload of the CPU-modified page would overwrite the GPU's bytes).
 Without readbacks (THEORDER_READBACKS=0) the game loads the scene later with fewer draws: they are
-needed elsewhere. Writing the label through the backing view alone would move the download to the
-next CPU write of the page.
+needed elsewhere. Writing the label through the backing view (tried, 3+3 runs) only moved the download to
+the next CPU write of the page (sceGnmDispatchInitDefaultHardwareState), no gain.
 - Next: a download that waits only for the tick of the last GPU write to the range (per-range
   ticks; read from a host-visible arena or an end-of-submission copy) instead of Finish.
 - Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction);
