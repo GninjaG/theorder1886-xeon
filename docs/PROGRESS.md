@@ -2,7 +2,7 @@
 
 Short, dated state for resuming work. Newest first.
 
-## 2026-10-18: scene start pipeline bursts, windows-v0.3.6
+## 2026-10-17 (10:25): scene start pipeline bursts, windows-v0.3.6
 
 Known pipelines (stored keys) build on the GPU thread for a 1-2 ms binary restore; a scene start
 needs ~100 at once (0.3-1.4 s frames). vk_pipeline_cache.cpp SyncBuildBudgetLeft: past 8 ms of
@@ -12,7 +12,7 @@ background (PortToggle::SyncBuildBudget, bit 59). Prologue A/B 3+3: worst frames
 (scratchpad dump_after_burst.py: THEORDER_FRAME_DUMP_TRIGGER re-created after a "Stall:" line)
 are complete: the waiting draws fall in the load.
 
-## 2026-10-17 (late night): a code buffer crash and pipeline freezes, windows-v0.3.5
+## 2026-10-17 (09:50): a code buffer crash and pipeline freezes, windows-v0.3.5
 
 **Crash:** a prologue run stopped with "code is too big" (Xbyak) in a GPU thread coroutine.
 Every shader permutation appended its own copy of the SRT walker to the 32 MB code buffer
@@ -28,7 +28,7 @@ thread for a binary restore that missed (binaries are keyed by the driver's key)
 with a permutation made this session (Program::Module::fresh) now build in the background.
 2-4 a run remain (unskippable compute dispatches; keys whose index a later session reused).
 
-## 2026-10-17 (night): what the GPU thread's Finish waits are for
+## 2026-10-17 (09:10): what the GPU thread's Finish waits are for
 
 After 0.3.4 the GPU command thread spends ~20% in BufferCache::DownloadMemory -> Finish on the
 rooftop (60 FPS mode). New THEORDER_FRAME_STATS line "Buffer downloads by time" (buffer_cache.cpp)
@@ -39,7 +39,7 @@ written storage buffers; and the eboot's own write at 0xcc8791 to 0x105b500000 (
 "Mapped ..." line now prints the guest image address (RIP 0x800cc8791 = eboot 0xcc8791). Details
 and the next step: docs/BACKLOG.md item 3.
 
-## 2026-10-17 (evening): the mapped range check, windows-v0.3.4
+## 2026-10-17 (08:40): the mapped range check, windows-v0.3.4
 
 **Profile** (THEORDER_SAMPLE='DrawRec|VkRecorder|GpuCommand', rooftop, 60 FPS mode): a fifth of
 the draw recording thread (stage B) and a tenth of the GPU command thread went to
