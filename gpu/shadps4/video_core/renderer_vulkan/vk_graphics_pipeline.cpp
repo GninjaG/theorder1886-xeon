@@ -448,11 +448,15 @@ GraphicsPipeline::GraphicsPipeline(
     auto [pipeline_result, pipe] =
         CreateCachedGraphicsPipeline(device, pipeline_cache, pipeline_info, key,
                                      instance.GetPipelineBinaryGlobalKey(), binary_directory);
+    if (pipeline_result == vk::Result::ePipelineCompileRequired && g_pipeline_restore_only) {
+        return; // no stored binary: Handle() stays null (GetGraphicsPipeline)
+    }
     ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
                vk::to_string(pipeline_result));
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
     RecordWaveSizes();
+    g_pipeline_restore_only = false; // the main pipeline was restored: its squaring pass may compile
 
     if (needs_square_pass) {
         auto square_blending = color_blending;

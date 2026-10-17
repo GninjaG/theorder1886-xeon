@@ -338,6 +338,8 @@ void ReportPipelineBinaryCache() {
                 binary_handles_ns.load() / per_pipeline);
 }
 
+thread_local bool g_pipeline_restore_only = false;
+
 namespace {
 template <typename PipelineCreateInfo, typename KeyType, typename Creator>
 vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
@@ -481,6 +483,9 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
         destroy();
     }
     ++binary_misses;
+    if (g_pipeline_restore_only) {
+        return {vk::Result::ePipelineCompileRequired, vk::UniquePipeline{}};
+    }
     static const bool miss_log = std::getenv("THEORDER_BINARY_MISS_LOG") != nullptr;
     if (miss_log) {
         std::printf("Binary miss: pipeline %016llx driver key %s\n",

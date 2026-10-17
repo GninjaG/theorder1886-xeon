@@ -870,10 +870,9 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             Storage::BlobType::PipelineKey,
             fmt::format("g_{:#018x}", std::hash<GraphicsPipelineKey>{}(sel.graphics_key)));
     };
-    if (AsyncCompilation() && !sel.regs->stage_enable.hs_en &&
-        !EmulatorSettings.IsShaderCollect() &&
-        (pending_graphics.contains(sel.graphics_key) ||
-         (!graphics_pipelines.contains(sel.graphics_key) && !known()))) {
+    const bool can_async = AsyncCompilation() && !sel.regs->stage_enable.hs_en &&
+                           !EmulatorSettings.IsShaderCollect();
+    const auto build_in_background = [&]() -> const GraphicsPipeline* {
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
             PhaseTimer capture{g_port_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
@@ -906,6 +905,10 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         ++g_port_pending_draws;
         return nullptr;
+    };
+    if (can_async && (pending_graphics.contains(sel.graphics_key) ||
+                      (!graphics_pipelines.contains(sel.graphics_key) && !known()))) {
+        return build_in_background();
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
@@ -914,9 +917,17 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         CompileTimer timer;
 
         GraphicsPipeline::SerializationSupport sdata{};
+        // A known key may name another session's permutation: only its stored binary is
+        // restored here, and without one it is built in the background (no 150 ms compile).
+        g_pipeline_restore_only = can_async;
         it.value() = std::make_unique<GraphicsPipeline>(
             instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
             sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, false);
+        g_pipeline_restore_only = false;
+        if (!it.value()->Handle()) {
+            graphics_pipelines.erase(it);
+            return build_in_background();
+        }
 
         RegisterPipelineData(sel.graphics_key, pipeline_hash, sdata);
         ++num_new_pipelines;

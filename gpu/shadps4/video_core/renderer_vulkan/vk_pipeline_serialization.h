@@ -31,6 +31,10 @@ std::optional<std::vector<Binary>> Load(const std::filesystem::path& file, const
                                         const Key& pipeline, u64 graphics_hash);
 } // namespace PipelineBinaryCache
 
+/// port: set around a build that must only restore a stored binary: a miss returns
+/// ePipelineCompileRequired instead of compiling (the caller builds it in the background).
+extern thread_local bool g_pipeline_restore_only;
+
 vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
     vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info,
     const GraphicsPipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
