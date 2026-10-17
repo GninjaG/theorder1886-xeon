@@ -33,6 +33,8 @@ Novidades da 0.3.3:
   antecipada pegava uma memória já reaproveitada, o tratador de falhas remendava o shader para
   sempre ler zero ali. Agora essa leitura só é descartada e o draw é preparado pela thread da GPU.
   Aqui (NVIDIA) isso nunca aconteceu, nem com o cache vazio; falta a confirmação em Intel.
+- Com o modo de 60 FPS, o menu do jogo não diz mais que o patch de 60 FPS está indisponível (e o
+  log não diz mais "30 FPS"): o jogo já rodava a 60, só a indicação estava errada.
 - O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.2:

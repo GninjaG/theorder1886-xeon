@@ -51,17 +51,18 @@ class GraphicsOptionsTest(unittest.TestCase):
 
     def test_patch_names(self):
         launcher = ['Frame Rate Patch - 120 FPS', 'Skip Intro Logos']
-        options = g.startup_options({'aspect_ratio': '16:9', 'engine_fps': '240'})
+        options = g.startup_options({'aspect_ratio': '16:9', 'engine_fps': '120'})
+        # The XML's "60 FPS" patch: the game runs at half the engine rate.
         self.assertEqual(g.patch_names(launcher, options),
-                         ['Skip Intro Logos', 'Aspect Ratio - 16:9', 'Frame Rate Patch - 240 FPS'])
+                         ['Skip Intro Logos', 'Aspect Ratio - 16:9', 'Frame Rate Patch - 60 FPS'])
         original = g.startup_options({'engine_fps': '60'})
         self.assertEqual(g.patch_names(['Aspect Ratio - 21:9', 'Skip Intro Logos'], original),
                          ['Skip Intro Logos'])
 
     def test_applied_engine_fps(self):
         # The engine runs above 60 only with a frame rate patch in the applied list.
-        self.assertEqual(g.applied_engine_fps(['Skip Intro Logos', 'Frame Rate Patch - 240 FPS']), 240)
-        self.assertEqual(g.applied_engine_fps(['Frame Rate Patch - 120 FPS']), 120)
+        self.assertEqual(g.applied_engine_fps(['Skip Intro Logos', 'Frame Rate Patch - 120 FPS']), 240)
+        self.assertEqual(g.applied_engine_fps(['Frame Rate Patch - 60 FPS']), 120)
         self.assertEqual(g.applied_engine_fps(['Skip Intro Logos']), 60)
         self.assertEqual(g.applied_engine_fps([]), 60)
 

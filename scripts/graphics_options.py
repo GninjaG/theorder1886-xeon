@@ -93,8 +93,9 @@ def patch_names(names, options):
     names = [n for n in names if not n.startswith(ASPECT_PREFIX) and not n.startswith(FPS_PREFIX)]
     if options['aspect_ratio'] != 'original':
         names.append(f'{ASPECT_PREFIX} - {options["aspect_ratio"]}')
+    # A frame rate patch is named after the game's rate: half the engine's ("60 FPS" at 120).
     if options['engine_fps'] != '60':
-        names.append(f'{FPS_PREFIX} - {options["engine_fps"]} FPS')
+        names.append(f'{FPS_PREFIX} - {int(options["engine_fps"]) // 2} FPS')
     return names
 
 
@@ -119,7 +120,7 @@ def restrict_to_available(names, available):
 
 def applied_engine_fps(names):
     """The engine rate the applied patch list gives: 60 without a frame rate patch."""
-    return max((int(n.split(' - ')[1].split()[0]) for n in names if n.startswith(f'{FPS_PREFIX} - ')), default=60)
+    return 2 * max((int(n.split(' - ')[1].split()[0]) for n in names if n.startswith(f'{FPS_PREFIX} - ')), default=30)
 
 
 def environment(options):
