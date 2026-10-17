@@ -22,7 +22,13 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
   chapter IX, ErrorOutOfHostMemory; the same in shadPS4 on that PC): the reporter's chapter IX save
   runs here; Check() now names the failing call, asked for a new log, RAM size and page file.
 
-## 0. UI past the screen edges with an aspect ratio patch — todo (found 2026-10-17)
+## 0b. Blinking objects (draws skipped while pipelines build) — doing
+0.4.1: stored keys jump the compile queue, more compiler threads (cold rooftop 100966 -> 34706
+skipped draws). Left: ~20-80 truly new pipelines per warm session (garbage T#s in unused slots
+make new permutations; shadPS4 PR #5218 "resource guards" is the approach), and restores past
+the 8 ms budget (~5 ms each, 2.2 ms of it the 2 MB file read).
+
+## 0. UI past the screen edges with an aspect ratio patch — doing (found 2026-10-17)
 The 3D view is right (Vert+), but the Iggy UI is laid out for the taller picture: glyphs ~1.07x,
 positions spread with the height (~1.33x), the chapter title's right edge 35 px past the screen at
 16:9 (the player calls it "a zoom"). Next: find where the UI gets its display size (aspect at display

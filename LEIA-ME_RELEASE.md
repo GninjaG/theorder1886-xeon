@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.4.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.4.1
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,21 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.4.1:
+
+- **Bem menos objetos piscando**: enquanto um efeito ou objeto novo compila em segundo plano ele
+  some por alguns quadros. Agora o que já está no cache volta na frente da fila e mais threads
+  compilam ao mesmo tempo: na primeira sessão depois de uma atualização, ~3x menos piscadas (na
+  entrada de uma cena, ~10x); nas sessões seguintes, ~40% menos.
+- Launcher (correções vindas do launcher do God of War III PC):
+  - "Fechar o launcher quando o jogo abrir" agora mantém o `last_run.log` completo;
+  - em notebooks com GPU integrada AMD + NVIDIA, a camada Vulkan da AMD que escondia a NVIDIA
+    (tela preta) é desligada;
+  - quando o jogo fecha por falta de memória, por erro de memória do driver de vídeo ou por dump
+    incompleto, o log mostra o que fazer;
+  - dumps com `eboot.bin` já desempacotado (ELF) são aceitos;
+  - backups de saves feitos no mesmo segundo não apagam o mais novo.
 
 Novidades da 0.4.0:
 

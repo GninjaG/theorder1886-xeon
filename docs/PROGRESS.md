@@ -2,6 +2,27 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (20:10): blinking after 0.4.0, launcher fixes from gow3_pc, windows-v0.4.1
+
+**Blinking:** the player's first 0.4.0 session (ShaderBinaryVersion 9 rebuilt every pipeline)
+skipped up to 36894 draws in a 5 s window: objects missing while their pipelines built in the
+background. Restores past the 8 ms budget waited behind ~250 ms driver compiles in one FIFO
+(6 low-priority threads, 64 slots, a full queue re-tried each frame). Now stored keys go to the
+compiler's urgent queue, up to 8 compile and 4 capture threads, queues of 256/32. Rooftop:
+empty cache 100966 -> 34706 skipped draws (scene start 68k -> 6k); warm 21064 -> ~12.9k. A
+warm idle capture (37 consecutive frames) had no A-B-A flicker left. Switching executables
+under another name made NVIDIA reject the stored binaries (A/B artifact; same name otherwise).
+**Launcher (gow3_pc #554, #310, #552, #550):** close-on-play hides the window and keeps
+last_run.log; VK_LAYER_AMD_switchable_graphics off; exit hints (page file, Vulkan OOM, dump);
+prepare accepts unpacked ELF; same-second save backups sort right.
+**Aspect ratio UI:** Iggy's display size is set by the engine at 0x838f34/0x8394a7
+(sub_deb260 = SetDisplaySize, player+0x1ec0/0x1ec4) and sub_deb290 (area x0,y0,x1,y1 at
++0x58..0x64; scale = size / area, sub_e4a2f0) from [[0x16a1550]+0x12dc0/0x12dc8], the size of
+the UI's own render target. Forcing height 800 gives the original layout but in the top 800 rows
+(the target is composited at the picture origin); the area offset only scales. Next: the UI
+target's creation and composite. IggyPlayerDraw = sub_dbfa60 (wrapper sub_deb330, called at
+0x83a0bb).
+
 ## 2026-10-17 (17:35): the player's manual session, windows-v0.4.0
 
 **~20 FPS in a building after the rooftop (60 FPS mode):** the player's 0.3.9 log (88 MB) held
