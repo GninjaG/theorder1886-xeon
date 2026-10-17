@@ -49,8 +49,15 @@ page consistent (a later upload of the CPU-modified page would overwrite the GPU
 Without readbacks (THEORDER_READBACKS=0) the game loads the scene later with fewer draws: they are
 needed elsewhere. Writing the label through the backing view (tried, 3+3 runs) only moved the download to
 the next CPU write of the page (sceGnmDispatchInitDefaultHardwareState), no gain.
-- Next: a download that waits only for the tick of the last GPU write to the range (per-range
-  ticks; read from a host-visible arena or an end-of-submission copy) instead of Finish.
+- Tried (2026-10-17, not kept): copies of small written bindings at each submission end (shadows)
+  plus the compute label through the backing view. The command buffer page's downloads went from
+  ~170 to ~2 ms/s, but the eboot's window 0x105b500000 then paid the wait (~250 ms/s): its 1024-byte
+  binding is written again in the current, unsubmitted command buffer just before the CPU writes
+  next to it ("stale"), so its data needs that submission. Total unchanged; and the label through
+  the backing view hung the game (a GFX wait on 0x1066181700 saw an older value: the GPU's copy of
+  the label stays old and a later download brings it back).
+- Next: only a byte-precise page model (CPU writes that miss the GPU bytes need no download)
+  avoids it; the uploads of CPU-modified pages would then have to skip GPU-written bytes.
 - Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction);
   THEORDER_GPU_WRITE_WATCH=<hex> prints the writable bindings in that address's 64 KiB.
 
