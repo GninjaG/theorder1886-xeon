@@ -65,10 +65,9 @@ permutation count itself (hundreds per material shader: image type and sRGB per 
 0.3.6: past 8 ms of known-pipeline builds in a 33 ms window the rest build in the background:
 the scene start burst is gone (prologue 67 ms, rooftop load 300-399 ms instead of 833 ms).
 0.3.7: skippable compute dispatches always build in the background (no compute freeze left).
-What is left are 1-4 graphics compiles of ~150 ms a prologue session: GetGraphicsPipeline's
-known() only asks whether a key of that name exists (no version, no content), and the stage hash
-names a permutation slot (program, index) whose content can differ from the session that stored
-the key (the warm-up loads the meta named by the stage hash, so it is a slot name too).
+0.3.9: a known graphics pipeline only restores its stored binary on the GPU thread; a miss
+(another session's permutation at that index) builds in the background. Prologue worst frames
+99-119 ms, 0-1 slow synchronous compiles a run; rooftop none.
 - Next: permutations identified by their specialization instead of the order they appear
   (cache format change), or fewer specializations (2D views of array images).
 
