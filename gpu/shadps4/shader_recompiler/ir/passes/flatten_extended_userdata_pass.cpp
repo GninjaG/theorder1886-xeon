@@ -35,13 +35,56 @@ static const u8* g_srt_codegen_start = nullptr;
 // threads.
 static std::mutex g_srt_codegen_mutex;
 
+// port: walkers by their code (g_srt_codegen_mutex). The permutations of a program have the
+// same walker, and each kept a copy: with the hundreds of permutations a material shader gets,
+// the 32 MB code buffer ran out in a session ("code is too big", the game stopped).
+static std::unordered_multimap<size_t, std::pair<const u8*, size_t>> g_srt_walkers;
+static size_t g_srt_walkers_reused = 0, g_srt_walker_bytes_reused = 0;
+
+static size_t WalkerKey(const u8* code, size_t size) {
+    return std::hash<std::string_view>{}({reinterpret_cast<const char*>(code), size});
+}
+
+static const u8* FindWalker(const u8* code, size_t size) {
+    const auto [begin, end] = g_srt_walkers.equal_range(WalkerKey(code, size));
+    for (auto it = begin; it != end; ++it) {
+        // A walker the fault handler patched no longer matches its key's code: not reused.
+        if (it->second.second == size && std::memcmp(it->second.first, code, size) == 0) {
+            g_srt_walker_bytes_reused += size;
+            if ((++g_srt_walkers_reused & 1023) == 0) {
+                std::printf("SRT walkers: %zu reused (%zu KiB not copied), %zu kept in %zu KiB\n",
+                            g_srt_walkers_reused, g_srt_walker_bytes_reused >> 10,
+                            g_srt_walkers.size(), g_srt_codegen.getSize() >> 10);
+            }
+            return it->second.first;
+        }
+    }
+    return nullptr;
+}
+
+static void AddWalker(const u8* code, size_t size) {
+    g_srt_walkers.emplace(WalkerKey(code, size), std::pair{code, size});
+    static size_t next_report = 1_MB;
+    if (g_srt_codegen.getSize() >= next_report) {
+        std::printf("SRT walkers: %zu of the %zu MiB code buffer used, %zu walkers; %zu reused "
+                    "(%zu KiB not copied)\n",
+                    g_srt_codegen.getSize() >> 20, size_t{32_MB} >> 20, g_srt_walkers.size(),
+                    g_srt_walkers_reused, g_srt_walker_bytes_reused >> 10);
+        next_report += 1_MB;
+    }
+}
+
 namespace Shader {
 
 PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     std::scoped_lock lock{g_srt_codegen_mutex};
+    if (const u8* existing = FindWalker(ptr, size)) {
+        return reinterpret_cast<PFN_SrtWalker>(const_cast<u8*>(existing));
+    }
     const auto func_addr = (PFN_SrtWalker)g_srt_codegen.getCurr();
     g_srt_codegen.db(ptr, size);
     g_srt_codegen.ready();
+    AddWalker(reinterpret_cast<const u8*>(func_addr), size);
     return func_addr;
 }
 
@@ -704,6 +747,7 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
         signals->RegisterAccessViolationHandler(SrtWalkerSignalHandler, priority);
     }
 
+    const size_t walker_start = c.getSize();
     info.srt_info.walker_func = c.getCurr<PFN_SrtWalker>();
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
@@ -717,6 +761,14 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
 
     info.srt_info.walker_func_size =
         c.getCurr() - reinterpret_cast<const u8*>(info.srt_info.walker_func);
+    // port: another permutation's identical walker is used, and this copy is dropped.
+    const auto* walker = reinterpret_cast<const u8*>(info.srt_info.walker_func);
+    if (const u8* existing = FindWalker(walker, info.srt_info.walker_func_size)) {
+        c.setSize(walker_start);
+        info.srt_info.walker_func = reinterpret_cast<PFN_SrtWalker>(const_cast<u8*>(existing));
+    } else {
+        AddWalker(walker, info.srt_info.walker_func_size);
+    }
 
     if (EmulatorSettings.IsDumpShaders()) {
         DumpSrtProgram(info, reinterpret_cast<const u8*>(info.srt_info.walker_func),
