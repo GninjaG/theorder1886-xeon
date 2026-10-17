@@ -552,6 +552,9 @@ class ReleaseVersionTest(unittest.TestCase):
         self.assertGreater(launcher.version_tuple('windows-v0.3.8'), launcher.version_tuple(launcher.VERSION))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
+    def test_game_languages_are_the_ps4_ids(self):
+        self.assertEqual(sorted(int(v) for v, _ in launcher.LANGUAGES), list(range(30)))
+
     def test_first_start_is_in_english(self):
         # The translations are partial; 'System' stays a choice in Advanced.
         self.assertEqual(launcher.APP_DEFAULTS['ui_language'], 'en')

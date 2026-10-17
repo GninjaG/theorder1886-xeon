@@ -363,7 +363,17 @@ bool Instance::CreateDevice() {
     custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
     depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-    vertex_input_dynamic_state = add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    // port: Intel drivers draw the characters as black silhouettes with it (GitHub #1 Arc, #10
+    // HD 630; the God of War III port's HD 630 too): off there. THEORDER_VERTEX_INPUT_DYNAMIC_STATE
+    // =0/1 forces it.
+    const char* vids = std::getenv("THEORDER_VERTEX_INPUT_DYNAMIC_STATE");
+    const bool vids_wanted = vids && vids[0] ? vids[0] != '0' : properties.vendorID != 0x8086;
+    vertex_input_dynamic_state =
+        vids_wanted && add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    if (!vids_wanted) {
+        std::printf("GPU: VK_EXT_vertex_input_dynamic_state not used "
+                    "(THEORDER_VERTEX_INPUT_DYNAMIC_STATE=1 uses it)\n");
+    }
     list_restart = add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
     if (list_restart) {
         list_restart_features =

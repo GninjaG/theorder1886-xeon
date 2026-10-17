@@ -339,9 +339,18 @@ OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 
            ('2560x1440', ('2560 × 1440',)), ('3840x2160', ('3840 × 2160 (4K)',))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
-LANGUAGES = [('1', ('English', 'Английский')), ('8', ('Russian', 'Русский')), ('0', ('Japanese', 'Японский')),
-             ('2', ('French', 'Французский')), ('3', ('Spanish', 'Испанский')), ('4', ('German', 'Немецкий')),
-             ('5', ('Italian', 'Итальянский'))]
+# The PS4 system language ids (sceSystemServiceParamGetInt LANG): the game shows the ones its
+# region's release has (CUSA00035, CUSA00785, CUSA00076...) and English otherwise.
+LANGUAGES = [('1', ('English (US)', 'Английский (США)')), ('18', ('English (UK)',)),
+             ('2', ('French', 'Французский')), ('22', ('French (Canada)',)), ('3', ('Spanish', 'Испанский')),
+             ('20', ('Spanish (Latin America)',)), ('4', ('German', 'Немецкий')), ('5', ('Italian', 'Итальянский')),
+             ('6', ('Dutch',)), ('7', ('Portuguese (Portugal)',)), ('17', ('Portuguese (Brazil)',)),
+             ('8', ('Russian', 'Русский')), ('16', ('Polish',)), ('19', ('Turkish',)), ('23', ('Czech',)),
+             ('24', ('Hungarian',)), ('25', ('Greek',)), ('26', ('Romanian',)), ('12', ('Finnish',)),
+             ('13', ('Swedish',)), ('14', ('Danish',)), ('15', ('Norwegian',)), ('21', ('Arabic',)),
+             ('0', ('Japanese', 'Японский')), ('9', ('Korean',)), ('10', ('Chinese (Traditional)',)),
+             ('11', ('Chinese (Simplified)',)), ('27', ('Thai',)), ('28', ('Vietnamese',)),
+             ('29', ('Indonesian',))]
 DRAW_PIPE = [('', ('Auto (8+ threads)', 'Авто (8+ потоков)')), ('1', ('On', 'Включён')),
              ('0', ('Off (more stable)', 'Выключен (стабильнее)'))]
 READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), ('0', ('Off', 'Выключены')),
