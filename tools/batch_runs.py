@@ -34,7 +34,9 @@ def summarize(log: str, secs: int):
     fault = re.search(r'^Fault: .*? at (\S+)', log, re.M)
     windows = log.count('Frame stats:')
     compile_ms = sum(float(m) for m in re.findall(r'compiles ([0-9.]+) ms', log))
-    hung = not fault and windows < max(1, secs // 5 - 2)
+    # Windows are 5 s of presented frames: a long load (a save) has fewer of them without a
+    # hang, so under half the expected count means presentation stopped.
+    hung = not fault and windows < max(1, secs // 10)
     return {
         'flip': int(flips[-1]) if flips else 0,
         'fault': fault.group(1) if fault else '',

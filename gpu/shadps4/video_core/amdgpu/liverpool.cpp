@@ -3,7 +3,9 @@
 
 #include <chrono>
 #include <pthread.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h> // GetThreadTimes
+#else
 #include <sys/resource.h>
 #endif
 #include <time.h>
@@ -1363,7 +1365,16 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     }
     if (seq != NoSeq && PortStats::enabled) {
         PortStats::submissions.fetch_add(1, std::memory_order_relaxed);
-#ifndef _WIN32 // port: per-thread rusage statistics are Linux-only
+#ifdef _WIN32 // port: the GPU thread's CPU time (100 ns units) for the us/draw statistic
+        if (FILETIME created, exited, kernel, user;
+            GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user)) {
+            const auto us = [](FILETIME t) {
+                return ((u64(t.dwHighDateTime) << 32) | t.dwLowDateTime) / 10;
+            };
+            PortStats::gpu_user_us.store(us(user), std::memory_order_relaxed);
+            PortStats::gpu_sys_us.store(us(kernel), std::memory_order_relaxed);
+        }
+#else // per-thread rusage statistics are Linux-only
         if (rusage usage{}; getrusage(RUSAGE_THREAD, &usage) == 0) {
             PortStats::gpu_user_us.store(u64(usage.ru_utime.tv_sec) * 1000000 + usage.ru_utime.tv_usec,
                                        std::memory_order_relaxed);

@@ -307,6 +307,99 @@ static DWORD WINAPI win_watchdog_thread(LPVOID param) {
     TerminateProcess(GetCurrentProcess(),0);
     return 0;
 }
+/* THEORDER_SAMPLE=<part of a thread name>[|<part>...]: THEORDER_SAMPLE_START seconds after start
+ * (60) and for THEORDER_SAMPLE_SECS (30), every millisecond the matching threads are suspended and
+ * their eight innermost frames counted; THEORDER_SAMPLE_OUT (out/sample.txt) then gets
+ * "count;thread=<name>;frame;..." lines (tools/sample_report.py names them). Nothing is allocated
+ * or printed while a thread is suspended: it may hold the heap lock. */
+#define SAMPLE_SLOTS 65536
+#define SAMPLE_DEPTH 8
+typedef struct { uintptr_t frames[SAMPLE_DEPTH]; unsigned thread, count; } SampleSlot;
+static SampleSlot sample_slots[SAMPLE_SLOTS];
+static int sample_add(unsigned thread, const uintptr_t frames[SAMPLE_DEPTH]) {
+    uint64_t h=1469598103934665603ull^thread;
+    for (int i=0;i<SAMPLE_DEPTH;++i) h=(h^frames[i])*1099511628211ull;
+    for (unsigned probe=0;probe<SAMPLE_SLOTS;++probe) {
+        SampleSlot *s=&sample_slots[(h+probe)&(SAMPLE_SLOTS-1)];
+        if (!s->count) { memcpy(s->frames,frames,sizeof(s->frames)); s->thread=thread; s->count=1; return 1; }
+        if (s->thread==thread && !memcmp(s->frames,frames,sizeof(s->frames))) { ++s->count; return 1; }
+    }
+    return 0; /* table full */
+}
+static DWORD WINAPI win_sampler_thread(LPVOID param) {
+    const char *part=(const char *)param, *start=getenv("THEORDER_SAMPLE_START"),
+               *secs=getenv("THEORDER_SAMPLE_SECS"), *out=getenv("THEORDER_SAMPLE_OUT");
+    Sleep((start ? (DWORD)atoi(start) : 60)*1000);
+    wchar_t wpart[256], names[16][64];
+    MultiByteToWideChar(CP_UTF8,0,part,-1,wpart,256);
+    HANDLE threads[16];
+    int count=0;
+    HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
+    THREADENTRY32 entry={.dwSize=sizeof(entry)};
+    if (snapshot!=INVALID_HANDLE_VALUE && Thread32First(snapshot,&entry)) {
+        do {
+            if (entry.th32OwnerProcessID!=GetCurrentProcessId() || count==16) continue;
+            HANDLE thread=OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_QUERY_LIMITED_INFORMATION,
+                                     FALSE,entry.th32ThreadID);
+            if (!thread) continue;
+            PWSTR name=NULL;
+            int match=0;
+            if (SUCCEEDED(GetThreadDescription(thread,&name)) && name && *name) {
+                for (const wchar_t *p=wpart; *p && !match;) { /* each '|'-separated part */
+                    size_t n=wcscspn(p,L"|");
+                    for (const wchar_t *s=name; *s && !match; ++s) match=n && !wcsncmp(s,p,n);
+                    p+=n+(p[n]==L'|');
+                }
+            }
+            if (match) { wcsncpy(names[count],name,63); names[count][63]=0; threads[count++]=thread; }
+            else CloseHandle(thread);
+            if (name) LocalFree(name);
+        } while (Thread32Next(snapshot,&entry));
+    }
+    if (snapshot!=INVALID_HANDLE_VALUE) CloseHandle(snapshot);
+    unsigned long long samples=0, dropped=0;
+    const ULONGLONG end=GetTickCount64()+(secs ? (ULONGLONG)atoi(secs) : 30)*1000;
+    timeBeginPeriod(1);
+    while (count && GetTickCount64()<end) {
+        for (int i=0;i<count;++i) {
+            if (SuspendThread(threads[i])==(DWORD)-1) continue;
+            CONTEXT c={.ContextFlags=CONTEXT_FULL};
+            uintptr_t frames[SAMPLE_DEPTH]={0};
+            if (GetThreadContext(threads[i],&c)) {
+                for (int depth=0; depth<SAMPLE_DEPTH && c.Rip; ++depth) { /* as print_unwound_stack */
+                    frames[depth]=c.Rip;
+                    DWORD64 base=0; PVOID handler_data; DWORD64 establisher;
+                    PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(c.Rip,&base,NULL);
+                    if (fn) RtlVirtualUnwind(UNW_FLAG_NHANDLER,base,c.Rip,fn,&c,&handler_data,&establisher,NULL);
+                    else if (depth==0) { c.Rip=*(DWORD64 *)c.Rsp; c.Rsp+=8; }
+                    else break;
+                }
+            }
+            ResumeThread(threads[i]);
+            if (frames[0]) { ++samples; dropped+=!sample_add((unsigned)i,frames); }
+        }
+        Sleep(1);
+    }
+    timeEndPeriod(1);
+    const char *path=out ? out : "out/sample.txt";
+    FILE *f=fopen(path,"w");
+    if (f) {
+        char where[MAX_PATH+64];
+        for (unsigned i=0;i<SAMPLE_SLOTS;++i) {
+            if (!sample_slots[i].count) continue;
+            fprintf(f,"%u;thread=%ls",sample_slots[i].count,names[sample_slots[i].thread]);
+            for (int depth=0; depth<SAMPLE_DEPTH && sample_slots[i].frames[depth]; ++depth) {
+                describe_address(where,sizeof(where),sample_slots[i].frames[depth]);
+                fprintf(f,";%s",where);
+            }
+            fputc('\n',f);
+        }
+        fclose(f);
+    }
+    fprintf(stderr,"Sampler: %d threads matching \"%s\", %llu samples (%llu dropped) in %s\n",
+            count,part,samples,dropped,path);
+    return 0;
+}
 #endif
 #ifndef _WIN32
 /* ucontext gregs of IsaRegs.gpr (x86 numbering). */
@@ -959,6 +1052,11 @@ int main(int argc, char **argv) {
     }
     if (timeout_seconds > 0) {
         HANDLE th = CreateThread(NULL, 0, win_watchdog_thread, (LPVOID)(uintptr_t)timeout_seconds, 0, NULL);
+        if (th) CloseHandle(th);
+    }
+    const char *sample = getenv("THEORDER_SAMPLE");
+    if (sample && *sample) {
+        HANDLE th = CreateThread(NULL, 0, win_sampler_thread, (LPVOID)sample, 0, NULL);
         if (th) CloseHandle(th);
     }
 #else
