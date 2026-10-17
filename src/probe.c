@@ -865,7 +865,43 @@ static ABI int trace_sound_engine_init(void *rdi, void *rsi) {
     return res;
 }
 
+/* The hooks below are bring-up traces of the 01.02 eboot's sound engine start, at that build's
+ * offsets: in another build those bytes are other code (a 01.00 eboot crashed at 0x9b47f9, next
+ * to the 0x9b47fc call site, issue #3). They go in only where every site holds the instruction
+ * they replace: each call calling the function its trace calls, each branch reaching its target,
+ * and the two sequences the fn40/sound hooks rewrite. */
+static int order1886_hook_sites_match(void) {
+    static const uint64_t calls[][2] = {
+        {0x44d0a4,0xa82860}, {0xa82ab7,0x8a10a0}, {0xa82acf,0x8aae90}, {0xa82aed,0x8a5e60},
+        {0x89dda4,0x8f7470}, {0x8a41b8,0x203650}, {0x9b47fc,0x696c0}, {0x698f5,0x963f0},
+        {0x69986,0x7e200}, {0x699d7,0x72a30}, {0x69a9a,0x90a10}, {0x69b44,0x91b90}, {0x69b95,0x95120},
+        {0x69bf0,0xa0aa0}, {0x69cae,0x8b8c0}, {0x69cf9,0x9cdf0}, {0x69d83,0xa1310}, {0x69dcc,0x6ca10},
+        {0x69de2,0x71710}};
+    static const uint64_t branches[][2] = {
+        {0x8a37f7,0x8a41bf}, {0x8a380f,0x8a41bf}, {0x8a3843,0x8a41bf}, {0x8a3ac4,0x8a41bf},
+        {0x8a3de4,0x8a41bf}, {0x8a3e2f,0x8a41bf}, {0x8a3e9f,0x8a41bf}, {0x8a3fed,0x8a41bf},
+        {0x8a4004,0x8a41bf}, {0x9b476e,0x9b493f}, {0x9b4804,0x9b491c}, {0x9b4824,0x9b492c},
+        {0x9b4838,0x9b493f}};
+    static const unsigned char fn40[18]={0x48,0x8b,0x07,0x48,0x8b,0x40,0x40,0x89,0x5c,0x24,0x58,0x48,0x8d,0x74,0x24,0x58,0xff,0xd0};
+    static const unsigned char sound[14]={0x49,0x8b,0xbc,0x24,0x90,0x00,0x00,0x00,0x48,0x8b,0x07,0xff,0x50,0x48};
+    int32_t rel;
+    for (size_t i=0; i<sizeof calls/sizeof calls[0]; ++i) {
+        memcpy(&rel, image+calls[i][0]+1, 4);
+        if (image[calls[i][0]]!=0xe8 || (int64_t)calls[i][0]+5+rel!=(int64_t)calls[i][1]) return 0;
+    }
+    for (size_t i=0; i<sizeof branches/sizeof branches[0]; ++i) {
+        memcpy(&rel, image+branches[i][0]+2, 4);
+        if (image[branches[i][0]]!=0x0f || (image[branches[i][0]+1]&0xf0)!=0x80 ||
+            (int64_t)branches[i][0]+6+rel!=(int64_t)branches[i][1]) return 0;
+    }
+    return !memcmp(image+0x8a37e1, fn40, sizeof fn40) && !memcmp(image+0x8a37fd, sound, sizeof sound);
+}
+
 static void install_order1886_diagnostics(void) {
+    if (!order1886_hook_sites_match()) {
+        puts("Diagnostics: this eboot.bin is not the 01.02 build the sound engine traces are written for: not installed");
+        return;
+    }
     hook_call_site(0x44d0a4, (void*)trace_a82860);
     hook_call_site(0xa82ab7, (void*)trace_8a10a0);
     hook_call_site(0xa82acf, (void*)trace_8aae90);

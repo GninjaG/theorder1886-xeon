@@ -17,10 +17,10 @@
               AppElf="eboot.bin"
               isEnabled="false">
         <PatchList>
-            <Line Type="bytes" Address="0x00486a93" Value="1b410000"/>
-            <Line Type="bytes" Address="0x00345ca7" Value="1b410000"/>
-            <Line Type="bytes" Address="0x00345eb5" Value="1b410000"/>
-            <Line Type="bytes" Address="0x0044904c" Value="1b410000"/>
+            <Line Type="bytes" Address="0x00486a93" Value="1b410000" Pattern="49 69 97 18 01 00 00 35 82 00 00 48 39 d1" At="7"/>
+            <Line Type="bytes" Address="0x00345ca7" Value="1b410000" Pattern="48 69 c2 35 82 00 00 e9 ?? ?? ?? ??" At="3"/>
+            <Line Type="bytes" Address="0x00345eb5" Value="1b410000" Pattern="48 69 c1 35 82 00 00 eb ??" At="3"/>
+            <Line Type="bytes" Address="0x0044904c" Value="1b410000" Pattern="48 c7 80 80 00 00 00 35 82 00 00 c7 40 7c 01 00 00 00" At="7"/>
         </PatchList>
     </Metadata>
     <Metadata Title="The Order 1886"
@@ -32,15 +32,22 @@
               AppElf="eboot.bin"
               isEnabled="false">
         <PatchList>
-            <Line Type="float32" Address="0x0044ce8c" Value="1.77777778"/>
-            <Line Type="float64" Address="0x0147f2b0" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f2d0" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f3c0" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f3d0" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f5e8" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f610" Value="0.759375"/>
-            <Line Type="float64" Address="0x0147f670" Value="0.759375"/>
+            <Line Type="float32" Address="0x0044ce8c" Value="1.77777778" Pattern="c7 85 18 fc ff ff 9a 99 19 40 c7 85 d0 fb ff ff 00 00 00 00" At="6"/>
+            <Line Type="float64" Target="fov1" Address="0x0147f2b0" Value="0.759375"/>
+            <Line Type="float64" Target="fov2" Address="0x0147f2d0" Value="0.759375"/>
+            <Line Type="float64" Target="fov3" Address="0x0147f3c0" Value="0.759375"/>
+            <Line Type="float64" Target="fov4" Address="0x0147f3d0" Value="0.759375"/>
+            <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.759375"/>
+            <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.759375"/>
+            <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.759375"/>
         </PatchList>
+        <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov3" Address="0x0147f3c0" Pattern="c5 fa 5a 83 a8 00 00 00 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="25" Ref="1"/>
+        <Target Name="fov4" Address="0x0147f3d0" Pattern="c5 fa 11 95 34 ff ff ff c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="29" Ref="1"/>
+        <Target Name="fov5" Address="0x0147f5e8" Pattern="c5 fa 11 4d b0 e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="14" Ref="1"/>
+        <Target Name="fov6" Address="0x0147f610" Pattern="49 89 c7 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="20" Ref="1"/>
+        <Target Name="fov7" Address="0x0147f670" Pattern="c5 fa 10 45 bc c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="26" Ref="1"/>
     </Metadata>
     <Metadata Title="The Order 1886"
               Name="Aspect Ratio - 16:10"
@@ -51,15 +58,22 @@
               AppElf="eboot.bin"
               isEnabled="false">
         <PatchList>
-            <Line Type="float32" Address="0x0044ce8c" Value="1.6"/>
-            <Line Type="float64" Address="0x0147f2b0" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f2d0" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f3c0" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f3d0" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f5e8" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f610" Value="0.84375"/>
-            <Line Type="float64" Address="0x0147f670" Value="0.84375"/>
+            <Line Type="float32" Address="0x0044ce8c" Value="1.6" Pattern="c7 85 18 fc ff ff 9a 99 19 40 c7 85 d0 fb ff ff 00 00 00 00" At="6"/>
+            <Line Type="float64" Target="fov1" Address="0x0147f2b0" Value="0.84375"/>
+            <Line Type="float64" Target="fov2" Address="0x0147f2d0" Value="0.84375"/>
+            <Line Type="float64" Target="fov3" Address="0x0147f3c0" Value="0.84375"/>
+            <Line Type="float64" Target="fov4" Address="0x0147f3d0" Value="0.84375"/>
+            <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.84375"/>
+            <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.84375"/>
+            <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.84375"/>
         </PatchList>
+        <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov3" Address="0x0147f3c0" Pattern="c5 fa 5a 83 a8 00 00 00 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="25" Ref="1"/>
+        <Target Name="fov4" Address="0x0147f3d0" Pattern="c5 fa 11 95 34 ff ff ff c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="29" Ref="1"/>
+        <Target Name="fov5" Address="0x0147f5e8" Pattern="c5 fa 11 4d b0 e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="14" Ref="1"/>
+        <Target Name="fov6" Address="0x0147f610" Pattern="49 89 c7 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="20" Ref="1"/>
+        <Target Name="fov7" Address="0x0147f670" Pattern="c5 fa 10 45 bc c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="26" Ref="1"/>
     </Metadata>
     <Metadata Title="The Order 1886"
               Name="Aspect Ratio - 21:9"
@@ -70,14 +84,21 @@
               AppElf="eboot.bin"
               isEnabled="false">
         <PatchList>
-            <Line Type="float32" Address="0x0044ce8c" Value="2.37037037"/>
-            <Line Type="float64" Address="0x0147f2b0" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f2d0" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f3c0" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f3d0" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f5e8" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f610" Value="0.56953125"/>
-            <Line Type="float64" Address="0x0147f670" Value="0.56953125"/>
+            <Line Type="float32" Address="0x0044ce8c" Value="2.37037037" Pattern="c7 85 18 fc ff ff 9a 99 19 40 c7 85 d0 fb ff ff 00 00 00 00" At="6"/>
+            <Line Type="float64" Target="fov1" Address="0x0147f2b0" Value="0.56953125"/>
+            <Line Type="float64" Target="fov2" Address="0x0147f2d0" Value="0.56953125"/>
+            <Line Type="float64" Target="fov3" Address="0x0147f3c0" Value="0.56953125"/>
+            <Line Type="float64" Target="fov4" Address="0x0147f3d0" Value="0.56953125"/>
+            <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.56953125"/>
+            <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.56953125"/>
+            <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.56953125"/>
         </PatchList>
+        <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov3" Address="0x0147f3c0" Pattern="c5 fa 5a 83 a8 00 00 00 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="25" Ref="1"/>
+        <Target Name="fov4" Address="0x0147f3d0" Pattern="c5 fa 11 95 34 ff ff ff c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="29" Ref="1"/>
+        <Target Name="fov5" Address="0x0147f5e8" Pattern="c5 fa 11 4d b0 e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="14" Ref="1"/>
+        <Target Name="fov6" Address="0x0147f610" Pattern="49 89 c7 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="20" Ref="1"/>
+        <Target Name="fov7" Address="0x0147f670" Pattern="c5 fa 10 45 bc c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="26" Ref="1"/>
     </Metadata>
 </Patch>

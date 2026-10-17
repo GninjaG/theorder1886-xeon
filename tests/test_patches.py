@@ -155,6 +155,36 @@ class SignatureTests(unittest.TestCase):
         self.assertEqual(compile_patches(self.xml, ['Data'], None, [(0, 0x400)], bytes(image), skipped), [])
         self.assertEqual(skipped, {'Data': 'signature not found'})
 
+    def test_sites_without_a_signature_only_in_the_reference_build(self):
+        # Address is the reference build's: in another build it writes into unrelated code (a
+        # 01.00 eboot crashed at start, issue #3).
+        plain = self.xml.parent / 'plain.xml'
+        plain.write_text('<?xml version="1.0"?><Patch><Metadata Name="Plain" AppVer="01.02"><PatchList>'
+                         '<Line Type="bytes" Address="0x41" Value="90"/></PatchList></Metadata></Patch>')
+        self.assertEqual(compile_patches(plain, ['Plain'], None, [(0, 0x400)], self.image, {}), [(0x41, b'\x90')])
+        skipped = {}
+        self.assertEqual(compile_patches(plain, ['Plain'], None, [(0, 0x400)], self.image, skipped,
+                                         reference=False), [])
+        self.assertEqual(skipped, {'Plain': 'no signature (written for the 01.02 eboot only)'})
+        # A Line written at a Target found by its signature needs no signature of its own.
+        self.assertEqual(compile_patches(self.xml, ['Data'], None, [(0, 0x400)], self.image, {}, reference=False),
+                         [(0x3f0, (2).to_bytes(4, 'little'))])
+
+    @unittest.skipUnless((ROOT / 'out/eboot.elf').exists(), 'needs the prepared 01.02 eboot (out/eboot.elf)')
+    def test_builtin_signatures_find_the_reference_sites(self):
+        # Every built-in patch also applies to other builds by its signatures: on the reference
+        # build they must find exactly the sites of its Address values.
+        import patches
+        elf = (ROOT / 'out/eboot.elf').read_bytes()
+        segments = patches.eboot_segments(elf)
+        image = patches.eboot_image(elf)
+        for meta in ET.parse(ORDER).getroot().iter('Metadata'):
+            name = meta.get('Name')
+            skipped = {}
+            found = compile_patches(ORDER, [name], None, segments, image, skipped, reference=False)
+            self.assertEqual(skipped, {}, name)
+            self.assertEqual(sorted(found), sorted(compile_patches(ORDER, [name], '01.02', segments)), name)
+
     def test_requirements_from_patch_notes(self):
         # Notes ask for extra direct memory (shadPS4 "DMEM") and a VBlank rate.
         notes = self.xml.parent / 'notes.xml'

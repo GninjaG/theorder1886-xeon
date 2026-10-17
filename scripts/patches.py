@@ -70,10 +70,15 @@ def find_pattern(image, pattern, limit=2):
     return found
 
 
-def locate(image, element, prefix=''):
-    """Image offset of a Line's or Target's site: its Pattern (unique) plus At, else Address."""
+def locate(image, element, prefix='', reference=True):
+    """Image offset of a Line's or Target's site: its Pattern (unique) plus At, else Address.
+    Address is the reference build's: in another build (reference False) it would write into
+    unrelated code (a 01.00 eboot crashed at start, issue #3), so a site without a Pattern is
+    not found there."""
     pattern=element.get(prefix+'Pattern')
     if not pattern:
+        if not reference:
+            raise LookupError('no signature (written for the 01.02 eboot only)')
         return int(element.get('Address'),0)-EBOOT_BASE
     found=find_pattern(image,parse_pattern(pattern))
     if len(found)!=1:
@@ -81,7 +86,7 @@ def locate(image, element, prefix=''):
     return found[0]+int(element.get(prefix+'At','0'),0)
 
 
-def resolve_targets(image, meta, sites):
+def resolve_targets(image, meta, sites, reference=True):
     """Image offsets of a patch's named Targets: a site (Pattern/At), or the address a rip-relative
     or rel32 operand points to (Ref: the operand's offset in its Pattern; Tail: the instruction's
     bytes after the operand)."""
@@ -91,7 +96,7 @@ def resolve_targets(image, meta, sites):
         if target.get('Line'):
             targets[name]=sites[int(target.get('Line'))]
             continue
-        at=locate(image,target)
+        at=locate(image,target,reference=reference)
         if target.get('Ref'):
             disp,=struct.unpack_from('<i',image,at)
             at=at+4+int(target.get('Tail','0'))+disp
@@ -125,11 +130,12 @@ def encode(line):
     raise ValueError(f'unsupported patch type {kind!r}')
 
 
-def compile_patches(xml, names, app_version, segments, image=None, skipped=None):
+def compile_patches(xml, names, app_version, segments, image=None, skipped=None, reference=True):
     """Writes of the named patches. With the game's image, each site is found by its signature
     (any build); without it, at the reference build's Address. A Line with a Target writes at that
     Target instead: data the code points to, such as a .bss variable (no bytes of its own to find).
     A patch whose sites are not all found is left out whole, with the reason in skipped[name].
+    reference False: the image is another build, where sites without a signature are not found.
     app_version None: any version."""
     found={}
     for meta in ET.parse(xml).getroot().iter('Metadata'):
@@ -141,9 +147,11 @@ def compile_patches(xml, names, app_version, segments, image=None, skipped=None)
     for name in names:
         lines=list(found[name].iter('Line'))
         try:
-            sites=[locate(image,line) if image is not None else int(line.get('Address'),0)-EBOOT_BASE
-                   for line in lines]
-            targets=(resolve_targets(image,found[name],sites) if image is not None else
+            # A Line with a Target is written at the Target: its own Address is not looked up.
+            sites=[None if image is not None and line.get('Target') else
+                   locate(image,line,reference=reference) if image is not None
+                   else int(line.get('Address'),0)-EBOOT_BASE for line in lines]
+            targets=(resolve_targets(image,found[name],sites,reference) if image is not None else
                      {t.get('Name'):int(t.get('Address'),0)-EBOOT_BASE for t in found[name].iter('Target')})
             sites=[targets[line.get('Target')] if line.get('Target') else site for line,site in zip(lines,sites)]
         except LookupError as error:
@@ -342,7 +350,7 @@ def main():
     if segments:
         EBOOT_BASE = min(start for start, _ in segments)
     skipped={}
-    writes=compile_patches(xml,names,None,segments,eboot_image(elf),skipped)
+    writes=compile_patches(xml,names,None,segments,eboot_image(elf),skipped,sha==REFERENCE_SHA256)
     for name,reason in skipped.items():
         print(f'Patches: {name} skipped ({reason} in this eboot.bin)')
     if a.patches_dir and sha==REFERENCE_SHA256:
