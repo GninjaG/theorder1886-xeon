@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <mutex>
+#include <unordered_set>
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "port_toggles.h"
@@ -2279,8 +2281,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
-                    LOG_WARNING(Render_Vulkan, "Buffer binding in shader {:#x} isn't dword aligned",
-                                stage.pgm_hash);
+                    // Once per shader: some scenes hit this in thousands of draws a second.
+                    static std::mutex warned_mutex;
+                    static std::unordered_set<u64> warned;
+                    std::scoped_lock lock{warned_mutex};
+                    if (warned.insert(stage.pgm_hash).second) {
+                        LOG_WARNING(Render_Vulkan,
+                                    "Buffer binding in shader {:#x} isn't dword aligned",
+                                    stage.pgm_hash);
+                    }
                 }
                 push_data.AddOffset(binding.buffer, adjust);
                 buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);

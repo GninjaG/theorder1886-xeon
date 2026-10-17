@@ -2,7 +2,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
 #include "common/logging/log.h"
 
 namespace Common::Log {
@@ -20,11 +19,26 @@ static Level threshold() {
 bool ShouldLog(Level level) { return level >= threshold(); }
 void Write(std::string_view log_class, Level level, const char* file, int line, const char* function,
            std::string&& message) {
-    static std::mutex mutex;
     static const char* names[] = {"Trace", "Debug", "Info", "Warning", "Error", "Critical"};
     const char* base = std::strrchr(file, '/');
-    std::scoped_lock lock{mutex};
-    std::fprintf(stderr, "GPU [%.*s] <%s> %s:%d %s: %s\n", int(log_class.size()), log_class.data(),
-                 names[int(level)], base ? base + 1 : file, line, function, message.c_str());
+    // One fwrite per line: Windows' CRT prints to an unbuffered stream that is a pipe or a file
+    // one character per system call (~80-180 us a line instead of ~2).
+    const std::string text = fmt::format("GPU [{}] <{}> {}:{} {}: {}\n", log_class,
+                                         names[int(level)], base ? base + 1 : file, line, function,
+                                         message);
+    // stdout's lock as well (as gow3_pc 0d49242): the runtime's printf lines share the pipe and
+    // hold it for a whole line, so the two no longer cut into each other. FILE locks are
+    // recursive, and nothing here prints.
+#ifdef _WIN32
+    _lock_file(stdout);
+#else
+    flockfile(stdout);
+#endif
+    std::fwrite(text.data(), 1, text.size(), stderr);
+#ifdef _WIN32
+    _unlock_file(stdout);
+#else
+    funlockfile(stdout);
+#endif
 }
 } // namespace Common::Log
