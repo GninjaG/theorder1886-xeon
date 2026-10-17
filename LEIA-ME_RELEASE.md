@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.7
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.8
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,17 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.8:
+
+- **Versão europeia (CUSA00785) passa da abertura** (#7, #9): o jogo parava logo no início com
+  "nonzero AppContent service label unsupported". Ainda não testada além desse ponto.
+- **Intel (Arc, HD 630): personagens como silhuetas pretas** (#1, #10): o port não usa mais a
+  extensão VK_EXT_vertex_input_dynamic_state em placas Intel (a mesma correção do port de God of
+  War III). `THEORDER_VERTEX_INPUT_DYNAMIC_STATE=0/1` força em qualquer placa.
+- **Todos os idiomas do PS4 no launcher** (#4, #5): a lista tinha 7; agora tem os 30 (chinês,
+  coreano, turco, polonês, português do Brasil...). O jogo usa os que a versão dele tiver.
+- O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.7:
 
