@@ -2,6 +2,23 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-16 (evening): gameplay below 30 FPS, the memory map lock
+
+**What the player saw:** the user's 9.5-minute 0.3.0 session (dist user/last_run.log, 60 FPS
+patch, 16:10) had 26 of 114 five-second windows under 20 FPS. Reproduced from their save (copy in
+out/user_gameplay, THEORDER_USER_DIR; the London rooftop at "Identify the United India House"):
+~1430 draws/frame, 23-25 FPS at the native 30, the GPU command thread never idle.
+**New tools:** `THEORDER_SAMPLE=<thread name part>[|...]` (probe.c, Windows): samples the named
+threads' eight innermost frames every ms (THEORDER_SAMPLE_START/_SECS/_OUT); `tools/sample_report.py`
+names them from the DWARF (self and inclusive per thread). The us/draw statistic now works on
+Windows (GetThreadTimes).
+**Found:** `runtime_memory_clamp` (ClampRangeSize of every buffer binding) was 29% of the GPU
+command thread and 25% of the draw recording thread, nearly all inside winpthreads' rwlock (an
+internal mutex per acquisition). The memory map lock is an SRWLOCK on Windows now (nested reads
+of a thread acquire it once): 21 -> 14-17 us/draw, the rooftop at 28-30 FPS.
+Next: the GPU thread waits for the draw recording thread at WaitRegMem packets (22% of its time,
+~90/s) and for the GPU in BufferCache::DownloadMemory (11%).
+
 ## 2026-10-16 (later): REA decompiles the eboot
 
 REA's Ghidra provider admits only PE images on Windows: `scripts/eboot_pe.py` wraps the eboot in
