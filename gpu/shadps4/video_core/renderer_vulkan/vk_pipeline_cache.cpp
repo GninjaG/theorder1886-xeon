@@ -412,18 +412,20 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     // port: the compiler threads always exist; the in-game menu switches async compilation live
     // (PortSettings::async_shaders, THEORDER_ASYNC_SHADERS at start).
     {
-        const auto count = std::clamp(PortThreads::Available() / 2, 1u, 6u);
-        const auto capture_count = std::min(2u, std::max(1u, PortThreads::Available() / 4));
+        // Low priority threads: on a 16+ thread CPU 8 drivers compile while the game runs, so a
+        // scene's new pipelines (and the whole cache after a translation change) arrive sooner.
+        const auto count = std::clamp(PortThreads::Available() / 2, 1u, 8u);
+        const auto capture_count = std::min(4u, std::max(1u, PortThreads::Available() / 4));
         for (unsigned i = 0; i < count; ++i) {
             auto [result, worker_cache] = instance.GetDevice().createPipelineCacheUnique({});
             ASSERT_MSG(result == vk::Result::eSuccess, "Failed to create compiler pipeline cache");
             worker_pipeline_caches.push_back(std::move(worker_cache));
         }
-        capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 8, [](unsigned index) {
+        capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 32, [](unsigned index) {
             Common::SetCurrentThreadName(("port:ShaderCapture" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         });
-        compiler = std::make_unique<AsyncCompiler>(count, 64, [](unsigned index) {
+        compiler = std::make_unique<AsyncCompiler>(count, 256, [](unsigned index) {
             Common::SetCurrentThreadName(("port:ShaderCompile" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         });
@@ -862,17 +864,20 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     // port: a pipeline an earlier session built (its key is stored) comes back from the
     // pipeline binary cache in 1-2 ms: built here, its draws are not skipped meanwhile. Skipped
     // draws were the flicker of objects and effects every time a session met them again.
-    const auto known = [this] {
-        // A stage permutation made this session took the next free index: a stored key with
-        // that index may be another session's permutation, whose binary does not fit (a full
-        // driver compile here, 130-190 ms, every session).
-        return !sel.fresh_permutation && SyncBuildBudgetLeft() && Storage::DataBase::Instance().Exists(
+    const auto stored = [this] {
+        return Storage::DataBase::Instance().Exists(
             Storage::BlobType::PipelineKey,
             fmt::format("g_{:#018x}", std::hash<GraphicsPipelineKey>{}(sel.graphics_key)));
     };
+    const auto known = [&] {
+        // A stage permutation made this session took the next free index: a stored key with
+        // that index may be another session's permutation, whose binary does not fit (a full
+        // driver compile here, 130-190 ms, every session).
+        return !sel.fresh_permutation && SyncBuildBudgetLeft() && stored();
+    };
     const bool can_async = AsyncCompilation() && !sel.regs->stage_enable.hs_en &&
                            !EmulatorSettings.IsShaderCollect();
-    const auto build_in_background = [&]() -> const GraphicsPipeline* {
+    const auto build_in_background = [&](bool restore_expected) -> const GraphicsPipeline* {
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
             PhaseTimer capture{g_port_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
@@ -888,6 +893,10 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                     build->fetch[i].Capture(*build->infos[i]);
                 }
             }
+            // A stored key past this frame's restore budget comes back from the binary cache in a
+            // few ms: ahead of the driver compiles (~250 ms each), its draws are skipped for a
+            // frame or two instead of seconds (objects blinking at scene starts).
+            const bool urgent = restore_expected && !sel.fresh_permutation && stored();
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
@@ -898,7 +907,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                     *worker_pipeline_caches[AsyncCompiler::WorkerIndex()],
                     s.infos, s.runtime_infos, s.fetch_shader, s.modules, build->data, false);
                 return build;
-            });
+            }, urgent);
             if (queued) {
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
@@ -908,7 +917,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     };
     if (can_async && (pending_graphics.contains(sel.graphics_key) ||
                       (!graphics_pipelines.contains(sel.graphics_key) && !known()))) {
-        return build_in_background();
+        return build_in_background(true);
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
@@ -926,7 +935,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         g_pipeline_restore_only = false;
         if (!it.value()->Handle()) {
             graphics_pipelines.erase(it);
-            return build_in_background();
+            return build_in_background(false); // no stored binary: a full compile
         }
 
         RegisterPipelineData(sel.graphics_key, pipeline_hash, sdata);
