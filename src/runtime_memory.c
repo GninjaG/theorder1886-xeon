@@ -65,18 +65,35 @@ _Static_assert(sizeof(BatchEntry)==32,"PS4 batch map entry layout");
  * under the lock may write guest memory, and a GPU-tracked page then faults into
  * runtime_memory_gpu_protect on the same thread. Readers nest because glibc's
  * default rwlock prefers readers; a thread holding it exclusively skips relocking. */
+#ifdef _WIN32
+/* Windows: a slim reader/writer lock. winpthreads' rwlock takes an internal mutex on every
+ * acquisition: a quarter of the GPU threads' time in heavy scenes went to runtime_memory_clamp
+ * waiting in it. SRW shared mode must not recurse (a queued writer would deadlock the second
+ * acquisition), so a thread's nested reads hold it once (shared_depth). */
+static SRWLOCK lock=SRWLOCK_INIT;
+static __thread unsigned shared_depth;
+#define LOCK_EXCLUSIVE() AcquireSRWLockExclusive(&lock)
+#define UNLOCK_EXCLUSIVE() ReleaseSRWLockExclusive(&lock)
+#define LOCK_SHARED() do { if (!shared_depth++) AcquireSRWLockShared(&lock); } while (0)
+#define UNLOCK_SHARED() do { if (!--shared_depth) ReleaseSRWLockShared(&lock); } while (0)
+#else
 static pthread_rwlock_t lock=PTHREAD_RWLOCK_INITIALIZER;
+#define LOCK_EXCLUSIVE() pthread_rwlock_wrlock(&lock)
+#define UNLOCK_EXCLUSIVE() pthread_rwlock_unlock(&lock)
+#define LOCK_SHARED() pthread_rwlock_rdlock(&lock)
+#define UNLOCK_SHARED() pthread_rwlock_unlock(&lock)
+#endif
 static __thread unsigned exclusive_depth;
 /* Odd while a writer holds the lock; readers' region caches are valid for one even value. */
 static uint64_t table_generation;
 static void write_lock(void) {
-    if (!exclusive_depth++) { pthread_rwlock_wrlock(&lock); __atomic_add_fetch(&table_generation,1,__ATOMIC_ACQ_REL); }
+    if (!exclusive_depth++) { LOCK_EXCLUSIVE(); __atomic_add_fetch(&table_generation,1,__ATOMIC_ACQ_REL); }
 }
 static void write_unlock(void) {
-    if (!--exclusive_depth) { __atomic_add_fetch(&table_generation,1,__ATOMIC_RELEASE); pthread_rwlock_unlock(&lock); }
+    if (!--exclusive_depth) { __atomic_add_fetch(&table_generation,1,__ATOMIC_RELEASE); UNLOCK_EXCLUSIVE(); }
 }
-static void read_lock(void) { if (!exclusive_depth) pthread_rwlock_rdlock(&lock); }
-static void read_unlock(void) { if (!exclusive_depth) pthread_rwlock_unlock(&lock); }
+static void read_lock(void) { if (!exclusive_depth) LOCK_SHARED(); }
+static void read_unlock(void) { if (!exclusive_depth) UNLOCK_SHARED(); }
 static Block blocks[LIMIT];
 static Vma *vmas; static size_t vma_count, vma_capacity;
 #ifndef _WIN32
