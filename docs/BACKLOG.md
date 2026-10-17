@@ -49,11 +49,16 @@ the next CPU write of the page (sceGnmDispatchInitDefaultHardwareState), no gain
 - Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction);
   THEORDER_GPU_WRITE_WATCH=<hex> prints the writable bindings in that address's 64 KiB.
 
-## 4. Scene-load pauses (pipeline restores) — todo
+## 4. Scene-load pauses (pipeline restores) — doing
 ~95 stored pipelines restore at the prologue start (260-390 ms), 30-pipeline bursts 100-180 ms;
-about 4-5 ms each (file read ~2 ms, driver 1.2 ms). Early restores from workers did not work
+about 4-5 ms each (file read ~1.3 ms, driver ~0.8 ms). Early restores from workers did not work
 (their programs are not loaded yet).
-- Next: let workers load cached programs, or prefetch binaries via an emulator key -> file index.
+0.3.5: pipelines with a permutation made this session build in the background (they were taken
+as known and compiled on the GPU thread, 130-190 ms each, 4-8 a run). Left: 2-4 a run
+(unskippable compute dispatches; stored keys whose index a later session reused), and the
+permutation count itself (hundreds per material shader: image type and sRGB per texture).
+- Next: permutations identified by their specialization instead of the order they appear
+  (cache format change), or fewer specializations (2D views of array images).
 
 ## 5. Rare startup fault in the task queue (0x20aa22) — closed (not reproduced, 2026-10-17)
 Seen once in ~40 starts before 0.3.1; none in the ~100 batch runs of 2026-10-16/17. The fault

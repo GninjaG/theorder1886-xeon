@@ -2,6 +2,22 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (late night): a code buffer crash and pipeline freezes, windows-v0.3.5
+
+**Crash:** a prologue run stopped with "code is too big" (Xbyak) in a GPU thread coroutine.
+Every shader permutation appended its own copy of the SRT walker to the 32 MB code buffer
+(never freed); ~3000 copies in 80 s were identical to one of ~200 walkers (26 MB vs 0.4 MB).
+Identical walkers are now shared (flatten_extended_userdata_pass.cpp; "SRT walkers:" lines).
+**Freezes:** "Pipeline:" lines (any pipeline over 50 ms in the driver) showed 4-8 compiles of
+130-190 ms on the GPU thread per run, warm cache, new keys each run. The stage hash is
+HashCombine(program, permutation index), and permutations made this session take the next
+free index; material shaders have hundreds (image type 2D/array and sRGB of each texture,
+e.g. while the 1x1 streaming placeholder is bound: THEORDER_PERMUTATION_LOG=1). A stored key
+with that index (another session's permutation) made the pipeline "known", built on the GPU
+thread for a binary restore that missed (binaries are keyed by the driver's key). Pipelines
+with a permutation made this session (Program::Module::fresh) now build in the background.
+2-4 a run remain (unskippable compute dispatches; keys whose index a later session reused).
+
 ## 2026-10-17 (night): what the GPU thread's Finish waits are for
 
 After 0.3.4 the GPU command thread spends ~20% in BufferCache::DownloadMemory -> Finish on the

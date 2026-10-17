@@ -548,8 +548,8 @@ class SettingsFileMigrationTest(unittest.TestCase):
 
 class ReleaseVersionTest(unittest.TestCase):
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.3.4')
-        self.assertGreater(launcher.version_tuple('windows-v0.3.5'), launcher.version_tuple(launcher.VERSION))
+        self.assertEqual(launcher.VERSION, '0.3.5')
+        self.assertGreater(launcher.version_tuple('windows-v0.3.6'), launcher.version_tuple(launcher.VERSION))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_first_start_is_in_english(self):

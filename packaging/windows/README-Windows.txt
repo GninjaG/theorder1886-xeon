@@ -1,4 +1,4 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.3.4
+The Order: 1886 for PC (theorder1886-port) - version 0.3.5
 =========================================================
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
