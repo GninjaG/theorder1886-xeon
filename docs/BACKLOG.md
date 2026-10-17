@@ -12,6 +12,11 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
 - #1 (Intel Arc, black/missing textures): 0.3.3 stops speculative SRT walks from patching the
   walker for good; not reproducible here, asked the reporter to test.
 - #2 (Linux): answered, no Linux build yet; left open to track it.
+- 0.3.8: #7/#9 (CUSA00785 stopped at the AppContent service label) fixed; #1/#10 (Intel black
+  characters) VK_EXT_vertex_input_dynamic_state off on Intel; #4/#5 all 30 PS4 languages in the
+  launcher. Asked to test. #8 (RTX 5070 Ti: black dots on faces, stretched black triangles from the
+  rooftop's poles and wires; not seen here at 1080p): asked for the log and settings. #10 also: subtitles
+  miss letters ("didn t"), MSAA on goes black (HD 630).
 
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit
