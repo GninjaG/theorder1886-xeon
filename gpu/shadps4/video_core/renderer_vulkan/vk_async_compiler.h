@@ -25,6 +25,7 @@ public:
         for (unsigned i = 0; i < count; ++i) {
             workers.emplace_back([this, i, initialize] {
                 worker_index = i;
+                on_worker = true;
                 if (initialize) {
                     initialize(i);
                 }
@@ -66,6 +67,8 @@ public:
         return !stopping && tasks.size() + urgent.size() < capacity;
     }
     static unsigned WorkerIndex() { return worker_index; }
+    /// port: this thread is a compiler worker (statistics: work done off the GPU thread).
+    static bool OnWorker() { return on_worker; }
     size_t Depth() {
         std::scoped_lock lock{mutex};
         return tasks.size() + urgent.size();
@@ -94,6 +97,7 @@ private:
     };
     std::deque<Task> tasks, urgent;
     static inline thread_local unsigned worker_index = 0;
+    static inline thread_local bool on_worker = false;
     std::atomic<uint64_t> queue_wait_ns{};
     bool stopping = false;
     std::vector<std::thread> workers;

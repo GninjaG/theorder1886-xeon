@@ -358,6 +358,22 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedPipelineImpl(
             (restored ? binary_restore_ns : binary_compile_ns) += ns;
             ++(restored ? binary_restore_calls : binary_compile_calls);
         }
+        // port: a pipeline the driver takes long for is a visible pause: which one, and whether
+        // it came from a stored binary.
+        if (ns > 50'000'000) {
+            std::printf("Pipeline: %.1f ms in the driver %s (%s, key %016llx", ns / 1e6,
+                        AsyncCompiler::OnWorker() ? "in the background" : "on the calling thread",
+                        restored ? "from a stored binary" : enabled ? "compiled, not stored yet"
+                                                                    : "compiled, no binary cache",
+                        static_cast<unsigned long long>(XXH3_64bits(&key, sizeof(key))));
+            if constexpr (requires { key.stage_hashes; }) {
+                std::printf(", stages");
+                for (const auto hash : key.stage_hashes) {
+                    std::printf(" %016llx", static_cast<unsigned long long>(hash));
+                }
+            }
+            std::printf(")\n");
+        }
         return result;
     };
     if (!enabled) {

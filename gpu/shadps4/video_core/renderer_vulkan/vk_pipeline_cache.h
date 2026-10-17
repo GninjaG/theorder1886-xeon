@@ -51,6 +51,9 @@ struct Program {
         vk::ShaderModule module;
         Shader::StageSpecialization spec;
         u64 spv_hash{}; ///< port: of a cached module not loaded yet (LoadDeferredModule)
+        /// port: made this session, at the next free index: a stored pipeline key with that
+        /// index may be another session's permutation there (not "known", see GetGraphicsPipeline).
+        bool fresh = false;
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
@@ -71,6 +74,7 @@ struct Program {
 
     void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec) {
         modules.emplace_back(module, std::move(spec));
+        modules.back().fresh = true;
     }
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
@@ -104,6 +108,7 @@ struct PipelineSelection {
     GraphicsPipelineKey graphics_key{};
     bool motion = false;
     bool compilation_pending = false;
+    bool fresh_permutation = false; ///< port: a stage uses a Program::Module::fresh permutation
     DrawIndirectParams draw_indirect_params{};
     struct PrepWorker* worker{}; ///< set: read-only selection for a draw-preparation worker
 };

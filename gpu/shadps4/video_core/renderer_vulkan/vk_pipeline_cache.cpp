@@ -840,7 +840,10 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     // pipeline binary cache in 1-2 ms: built here, its draws are not skipped meanwhile. Skipped
     // draws were the flicker of objects and effects every time a session met them again.
     const auto known = [this] {
-        return Storage::DataBase::Instance().Exists(
+        // A stage permutation made this session took the next free index: a stored key with
+        // that index may be another session's permutation, whose binary does not fit (a full
+        // driver compile here, 130-190 ms, every session).
+        return !sel.fresh_permutation && Storage::DataBase::Instance().Exists(
             Storage::BlobType::PipelineKey,
             fmt::format("g_{:#018x}", std::hash<GraphicsPipelineKey>{}(sel.graphics_key)));
     };
@@ -922,7 +925,7 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         return found->second.get();
     }
     // A pipeline an earlier session built is restored in 1-2 ms: built here (GetGraphicsPipeline).
-    const bool known = !pending_compute.contains(compute_key) &&
+    const bool known = !sel.fresh_permutation && !pending_compute.contains(compute_key) &&
                        Storage::DataBase::Instance().Exists(
                            Storage::BlobType::PipelineKey,
                            fmt::format("c_{:#018x}", compute_key.value));
@@ -1243,6 +1246,7 @@ bool PipelineCache::RefreshGraphicsStages(PipelineSelection& sel) {
 
     sel.infos.fill(nullptr);
     sel.modules.fill(nullptr);
+    sel.fresh_permutation = false;
 
     bind_stage(HwStage::Fragment, SwStage::Fragment);
     if (sel.compilation_pending) {
@@ -1342,6 +1346,7 @@ bool PipelineCache::RefreshComputeKey() {
     Shader::Backend::Bindings binding{};
     const auto& cs_pgm = liverpool->GetCsRegs();
     const auto cs_params = AmdGpu::GetParams(cs_pgm);
+    sel.fresh_permutation = false;
     std::tie(sel.infos[0], sel.modules[0], sel.fetch_shader, compute_key.value) =
         GetProgram(sel, HwStage::Compute, SwStage::Compute, cs_params, binding);
     return sel.infos[0] != nullptr;
@@ -1426,6 +1431,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         const size_t perm_idx = std::distance(program->modules.begin(), it);
         worker.stages.push_back(
             {program, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
+        sel.fresh_permutation |= it->fresh;
         return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
                                HashCombine(params.hash, perm_idx));
     }
@@ -1474,6 +1480,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             std::unique_lock lk{programs_mutex};
             program_cache.emplace(params.hash, std::move(new_program));
         }
+        sel.fresh_permutation = true;
         return std::make_tuple(&program->info, module, program->modules[0].spec.fetch_shader_data,
                                perm_hash);
     }
@@ -1571,6 +1578,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         perm_idx = std::distance(program->modules.begin(), it);
         perm_hash = HashCombine(params.hash, perm_idx);
     }
+    sel.fresh_permutation |= program->modules[perm_idx].fresh;
     return std::make_tuple(&program->info, module,
                            program->modules[perm_idx].spec.fetch_shader_data, perm_hash);
 }
