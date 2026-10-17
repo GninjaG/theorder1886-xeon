@@ -26,10 +26,21 @@ They wait for labels the compute queues write; the compute queues drain before e
 anyway. Handing compute work to the recording thread removed the drains but lost ~15% (it moved
 work onto stage B, the limit). Details: docs/PROGRESS.md 2026-10-17 (later).
 
-## 3. GPU readback waits for the whole GPU — todo
-BufferCache::DownloadMemory -> Scheduler::Finish: 11% of the GPU thread on the rooftop.
-- Next: find which guest reads trigger it; wait for the tick that wrote the range instead.
-- Check: sampler share, FPS.
+## 3. GPU readback waits for the whole GPU — todo (cause found, 2026-10-17)
+BufferCache::DownloadMemory -> Scheduler::Finish: ~20% of the GPU command thread on the rooftop
+(60 FPS mode, 0.3.4). Once a frame, the CPU writes a 4 KiB page that holds two 192-byte storage
+buffers a compute dispatch writes (0x106ea85360, 0x106ea85440) next to a compute ReleaseMem label
+(+0x520) and the compute command buffer the CPU fills (+0x5a0, sceGnmDispatchInitDefaultHardwareState
+and the eboot at 0xcc8791): the page is GPU-modified, so the write faults and a 512 KiB window is
+downloaded after a Finish (~4.6 ms). The CPU never needs those bytes; the download only keeps the
+page consistent (a later upload of the CPU-modified page would overwrite the GPU's bytes).
+Without readbacks (THEORDER_READBACKS=0) the game loads the scene later with fewer draws: they are
+needed elsewhere. Writing the label through the backing view alone would move the download to the
+next CPU write of the page.
+- Next: a download that waits only for the tick of the last GPU write to the range (per-range
+  ticks; read from a host-visible arena or an end-of-submission copy) instead of Finish.
+- Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction);
+  THEORDER_GPU_WRITE_WATCH=<hex> prints the writable bindings in that address's 64 KiB.
 
 ## 4. Scene-load pauses (pipeline restores) — todo
 ~95 stored pipelines restore at the prologue start (260-390 ms), 30-pipeline bursts 100-180 ms;

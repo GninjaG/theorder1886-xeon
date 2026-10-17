@@ -43,6 +43,10 @@
 
 namespace VideoCore {
 
+/// port: the instruction of the write fault being handled on this thread (buffer_cache.cpp's
+/// download statistics).
+thread_local const void* port_fault_rip = nullptr;
+
 constexpr size_t PM_PAGE_SIZE = 4_KB;
 constexpr size_t PM_PAGE_BITS = 12;
 
@@ -76,7 +80,10 @@ struct PageManager::Impl {
         }
         if (Common::IsWriteError(context)) {
             PortStats::Timer timer{PortStats::t_write_faults};
-            return rasterizer->OnWriteFault(addr, is_gpu_thread);
+            port_fault_rip = Common::GetRip(context);
+            const bool handled = rasterizer->OnWriteFault(addr, is_gpu_thread);
+            port_fault_rip = nullptr;
+            return handled;
         } else {
             PortStats::read_faults.fetch_add(1, std::memory_order_relaxed);
             PortStats::Timer timer{PortStats::t_read_faults};

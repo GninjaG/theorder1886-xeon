@@ -1308,7 +1308,7 @@ int main(int argc, char **argv) {
             executable_entry = 1;
     }
     if (!executable_entry) fail("entry is not executable");
-    printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, ns, nr);
+    printf("Mapped %" PRIu64 " bytes at %p, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, (void *)image, ns, nr);
     if (native_libc) {
         for (uint64_t m=0;m<module_count;++m) {
             int init_executable=0;

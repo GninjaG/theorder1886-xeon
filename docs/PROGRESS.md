@@ -2,6 +2,17 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (night): what the GPU thread's Finish waits are for
+
+After 0.3.4 the GPU command thread spends ~20% in BufferCache::DownloadMemory -> Finish on the
+rooftop (60 FPS mode). New THEORDER_FRAME_STATS line "Buffer downloads by time" (buffer_cache.cpp)
+and THEORDER_GPU_WRITE_WATCH: one download a frame for the window 0x106ea80000 (~4.6 ms each), set
+off by CPU writes (the compute queue's ReleaseMem label, liverpool.cpp; the compute command buffer,
+sceGnmDispatchInitDefaultHardwareState) to a page where a compute dispatch binds two 192-byte
+written storage buffers; and the eboot's own write at 0xcc8791 to 0x105b500000 (~20 ms/s). The
+"Mapped ..." line now prints the guest image address (RIP 0x800cc8791 = eboot 0xcc8791). Details
+and the next step: docs/BACKLOG.md item 3.
+
 ## 2026-10-17 (evening): the mapped range check, windows-v0.3.4
 
 **Profile** (THEORDER_SAMPLE='DrawRec|VkRecorder|GpuCommand', rooftop, 60 FPS mode): a fifth of

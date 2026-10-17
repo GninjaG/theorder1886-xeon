@@ -9,6 +9,7 @@
 #include <bit>
 #include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
+#include "port_backtrace.h"
 #include "port_copy.h"
 #include "port_toggles.h"
 #include "common/alignment.h"
@@ -146,8 +147,69 @@ void BufferCache::ExtendWriteFault(VAddr device_addr) {
     memory_tracker->ExtendWriteFault(Common::AlignDown(device_addr, window), window);
 }
 
+extern thread_local const void* port_fault_rip; // page_manager.cpp
+
+namespace {
+/// port: THEORDER_FRAME_STATS: guest accesses that download GPU-written buffer memory first (each
+/// download waits for the GPU), by download window: CPU writes and reads, the time taken, and
+/// the instruction of the write fault that asked most often (none: a runtime write hook).
+struct DownloadNote {
+    u64 writes = 0, reads = 0;
+    double ms = 0;
+    std::unordered_map<const void*, u64> rips;
+};
+
+void NoteDownload(VAddr window, bool is_write, std::chrono::steady_clock::duration took,
+                  const void* rip) {
+    static const bool stats = std::getenv("THEORDER_FRAME_STATS") != nullptr;
+    if (!stats) {
+        return;
+    }
+    static std::mutex mutex;
+    static std::unordered_map<VAddr, DownloadNote> notes;
+    static auto since = std::chrono::steady_clock::now();
+    std::scoped_lock lock{mutex};
+    auto& note = notes[window];
+    ++(is_write ? note.writes : note.reads);
+    note.ms += std::chrono::duration<double, std::milli>(took).count();
+    ++note.rips[rip];
+    const auto now = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(now - since).count();
+    if (seconds < 5.0) {
+        return;
+    }
+    std::vector<std::pair<VAddr, DownloadNote>> top(notes.begin(), notes.end());
+    std::ranges::sort(top, [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
+    std::printf("Buffer downloads by time, per second:");
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 6); ++i) {
+        const auto& [address, n] = top[i];
+        const auto rip = std::ranges::max_element(
+            n.rips, [](const auto& a, const auto& b) { return a.second < b.second; });
+        std::printf(" %#llx: %.0f CPU writes, %.0f reads, %.1f ms, mostly from %p;",
+                    static_cast<unsigned long long>(address), n.writes / seconds, n.reads / seconds,
+                    n.ms / seconds, rip == n.rips.end() ? nullptr : rip->first);
+    }
+    std::printf("\n");
+    notes.clear();
+    since = now;
+}
+} // namespace
+
 void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool assume_locks) {
-    const auto flush_request = [this, device_addr, size, is_write] {
+    // The callers of the first writes from each instruction that ask (the faulting thread's
+    // stack, for llvm-symbolizer).
+    static const bool stats = std::getenv("THEORDER_FRAME_STATS") != nullptr;
+    if (stats && is_write) {
+        static std::mutex traced_mutex;
+        static std::unordered_map<const void*, u32> traced;
+        std::scoped_lock lock{traced_mutex};
+        if (traced[port_fault_rip]++ < 2) {
+            std::printf("Buffer download for a write at %#llx from %p\n",
+                        static_cast<unsigned long long>(device_addr), port_fault_rip);
+            PortPrintBacktrace("buffer download");
+        }
+    }
+    const auto flush_request = [this, device_addr, size, is_write, rip = port_fault_rip] {
         const u32 first_block = device_addr >> block_shift;
         const u32 last_block = (device_addr + size - 1) >> block_shift;
         const auto* arena = GetArena(first_block, last_block);
@@ -160,7 +222,9 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
             std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
         const VAddr window_end = std::min<VAddr>(
             std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
+        const auto started = std::chrono::steady_clock::now();
         DownloadMemory(arena, window_start, window_end - window_start);
+        NoteDownload(window_start, is_write, std::chrono::steady_clock::now() - started, rip);
         if (is_write) {
             memory_tracker->MarkRegionAsCpuModified(device_addr, size);
         }
@@ -345,6 +409,20 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
+        // port: THEORDER_GPU_WRITE_WATCH=<hex address>: the first writable bindings in its 64 KiB
+        // (the GPU-modified state is kept per page).
+        static const VAddr watch = [] {
+            const char* env = std::getenv("THEORDER_GPU_WRITE_WATCH");
+            return env ? std::strtoull(env, nullptr, 16) & ~VAddr{0xffff} : 0;
+        }();
+        static std::atomic<int> watched{0};
+        if (watch && device_addr < watch + 0x10000 && watch < device_addr + size &&
+            watched.fetch_add(1, std::memory_order_relaxed) < 4) {
+            std::printf("GPU write watch: %#llx has a written binding %#llx, %u bytes\n",
+                        static_cast<unsigned long long>(watch),
+                        static_cast<unsigned long long>(device_addr), size);
+            PortPrintBacktrace("GPU write watch");
+        }
     }
     return {arena, arena->Offset(device_addr)};
 }
