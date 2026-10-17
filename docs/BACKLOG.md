@@ -17,6 +17,17 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
   launcher. Asked to test. #8 (RTX 5070 Ti: black dots on faces, stretched black triangles from the
   rooftop's poles and wires; not seen here at 1080p): asked for the log and settings. #10 also: subtitles
   miss letters ("didn t"), MSAA on goes black (HD 630).
+- 0.4.0: #8's black dots are probably NaN pixels spread by the depth of field (bokeh hexagons in the
+  shadPS4 reports); GCN NaN rules ported (shadPS4 #5257/#5346), not reproduced here. #11 (RX Vega 64,
+  chapter IX, ErrorOutOfHostMemory; the same in shadPS4 on that PC): the reporter's chapter IX save
+  runs here; Check() now names the failing call, asked for a new log, RAM size and page file.
+
+## 0. UI past the screen edges with an aspect ratio patch — todo (found 2026-10-17)
+The 3D view is right (Vert+), but the Iggy UI is laid out for the taller picture: glyphs ~1.07x,
+positions spread with the height (~1.33x), the chapter title's right edge 35 px past the screen at
+16:9 (the player calls it "a zoom"). Next: find where the UI gets its display size (aspect at display
+device +0xe0, from the video config copied at +0x98) and give the UI the original 2.4 picture.
+Check: full-res frame dumps of the chapter I title (rooftop save, ~58 s) at original and 16:9.
 
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit

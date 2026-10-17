@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.9
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.4.0
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,20 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.4.0:
+
+- **Fim da queda para ~20 FPS em cenas pesadas** (ex.: o prédio depois do telhado): um aviso
+  interno da GPU era gravado milhares de vezes por segundo no log, e o Windows grava cada
+  caractere numa chamada separada. Agora cada linha é uma escrita só e esse aviso sai uma vez por
+  shader. No telhado, modo 60 FPS: de ~31 para ~38 FPS; o `last_run.log` deixa de crescer ~15 MB
+  por minuto.
+- **Manchas pretas (hexágonos) no rosto em cutscenes e ao girar a câmera**: pixels NaN que o PS4
+  descarta passavam adiante e o desfoque (depth of field) os espalhava. O tradutor de shaders
+  agora segue as regras de NaN do hardware (correções do shadPS4 #5257 e #5346).
+- **Atenção:** o cache de shaders é refeito uma vez; a primeira sessão depois de atualizar tem
+  mais travadinhas enquanto ele se reconstrói.
+- Erros do Vulkan agora dizem qual chamada falhou (para a issue #11).
 
 Novidades da 0.3.9:
 

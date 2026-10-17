@@ -2,6 +2,35 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (17:35): the player's manual session, windows-v0.4.0
+
+**~20 FPS in a building after the rooftop (60 FPS mode):** the player's 0.3.9 log (88 MB) held
+707k "Buffer binding in shader ... isn't dword aligned" warnings, 4-7k a second there. Windows'
+CRT writes an unbuffered stream that is a pipe or a file one character per system call:
+~80 us a line through the launcher's pipe, ~180 us into a file, ~2 us with one fwrite
+(scratchpad micro-benchmark). The GPU log now formats the line and writes it once, holding
+stdout's lock as well (as gow3_pc 0d49242, so runtime printf lines no longer interleave); the
+warning prints once per shader. Rooftop, 60 FPS, 16:9, 120 s: 0.3.9 31.9/31.6/30.8 FPS, now
+38.4/38.0. Runtime printf (stdout _IONBF, probe.c) still goes per character: ~20 lines a second.
+**Black spots on faces:** shadPS4 players saw them too (PR #4798 comments: Galahad's face, the
+lycans). In their screenshot the spots are hexagons at the game's black level, the depth of
+field's bokeh shape (motion blur stretches them): NaN pixels. Ported shadPS4 #5257/#5346:
+unordered N* compares, NaN-skipping min3/max3, med3 with NaN = min3, saturate NaN -> 0,
+V_RSQ_LEGACY_F32 (rsq(0) = 0). ShaderBinaryVersion 9. Some programs leave DX10_CLAMP off (seen
+with a temporary log); zero is used for them too. Not reproduced: the scripted prologue and
+rooftop runs showed no spots before or after.
+**Aspect ratio:** the 3D view is right in gameplay and cutscenes at 16:9 (same horizontal view
+as 2.4, more above and below; dense captures paired by content). The Iggy UI is laid out again
+for the taller picture: glyphs ~1.07x, positions spread with the height (~1.33x) and the
+chapter title's right edge runs 35 px past the screen. The player's screen is 1920x1200
+(16:10). Next: find the UI's display size/layout (the aspect lives at display device +0xe0,
+copied from the video config at +0x98; no float reads of [reg+0xe0] near loads of 0x16b1df0).
+**GitHub #11 (RX Vega 64, chapter IX):** vk::Result=ErrorOutOfHostMemory; the reporter's
+chapter IX save (shadPS4 PR #4798, converted: param.sfo -> param.bin) loads and runs 150 s here.
+Check() now prints the calling file and line.
+**REA:** the MCP server resolves to the source folder again (native/windows/build missing,
+Ghidra refused); rizin and scratchpad scanners were used instead.
+
 ## 2026-10-17 (10:25): scene start pipeline bursts, windows-v0.3.6
 
 Known pipelines (stored keys) build on the GPU thread for a 1-2 ms binary restore; a scene start
