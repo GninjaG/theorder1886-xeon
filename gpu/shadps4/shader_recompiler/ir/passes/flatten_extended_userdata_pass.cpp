@@ -15,6 +15,7 @@
 #include "common/signal_context.h"
 #include "core/emulator_settings.h"
 #include "core/signals.h"
+#include "port_toggles.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
@@ -74,6 +75,13 @@ static void DumpSrtProgram(const Shader::Info& info, const u8* code, size_t code
 }
 
 static bool SrtWalkerSignalHandler(void* context, void* fault_address) {
+    // port: a walk ahead of the GPU thread (draw preparation, resource table check) may read
+    // tables whose memory was reused; it recovers at its own point. Patching the load here
+    // would make every later draw of the shader read zero (58 loads patched on an Intel Arc
+    // iGPU, issue #1).
+    if (runtime_fault_recover) {
+        return false;
+    }
     // Only handle if the fault address is within the SRT code range
     const u8* code_start = g_srt_codegen_start;
     const u8* code_end = code_start + g_srt_codegen.getSize();
