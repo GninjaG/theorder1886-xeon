@@ -953,7 +953,11 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
                        Storage::DataBase::Instance().Exists(
                            Storage::BlobType::PipelineKey,
                            fmt::format("c_{:#018x}", compute_key.value));
-    if (!known && SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
+    // A skippable dispatch is redone every frame: skipping one costs nothing, so even a known
+    // pipeline builds in the background (a stored key may be another session's permutation at
+    // that index, and the driver then compiled it here: 0x804aeead, the particle lighting, 177 ms).
+    if ((!known || !PortToggle::Disabled(PortToggle::SyncBuildBudget)) &&
+        SkippableDispatch(*sel.infos[0]) && AsyncCompilation() &&
         !EmulatorSettings.IsShaderCollect() && !sync_compute_keys.contains(compute_key.value)) {
         static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
         if (log && !pending_compute.contains(compute_key)) {
