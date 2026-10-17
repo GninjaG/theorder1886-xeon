@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.1
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.3.2
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,18 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (16/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.3.2:
+
+- **Jogabilidade mais fluida em cenas pesadas**: no telhado de Londres logo depois do tutorial
+  (~1.430 draws por quadro) o jogo rodava a 23–25 FPS; agora fica em 28–30 (o limite do jogo é
+  30). Um quarto do tempo das threads da GPU era gasto esperando o lock do mapa de memória do
+  jogo, que no Windows usava o rwlock lento do winpthreads; agora usa o SRWLOCK do próprio
+  Windows. Cada draw custa 14–17 µs na thread da GPU em vez de 21.
+- Diagnóstico para desenvolvedores: `THEORDER_SAMPLE=<nome da thread>` amostra onde as threads
+  gastam tempo (`tools/sample_report.py` mostra o resultado por função), e a estatística de µs por
+  draw passou a funcionar no Windows.
+- O cache de shaders é mantido (sem recompilar depois de atualizar).
 
 Novidades da 0.3.1:
 
