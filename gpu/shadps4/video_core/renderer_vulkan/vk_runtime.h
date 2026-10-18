@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <mutex>
 #include "common/interval_set.h"
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -89,6 +90,9 @@ public:
     void ClearImage(VideoCore::Image* dst, const VideoCore::SubresourceRange& range,
                     const vk::ClearValue& clear_value);
 
+    /// port: current backing layout under image_barrier_mutex (avoids torn layout reads between stages).
+    vk::ImageLayout GetBackingLayout(const VideoCore::Image* image);
+
     void SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool copy_backing = true);
 
     void AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size,
@@ -130,6 +134,7 @@ private:
     BufferBarriers* resource{};
     std::vector<BufferBarriers> resources;
     VideoCore::Image::Barriers image_barriers;
+    std::mutex image_barrier_mutex;
     vk::MemoryBarrier2 memory_barrier{};
 };
 

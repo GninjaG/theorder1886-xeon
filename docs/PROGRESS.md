@@ -2,6 +2,29 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18 (night): AMD 16-bit vertex alignment, VSM shadow clear hack, NVIDIA SSBO barrier pass, and DrawPipe thread safety
+
+- **AMD 16-bit vertex stream jitter fix (`Issue #18`, Chapters 2 & 3):** Fixed object shivering on AMD RDNA GPUs
+  by allowing `needs_u16` push constant buffer offsets in `spirv_emit_context.cpp` when `vsharp.GetElementSize() == 2`
+  regardless of `profile.needs_buffer_offsets`. `emit_spirv_context_get_set.cpp`'s `EmitReadConstBuffer` now loads
+  two 16-bit words (`lo` and `hi`) and reconstructs `lo | (hi << 16)`, maintaining 2-byte alignment precision.
+- **NVIDIA SSBO Store-Load barrier pass (`R1.7`, `TdlifePeng fb95ce44`):** Added `InsertSsboStoreLoadBarrier` IR pass
+  gated on `profile.needs_ssbo_store_load_barrier` (active on proprietary NVIDIA driver). Inserts `DeviceMemoryBarrier`
+  after stores of buffers that are subsequently loaded in the same dispatch, fixing exposure compute shader (`c799dd1c`)
+  flicker and over-exposure.
+- **VSM shadow tile conversion & CPU readback barrier (`Issue #19`):** In `Rasterizer::DispatchDirect`, implemented
+  tile coverage clear hack for compute shader `0x9846aaff`, forcing `0x7F80000F` into `flattened_ud_buf` to populate
+  shadow tile masks so subsequent conversion passes don't take the empty-tile branch. Inserted pipeline barrier before
+  `runtime.CopyBuffer` in `BufferCache::DownloadMemory` to ensure GPU L2 cache coherency before CPU readbacks of cascade AABB bounds.
+- **DrawPipe multi-threading & torn layout prevention (`VUID-09600`, `deft96 139ee8f`):** Added `image_barrier_mutex` in
+  `Runtime` protecting `image_barriers`, `resources`, `barrier_tracker`, and backing layout updates. Replaced unsynchronized
+  direct reads of `backing->state.layout` in `Rasterizer` with thread-safe `runtime.GetBackingLayout(...)`.
+- **Rogue descriptor resilience & texture format fallbacks:** Replaced asserting `SurfaceFormat` calls with
+  `LiverpoolToVK::TrySurfaceFormat` (fallback to `R32G32B32A32Sfloat`) in `image_info.cpp` and `image_view.cpp` for unmapped/garbage MRT slots.
+  Guarded macro tiling in `tile.h` for block-coded textures (`!is_block`), clamped subresource level/layer ranges in `ImageViewInfo`,
+  and bypassed specialization churn for shadow CS and garbage VS/FS permutations in `specialization.h`.
+- **Validation:** Clean build of `theordergpu` and `theorder-probe`; all 42 C/C++ unit test suites, content test, and 266 Python unit tests passed.
+
 ## 2026-10-18 (afternoon): Vulkan sampler/view translation, texture dirty hashing, and MT19937 TLS fix
 
 - **Integer image sampler clamping (`VUID-vkCmdDispatchIndirect-magFilter-04553`):** GCN hardware

@@ -114,7 +114,7 @@ bool IsKnownFormat(AmdGpu::DataFormat data_fmt, AmdGpu::NumberFormat num_fmt) {
 /// uploaded gigabytes of guest memory in one frame (1-3 s stalls), again on every write to
 /// that range. Real textures stay far below this (8K x 8K x 4 bytes is 256 MiB).
 bool ImplausibleTexture(const VideoCore::ImageInfo& info) {
-    constexpr u64 MaxTextureGuestSize = 512ULL << 20;
+    constexpr u64 MaxTextureGuestSize = 256ULL << 20;
     // Or a pitch that dwarfs the texture: a 1x1x913 BC4 volume with a pitch of 12737 texels
     // spanned 186 MiB. Tiling pads small textures many times over, but not to 16 MiB.
     const u64 texels = u64(info.size.width) * info.size.height * info.size.depth *
@@ -1422,6 +1422,19 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         return;
     }
 
+    // The Order 1886 VSM shadow hack (TdlifePeng/shadPS4@1886 af2b036): depth-reduction
+    // clear never dispatches, so force clear shader 0x9846aaff to write 0x7F80000F (+inf with tile mask 0xF)
+    // to the tile coverage SSBO so the VSM conversion pass doesn't take the empty-tile path (no shadows / AMD hang).
+    if (cs.pgm_hash == 0x9846aaff) {
+        auto& mutable_cs = const_cast<Shader::Info&>(cs);
+        if (mutable_cs.flattened_ud_buf.size() > 4) {
+            mutable_cs.flattened_ud_buf[4] = 0x7F80000F;
+        }
+        if (mutable_cs.flattened_ud_buf.size() > 1) {
+            mutable_cs.flattened_ud_buf[1] = 0x7F80000F;
+        }
+    }
+
     if (!BindResources(pipeline)) {
         return;
     }
@@ -1637,6 +1650,14 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
         if (image_desc.is_written) {
             return false;
         }
+        if (stage.pgm_hash == 0xa7b66f58 || stage.pgm_hash == 0xefaaab2b ||
+            stage.pgm_hash == 0x804aeead || stage.pgm_hash == 0x3c2622c0 ||
+            stage.pgm_hash == 0x51f03591 || stage.pgm_hash == 0xa8b3aa69 ||
+            stage.pgm_hash == 0xad441fb1 || stage.pgm_hash == 0x8c8a4817 ||
+            stage.pgm_hash == 0xc75dd317 || stage.pgm_hash == 0xd1017d4b ||
+            stage.pgm_hash == 0x539eee77 || stage.pgm_hash == 0x88c3afad) {
+            continue; // bound as null descriptor
+        }
         const auto tsharp =
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
@@ -1650,7 +1671,8 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
         const auto& entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        if (ImplausibleTexture(entry.desc.info)) {
+        if (!memory->IsValidGpuMapping(entry.desc.info.guest_address, entry.desc.info.guest_size) ||
+            ImplausibleTexture(entry.desc.info)) {
             continue; // null descriptor, as in BindTextures
         }
         if (entry.found_generation != generation) {
@@ -2487,6 +2509,21 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
         const auto& image_desc = stage.images[image_index];
+        // ORDER1886: CS de sombra 0xa7b66f58/0xefaaab2b/0x804aeead/0x3c2622c0/0x51f03591/0xa8b3aa69
+        // e VS 0xad441fb1/0x8c8a4817/0xc75dd317/0xd1017d4b/0x539eee77/0x88c3afad têm T# lixo;
+        // amarra descritores vazios em vez de deixar o texture cache parsear sharp inválido.
+        if (stage.pgm_hash == 0xa7b66f58 || stage.pgm_hash == 0xefaaab2b ||
+            stage.pgm_hash == 0x804aeead || stage.pgm_hash == 0x3c2622c0 ||
+            stage.pgm_hash == 0x51f03591 || stage.pgm_hash == 0xa8b3aa69 ||
+            stage.pgm_hash == 0xad441fb1 || stage.pgm_hash == 0x8c8a4817 ||
+            stage.pgm_hash == 0xc75dd317 || stage.pgm_hash == 0xd1017d4b ||
+            stage.pgm_hash == 0x539eee77 || stage.pgm_hash == 0x88c3afad) {
+            image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
+            image_binding_entries.push_back(nullptr);
+            binding_proxy_ok.push_back(false);
+            image_descriptor_array_sizes.push_back(1);
+            continue;
+        }
         const auto tsharp =
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         // port: a hash lookup per texture per draw for a diagnostic only.
@@ -2499,7 +2536,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const auto num_fmt = tsharp.GetNumberFmt();
         // port: an FMask T# is read as constants by the shader (resource_patching_pass.cpp).
         if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
-            AmdGpu::IsFmask(data_fmt)) {
+            AmdGpu::IsFmask(data_fmt) ||
+            tsharp.NumLayers() > 2048 || tsharp.last_array < tsharp.base_array ||
+            tsharp.base_level > tsharp.last_level) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2530,6 +2569,82 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                     binding_proxy_ok.push_back(false);
                 }
                 image_descriptor_array_sizes.push_back(count);
+                continue;
+            }
+        }
+
+        {
+            const u32 w = tsharp.width + 1;
+            const u32 h = tsharp.height + 1;
+            const u32 pitch = tsharp.Pitch();
+            const u32 levels = tsharp.NumLevels();
+            const u32 layers = tsharp.NumLayers();
+            bool dim_reject = false;
+            u64 est_bytes = 0;
+            if (w > 16384 || h > 16384 || pitch > 16384 || pitch < tsharp.width) {
+                dim_reject = true;
+            } else if (levels > 1) {
+                const u32 maxdim =
+                    tsharp.GetType() == AmdGpu::ImageType::Color3D
+                        ? std::max({w, h, static_cast<u32>(tsharp.depth + 1)})
+                        : std::max({w, h, pitch});
+                if (levels > 31 || (maxdim >> (levels - 1)) == 0) {
+                    dim_reject = true;
+                }
+            }
+            if (!dim_reject && tsharp.IsGuestMsaa() && tsharp.GuestNumSamples() > 8) {
+                dim_reject = true;
+            }
+            if (!dim_reject && tsharp.tiling_index >= 27 && tsharp.tiling_index != 31) {
+                dim_reject = true;
+            }
+            if (!dim_reject) {
+                if (tsharp.data_format > 41) {
+                    dim_reject = true;
+                } else {
+                    const auto raw_fmt = static_cast<AmdGpu::DataFormat>(tsharp.data_format);
+                    const u32 bpe = AmdGpu::NumBitsPerElement(raw_fmt);
+                    if (bpe == 0 || bpe > 128) {
+                        dim_reject = true;
+                    } else {
+                        u64 slices = layers;
+                        if (tsharp.GetType() == AmdGpu::ImageType::Color3D) {
+                            slices = static_cast<u64>(tsharp.depth + 1);
+                        }
+                        const u64 texels =
+                            static_cast<u64>(pitch) * static_cast<u64>(h) * slices;
+                        est_bytes = texels * bpe / 8;
+                        est_bytes *= 2;
+                        est_bytes *= tsharp.GuestNumSamples();
+                        if (est_bytes > 256ull * 1024 * 1024) {
+                            dim_reject = true;
+                        }
+                    }
+                }
+            }
+            if (dim_reject) {
+                static std::mutex reject_mutex;
+                static std::unordered_set<u64> reject_warned;
+                const u64 reject_key =
+                    (stage.pgm_hash * 0x9e3779b97f4a7c15ULL) ^ (u64(w) << 32) ^ (u64(h) << 16) ^
+                    (u64(layers) << 8) ^ u64(levels) ^ u64(tsharp.data_format);
+                bool reject_report = false;
+                {
+                    std::scoped_lock lock{reject_mutex};
+                    reject_report = reject_warned.insert(reject_key).second;
+                }
+                if (reject_report) {
+                    LOG_WARNING(Render_Vulkan,
+                                "Rejecting oversized T# pgm={:#x} {}x{} (pitch {}) layers={} "
+                                "levels={} fmt={} est={}MB",
+                                stage.pgm_hash, w, h, pitch,
+                                layers, levels, static_cast<u32>(tsharp.data_format),
+                                est_bytes / (1024 * 1024));
+                }
+                image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
+                image_binding_entries.push_back(nullptr);
+                binding_proxy_ok.push_back(false);
+                image_descriptor_array_sizes.push_back(1);
                 continue;
             }
         }
@@ -2566,7 +2681,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         auto& desc_entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        if (ImplausibleTexture(desc_entry.desc.info)) {
+        if (!memory->IsValidGpuMapping(desc_entry.desc.info.guest_address,
+                                       desc_entry.desc.info.guest_size) ||
+            ImplausibleTexture(desc_entry.desc.info)) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2740,7 +2857,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             }
 
             vk::ImageView view = *image_view.image_view;
-            vk::ImageLayout layout = image.backing->state.layout;
+            vk::ImageLayout layout = runtime.GetBackingLayout(&image);
             if (upscaler->Enabled()) {
                 // port: the display pass reads the upscaled frame (scaled presets).
                 upscaler->RedirectSampled(image_id, image_view.info, view, layout);
@@ -2925,7 +3042,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
                                     : vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier |= runtime.Transit(&image, new_layout, vk::PipelineStageFlagBits2::eAllCommands,
                                    vk::AccessFlagBits2::eShaderRead, entry.range);
-        image_infos.emplace_back(VK_NULL_HANDLE, entry.view, image.backing->state.layout);
+        image_infos.emplace_back(VK_NULL_HANDLE, entry.view, runtime.GetBackingLayout(&image));
     }
     (void)first_image_idx;
     return true;
@@ -3126,7 +3243,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{};
         auto& attachment = state.color_attachments[cb];
         attachment.image_view = *image_view.image_view;
-        attachment.image_layout = image->backing->state.layout;
+        attachment.image_layout = runtime.GetBackingLayout(image);
         attachment.clear_value = clear_value.color.uint32;
         attachment.is_clear = is_clear;
 
@@ -3201,7 +3318,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
 
         auto& attachment = state.depth_stencil_attachment;
         attachment.image_view = *image_view.image_view;
-        attachment.image_layout = image.backing->state.layout;
+        attachment.image_layout = runtime.GetBackingLayout(&image);
         attachment.clear_value = {};
         attachment.is_clear = 0;
 
@@ -3273,7 +3390,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
                 auto& depth_image = texture_cache.GetImage(db_desc.first);
                 state.depth_stencil_attachment.image_view =
                     *texture_cache.FindDepthTarget(db_desc.first, db_desc.second).image_view;
-                state.depth_stencil_attachment.image_layout = depth_image.backing->state.layout;
+                state.depth_stencil_attachment.image_layout = runtime.GetBackingLayout(&depth_image);
             }
         } else {
             state.width = redirect.width;

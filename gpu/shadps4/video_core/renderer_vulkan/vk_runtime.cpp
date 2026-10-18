@@ -198,9 +198,15 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
                       std::optional<VideoCore::SubresourceRange> subres_range) {
     BeforeImageAccess();
     if (scene_targets) scene_targets->NativeAccess(*image, dst_access);
+    std::scoped_lock lock{image_barrier_mutex};
     const size_t prev_num_barriers = static_cast<size_t>(image_barriers.size());
     image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
     return image_barriers.size() != prev_num_barriers;
+}
+
+vk::ImageLayout Runtime::GetBackingLayout(const VideoCore::Image* image) {
+    std::scoped_lock lock{image_barrier_mutex};
+    return image->backing->state.layout;
 }
 
 Runtime::TransferMark::TransferMark(Runtime& runtime, const char* what,
@@ -834,24 +840,27 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
             constexpr auto dst_access =
                 vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
             constexpr auto dst_layout = vk::ImageLayout::eColorAttachmentOptimal;
-            image_barriers.push_back(vk::ImageMemoryBarrier2{
-                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-                .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
-                .dstStageMask = dst_stage,
-                .dstAccessMask = dst_access,
-                .oldLayout = vk::ImageLayout::eUndefined,
-                .newLayout = dst_layout,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = new_backing->image,
-                .subresourceRange{
-                    .aspectMask = image->aspect_mask,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = image->info.resources.layers,
-                },
-            });
+            {
+                std::scoped_lock lock{image_barrier_mutex};
+                image_barriers.push_back(vk::ImageMemoryBarrier2{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                    .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+                    .dstStageMask = dst_stage,
+                    .dstAccessMask = dst_access,
+                    .oldLayout = vk::ImageLayout::eUndefined,
+                    .newLayout = dst_layout,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = new_backing->image,
+                    .subresourceRange{
+                        .aspectMask = image->aspect_mask,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = image->info.resources.layers,
+                    },
+                });
+            }
             FlushBarriers();
 
             // Copy between ms and non ms backing images using verified physical sample count
@@ -860,9 +869,12 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
                 src_samples != vk::SampleCountFlagBits::e1, backing->image, new_backing->image);
 
             // Update current layout in tracker to new backings layout
-            new_backing->state.layout = dst_layout;
-            new_backing->state.access_mask = dst_access;
-            new_backing->state.pl_stage = dst_stage;
+            {
+                std::scoped_lock lock{image_barrier_mutex};
+                new_backing->state.layout = dst_layout;
+                new_backing->state.access_mask = dst_access;
+                new_backing->state.pl_stage = dst_stage;
+            }
         }
     }
 
@@ -871,6 +883,7 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
 
 bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 size,
                                bool check_read_access) {
+    std::scoped_lock lock{image_barrier_mutex};
     MakeCurrent(handle);
     bool has_access = resource->write_ranges.Overlaps(offset, offset + size);
     if (check_read_access && !has_access) {
@@ -881,6 +894,7 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
 
 void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size,
                            vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access) {
+    std::scoped_lock lock{image_barrier_mutex};
     MakeCurrent(handle);
 
     Interval range = {
@@ -921,6 +935,7 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
 
 void Runtime::FlushBarriers() {
     BeforeImageAccess();
+    std::scoped_lock lock{image_barrier_mutex};
     vk::DependencyInfo dep_info{};
 
     if (memory_barrier.srcStageMask) {

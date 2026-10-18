@@ -65,7 +65,10 @@ ImageInfo::ImageInfo(const AmdGpu::ColorBuffer& buffer, AmdGpu::CbDbExtent hint)
     };
     tile_mode = buffer.GetTileMode();
     array_mode = AmdGpu::GetArrayMode(tile_mode);
-    pixel_format = LiverpoolToVK::SurfaceFormat(buffer.GetDataFmt(), buffer.GetNumberFmt());
+    pixel_format = LiverpoolToVK::TrySurfaceFormat(buffer.GetDataFmt(), buffer.GetNumberFmt());
+    if (pixel_format == vk::Format::eUndefined) {
+        pixel_format = vk::Format::eR32G32B32A32Sfloat;
+    }
     num_samples = buffer.NumSamples();
     guest_samples = buffer.GuestNumSamples();
     num_bits = NumBitsPerBlock(buffer.GetDataFmt());
@@ -150,7 +153,10 @@ ImageInfo::ImageInfo(const AmdGpu::Image& sharp, const Shader::ImageResource& de
     const auto data_fmt = image.GetDataFmt();
     tile_mode = image.GetTileMode();
     array_mode = AmdGpu::GetArrayMode(tile_mode);
-    pixel_format = LiverpoolToVK::SurfaceFormat(data_fmt, image.GetNumberFmt());
+    pixel_format = LiverpoolToVK::TrySurfaceFormat(data_fmt, image.GetNumberFmt());
+    if (pixel_format == vk::Format::eUndefined) {
+        pixel_format = vk::Format::eR32G32B32A32Sfloat;
+    }
     if (is_depth) {
         pixel_format = LiverpoolToVK::PromoteFormatToDepth(pixel_format);
     }

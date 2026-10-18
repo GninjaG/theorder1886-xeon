@@ -466,6 +466,25 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     for (auto& copy : copies) {
         copy.dstOffset += download.offset;
     }
+    // Synchronize prior GPU writes to this arena buffer (e.g. compute SSBO writes) before the transfer
+    // read. Without this barrier the copy can read stale L2 cache contents written before the
+    // dispatch, which surfaced as all-zero readbacks of the cascade AABB ring buffer (TdlifePeng 6d27ee8e).
+    scheduler.Record([handle = arena->Handle(), size = arena->SizeBytes()](vk::CommandBuffer cmdbuf) {
+        const vk::BufferMemoryBarrier2 pre_barrier = {
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .buffer = handle,
+            .offset = 0,
+            .size = size,
+        };
+        cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+            .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &pre_barrier,
+        });
+    });
     runtime.CopyBuffer(arena, download.buffer, copies);
 
     const auto write_data = [this, arena_base, device_addr, size, download, is_write, async,

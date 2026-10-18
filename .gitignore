@@ -27,3 +27,5 @@ mods.json
 patches.json
 !launcher/theorder.png
 graphify-out/
+.claude/
+.vscode/

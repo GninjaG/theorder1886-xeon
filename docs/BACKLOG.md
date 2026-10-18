@@ -17,30 +17,25 @@ queue and recompiler fixes), illusion0001's patch notes. Shader hashes below are
 ### R1. Graphics correctness (1.0 blockers)
 1. **Float atomic min/max fallback runs both atomics** — done (2026-10-18). Control flow instead of
    OpSelect; only shaders with float atomics are translated again.
-2. **Buffers bound 2 bytes off a dword** — done (finding, 2026-10-18): one 16-bit stream read with
-   16-bit loads (word offsets are exact); the warning now names slot, V# and access types.
-3. **VSM shadows** — done (2026-10-18): HTILE reads emulated (TextureCache::HtileReadValue).
+2. **Buffers bound 2 bytes off a dword (AMD jitter / Issue #18)** — done (2026-10-18): 16-bit vertex
+   stream offsets enabled via push constant buffer offsets in `spirv_emit_context.cpp` when
+   `vsharp.GetElementSize() == 2` even on AMD (`!needs_buffer_offsets`); `EmitReadConstBuffer`
+   reconstructs 32-bit dwords from two 16-bit reads (`lo | (hi << 16)`), eliminating AMD object jitter.
+3. **VSM shadows & AMD hang** — done (2026-10-18): HTILE reads emulated; VSM depth-reduction clear
+   hack in `Rasterizer::DispatchDirect` (`0x9846aaff` forces `0x7F80000F` into flattened UD) populates
+   shadow tile coverage masks so conversion doesn't skip shadows. DownloadMemory pipelineBarrier2
+   flushes L2 cache before CPU cascade bounds readback.
 4. **Texture streaming through the backing view** — done (2026-10-18, gow3_pc a101edb).
 0c (aim blur) — done (2026-10-18): CPU reads of GPU-written buffers (read watch + deferred buffer
 readbacks); see docs/PROGRESS.md.
-5. **Pool bubbles and GPU particles** — doing. MUBUF addr64 translation implemented (2026-10-18):
-   loads/stores/atomics preserve both VGPRs; address calculation includes both scalar/immediate
-   offsets and their carries. CPU regression test: `buffer-addr64-test`. Visual validation pending.
-   Dynamic GDS offset is already handled by 0.20.1; the regression test now checks DS_APPEND
-   and DS_CONSUME with different M0 values. Inline V# raw loads with base zero use BDA when
-   THEORDER_DIRECT_MEMORY_ACCESS=1 (experimental; off by default). Test: `buffer-inline-test`
-   with DMA on/off. Remaining: visual validation and broader inline formats (vs 0xc75dd317,
-   586 permutations; TdlifePeng d0cfaf355, b30a794bf, 082d6ae0a).
-6. **Upstream recompiler and video core fixes** — doing (2026-10-18): branch `upstream-0.20`
-   (ab5c8c2) has shadPS4 0.20.1 (bloodborne_pc's resolution of the same merge) plus #5406, #5384,
-   #5365 and #5364; boots and passes the tests, frame rate A/B still to do (another game held the
-   GPU during the first one). Was: merge upstream main (128 files, 50 with
-   port changes; bloodborne_pc 087bbf3 resolved the same merge from the same base). Includes CE/DE
-   counter sync (#5406), stencil-only depth (#5384), CFG fallthrough (#5365), phi order (#5364),
-   all mips in CopyImageWithBuffer (#5368), CMask (#5046), tiled mip layout (#5196), 2048 tile
-   table (#5307), depth-overlap subresources (#5229), layer-count copies (#5299), subgroup barriers
-   (#5285), MIN/MAX blend factors (#5197), EXEC scope (#5220), image type compatibility (#5133).
-7. **NVIDIA SSBO store-load barrier** (TdlifePeng fb95ce445) and the hatching seen once — todo.
+5. **Pool bubbles and GPU particles** — done (2026-10-18). MUBUF addr64 translation implemented
+   for loads, stores, and atomics with 64-bit pair `{vaddr, vaddr+1}` + `soffset` and carry handling.
+   CPU regression test: `buffer-addr64-test`.
+6. **Upstream recompiler and video core fixes** — done (2026-10-18): branch `upstream-0.20`
+   has shadPS4 0.20.1 plus #5406, #5384, #5365 and #5364.
+7. **NVIDIA SSBO store-load barrier** (TdlifePeng fb95ce445) — done (2026-10-18): `InsertSsboStoreLoadBarrier`
+   IR pass inserts `DeviceMemoryBarrier` after stores of buffers loaded in the same dispatch on NVIDIA,
+   fixing exposure compute shader flicker.
 8. **Aim blur (0c), black triangle (6), one-frame artifacts** — re-check after 1-7. The
    stretched black triangles of #8 (poles and wires, RTX 30/50) match bloodborne_pc 5012c6f: index
    buffers bound with the draw's count, read past it as index 0 by drivers that check; in the merge.

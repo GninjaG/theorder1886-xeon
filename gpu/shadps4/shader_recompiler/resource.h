@@ -180,13 +180,15 @@ struct ImageResource {
     constexpr bool Plausible(const AmdGpu::Image& image) const {
         const u64 width = image.width, height = image.height;
         const u64 layers = image.NumLayers();
+        const bool is_3d = image.GetType() == AmdGpu::ImageType::Color3D;
         // The limits the rasterizer binds a texture under (BindTextures).
         if (width >= 8192 || height >= 8192 || layers > 2048 ||
+            (is_3d && image.depth >= 2048) ||
+            (layers > 64 && (width >= 256 || height >= 256)) ||
             width * height * layers > (256u << 20) ||
             (layers > 16 && (width >= 2048 || height >= 2048))) {
             return false;
         }
-        const bool is_3d = image.GetType() == AmdGpu::ImageType::Color3D;
         if (!image.IsGuestMsaa()) {
             const u64 depth = is_3d ? u64(image.depth) + 1 : 1;
             const u32 levels = std::bit_width(std::max({width + 1, height + 1, depth}));

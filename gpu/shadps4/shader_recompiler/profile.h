@@ -53,6 +53,7 @@ struct Profile {
     bool needs_buffer_offsets{};
     bool needs_unorm_fixup{};
     bool needs_clip_distance_emulation{};
+    bool needs_ssbo_store_load_barrier{};
     bool supports_shader_stencil_export{};
     /// port: THEORDER_LIGHTING_TEST=dref (vk_lighting_test.h): depth comparisons return the result
     /// in all four channels instead of (v, 0, 0, 0).
