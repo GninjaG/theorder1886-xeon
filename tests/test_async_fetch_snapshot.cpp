@@ -40,19 +40,20 @@ int main() {
     ud.fill(0);
     auto worker = std::async(std::launch::async, [&] {
         ScopedFetchShaderSnapshot scope{snapshot};
-        const auto fetch = ParseFetchShader(info);
-        assert(fetch && fetch->attributes.size() == 1);
-        const auto sharp = fetch->attributes[0].GetSharp(info);
+        FetchShaderData fetch;
+        assert(ParseFetchShader(info, fetch) && fetch.attributes.size() == 1);
+        const auto sharp = fetch.attributes[0].GetSharp(info);
         assert(sharp.base_address == 0x12340 && sharp.GetStride() == 16);
         FetchShaderSnapshot nested;
         nested.info = &info;
         {
             ScopedFetchShaderSnapshot inner{nested};
-            assert(!ParseFetchShader(info));
+            assert(!ParseFetchShader(info, fetch));
         }
-        assert(ParseFetchShader(info));
+        assert(ParseFetchShader(info, fetch));
     });
     worker.get();
     info.has_fetch_shader = false;
-    assert(!ParseFetchShader(info));
+    FetchShaderData unused;
+    assert(!ParseFetchShader(info, unused));
 }

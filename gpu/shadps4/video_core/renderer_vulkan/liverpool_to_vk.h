@@ -35,6 +35,9 @@ bool IsDualSourceBlendFactor(AmdGpu::BlendControl::BlendFactor factor);
 
 vk::BlendOp BlendOp(AmdGpu::BlendControl::BlendFunc func);
 
+void NormalizeMinMaxBlend(vk::BlendOp& op, vk::BlendFactor& src, vk::BlendFactor& dst,
+                          AmdGpu::NumberFormat format);
+
 vk::LogicOp LogicOp(AmdGpu::ColorControl::LogicOp logic_op);
 
 vk::SamplerAddressMode ClampMode(AmdGpu::ClampMode mode);
@@ -61,12 +64,6 @@ struct SurfaceFormatInfo {
 };
 std::span<const SurfaceFormatInfo> SurfaceFormats();
 
-vk::Format SurfaceFormat(AmdGpu::DataFormat data_format, AmdGpu::NumberFormat num_format);
-
-/// port: SurfaceFormat without the assertion (eUndefined for unknown pairs), for speculative
-/// readers such as the draw-preparation workers.
-vk::Format TrySurfaceFormat(AmdGpu::DataFormat data_format, AmdGpu::NumberFormat num_format);
-
 struct DepthFormatInfo {
     AmdGpu::DepthBuffer::ZFormat z_format;
     AmdGpu::DepthBuffer::StencilFormat stencil_format;
@@ -81,6 +78,46 @@ vk::Format DepthFormat(AmdGpu::DepthBuffer::ZFormat z_format,
 vk::ClearValue ColorBufferClearValue(const AmdGpu::ColorBuffer& color_buffer);
 
 vk::SampleCountFlagBits NumSamples(u32 num_samples, vk::SampleCountFlags supported_flags);
+
+// Table 8.13 Data and Image Formats [Sea Islands Series Instruction Set Architecture]
+constexpr size_t amd_gpu_data_format_bit_size = 6;   // All values are under 64
+constexpr size_t amd_gpu_number_format_bit_size = 4; // All values are under 16
+constexpr size_t surface_format_table_size =
+    (1u << amd_gpu_data_format_bit_size) * (1u << amd_gpu_number_format_bit_size);
+
+extern const std::array<vk::Format, surface_format_table_size> surface_format_table;
+
+constexpr size_t GetSurfaceFormatTableIndex(AmdGpu::DataFormat data_format,
+                                            AmdGpu::NumberFormat num_format) {
+    DEBUG_ASSERT(u32(data_format) < 1 << amd_gpu_data_format_bit_size);
+    DEBUG_ASSERT(u32(num_format) < 1 << amd_gpu_number_format_bit_size);
+    size_t result = static_cast<size_t>(num_format) |
+                    (static_cast<size_t>(data_format) << amd_gpu_number_format_bit_size);
+    return result;
+}
+
+/// port: SurfaceFormat without the assertion (eUndefined for unknown pairs), for speculative
+/// readers such as the draw-preparation workers. Out-of-range fields (garbage sharps) also give
+/// eUndefined instead of reading past the table.
+constexpr vk::Format TrySurfaceFormat(AmdGpu::DataFormat data_format,
+                                      AmdGpu::NumberFormat num_format) noexcept {
+    if (static_cast<u32>(data_format) >= (1u << amd_gpu_data_format_bit_size) ||
+        static_cast<u32>(num_format) >= (1u << amd_gpu_number_format_bit_size)) {
+        return vk::Format::eUndefined;
+    }
+    return surface_format_table[GetSurfaceFormatTableIndex(data_format, num_format)];
+}
+
+/// port: an unknown pair is logged and gives eUndefined (stale descriptors), not an assertion.
+constexpr vk::Format SurfaceFormat(AmdGpu::DataFormat data_format,
+                                   AmdGpu::NumberFormat num_format) noexcept {
+    const vk::Format result = TrySurfaceFormat(data_format, num_format);
+    if (result == vk::Format::eUndefined && data_format != AmdGpu::DataFormat::FormatInvalid) {
+        LOG_ERROR(Render_Vulkan, "Unknown data_format={} and num_format={}, falling back to eUndefined",
+                  static_cast<u32>(data_format), static_cast<u32>(num_format));
+    }
+    return result;
+}
 
 static inline bool IsFormatDepthCompatible(vk::Format fmt) {
     switch (fmt) {

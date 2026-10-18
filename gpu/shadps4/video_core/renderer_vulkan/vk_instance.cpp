@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <boost/container/static_vector.hpp>
@@ -23,6 +24,18 @@
 #include <vk_mem_alloc.h>
 
 namespace Vulkan {
+
+void NoteOverBudget(const char* what) {
+    static std::atomic<bool> image_noted{false}, buffer_noted{false};
+    auto& noted = what[0] == 'i' ? image_noted : buffer_noted;
+    if (!noted.exchange(true)) {
+        std::printf("GPU: video memory full: %s memory allocated past the driver's budget (the "
+                    "driver may keep it in system memory: slower, but the game goes on). A lower "
+                    "output resolution or upscaler preset needs less.\n",
+                    what);
+        std::fflush(stdout);
+    }
+}
 
 namespace {
 
@@ -335,6 +348,7 @@ bool Instance::CreateDevice() {
         feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5 &&
         feature_chain.get<vk::PhysicalDevicePipelineBinaryFeaturesKHR>().pipelineBinaries &&
         add_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
+    maintenance_6 = add_extension(VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
     maintenance_8 = add_extension(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
     attachment_feedback_loop = add_extension(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
     if (attachment_feedback_loop) {
@@ -374,7 +388,10 @@ bool Instance::CreateDevice() {
         std::printf("GPU: VK_EXT_vertex_input_dynamic_state not used "
                     "(THEORDER_VERTEX_INPUT_DYNAMIC_STATE=1 uses it)\n");
     }
-    list_restart = add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
+    // Games excessively leave restart enabled with lists when it isn't actually needed, and it
+    // slows down KosmicKrisp due to unrolling. Revisit if KosmicKrisp moves this to mesh shaders.
+    list_restart = driver_id != vk::DriverId::eMesaKosmickrisp &&
+                   add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
     if (list_restart) {
         list_restart_features =
             feature_chain.get<vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT>();
@@ -388,11 +405,17 @@ bool Instance::CreateDevice() {
     amd_shader_explicit_vertex_parameter =
         !amd_paths_off.shaderext &&
         add_extension(VK_AMD_SHADER_EXPLICIT_VERTEX_PARAMETER_EXTENSION_NAME);
-    if (!amd_shader_explicit_vertex_parameter) {
+    // port: THEORDER_NO_BARYCENTRIC=1 leaves the KHR barycentrics out too: the shader path of
+    // GPUs without them (GTX 10 series, Intel HD and Arc), for reproducing their bugs here.
+    static const bool no_barycentric = [] {
+        const char* env = std::getenv("THEORDER_NO_BARYCENTRIC");
+        return env && env[0] == '1';
+    }();
+    if (!amd_shader_explicit_vertex_parameter && !no_barycentric) {
         fragment_shader_barycentric =
             add_extension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
     }
-    if (amd_paths_off.shaderext) {
+    if (amd_paths_off.shaderext || no_barycentric) {
         std::printf("GPU: fragment barycentrics: %s\n",
                     fragment_shader_barycentric ? "VK_KHR_fragment_shader_barycentric" : "none");
     }
@@ -630,6 +653,9 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePipelineBinaryFeaturesKHR{
             .pipelineBinaries = true,
         },
+        vk::PhysicalDeviceMaintenance6FeaturesKHR{
+            .maintenance6 = true,
+        },
         vk::PhysicalDeviceMaintenance8FeaturesKHR{
             .maintenance8 = true,
         },
@@ -716,6 +742,9 @@ bool Instance::CreateDevice() {
     }
     if (!pipeline_binaries) {
         device_chain.unlink<vk::PhysicalDevicePipelineBinaryFeaturesKHR>();
+    }
+    if (!maintenance_6) {
+        device_chain.unlink<vk::PhysicalDeviceMaintenance6FeaturesKHR>();
     }
     if (!maintenance_8) {
         device_chain.unlink<vk::PhysicalDeviceMaintenance8FeaturesKHR>();
@@ -893,7 +922,7 @@ void Instance::CollectPhysicalMemoryInfo() {
     // Leave at least 8 GB for the system on integrated GPUs.
     const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
     total_memory_budget =
-        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(local_memory)));
+        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(2_GB)));
 }
 
 void Instance::CollectImageFormatInfo() {

@@ -523,7 +523,7 @@ void VideoOutDriver::Flip(const Request& req) {
                         "%.1f ms, sync wait %.1f ms, snapshots %.1f ms, GPU capture wait %.1f ms, "
                         "%u pending draws, %u fallback dispatches; %llu recorder syncs; "
                         "%.0f read faults/s (%.1f ms), %.0f protect calls/s; "
-                        "%.0f write faults/s, %lld hot pages; GPU thread %.2f us/draw, "
+                        "%.0f write faults/s; GPU thread %.2f us/draw, "
                         "%.0f draws/frame, idle %.1f%%; blocked: recorder %.1f%%, host copies "
                         "%.1f%% (%.0f/frame), copy threads %.1f%%, GPU ticks %.1f%%; "
                         "reduced-size draws %.0f/frame of %.0f in the scene\n",
@@ -532,7 +532,7 @@ void VideoOutDriver::Flip(const Request& req) {
                         pending_draws, Vulkan::g_port_fallback_dispatches.exchange(0),
                         static_cast<unsigned long long>(direct), read_faults_s, read_fault_ms,
                         protects_s,
-                        faults / window, static_cast<long long>(PortStats::hot_pages.load()),
+                        faults / window,
                         us_per_draw, draws_per_frame,
                         PortStats::gpu_idle_ns.exchange(0) / (window * 1e7),
                         PortStats::sync_recording_ns.exchange(0) / (window * 1e7),

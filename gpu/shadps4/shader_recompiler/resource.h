@@ -16,7 +16,7 @@ namespace Shader {
 
 static constexpr u32 NUM_USER_DATA_REGS = 16;
 static constexpr u32 NUM_IMAGES = 64;
-static constexpr u32 NUM_BUFFERS = 40;
+static constexpr u32 NUM_BUFFERS = 56;
 static constexpr u32 NUM_SAMPLERS = 16;
 static constexpr u32 NUM_FMASKS = 8;
 
@@ -29,6 +29,13 @@ struct SharpFetch {
     static constexpr std::size_t N = sizeof(T) / sizeof(u32);
     static_assert(N <= 8);
 
+    enum class Summary : u8 {
+        SingleLoad,
+        MultiLoad,
+        Invalid,
+    };
+
+    Summary summary{Summary::MultiLoad};
     std::array<u32, N> immediates;
     std::array<SharpLocation, N> offsets;
     u8 load_mask;
@@ -38,12 +45,13 @@ struct SharpFetch {
     template <u32 num_dwords = N>
         requires(num_dwords <= N)
     constexpr bool Fetch(const u32* flatbuf, T* out) const {
-        u8 mask = load_mask;
-        for (u32 i = 0; i < num_dwords; i++) {
-            if (offsets[i] == UNKNOWN_LOCATION) {
-                return false;
-            }
+        if (summary == Summary::SingleLoad) [[likely]] {
+            std::memcpy(out, flatbuf + offsets[0], num_dwords * sizeof(u32));
+            return true;
+        } else if (summary == Summary::Invalid) [[unlikely]] {
+            return false;
         }
+        u8 mask = load_mask;
         std::array<u32, num_dwords> out_dw;
         for (u32 i = 0; i < num_dwords; i++) {
             out_dw[i] = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
@@ -59,6 +67,7 @@ enum class SharpFetchPostOp : u8 {
     // For buffers
     BitwiseOrDw1WithImm,
     OffsetByProgramBase,
+    ClearStrideAndBitshiftDw2WithImm,
     // For images,
     ConvertCubeTo2DArray,
     // For samplers
@@ -86,6 +95,7 @@ struct BufferResource {
     bool is_formatted{};
     SharpFetchPostOp post_op{};
     u32 post_op_dw1_mask{};
+    u32 post_op_dw2_shift{};
 
     bool IsSpecial() const noexcept {
         return buffer_type != BufferType::Guest;
@@ -98,6 +108,9 @@ struct BufferResource {
         }
         if (post_op == SharpFetchPostOp::BitwiseOrDw1WithImm) {
             reinterpret_cast<u32*>(&buffer)[1] |= post_op_dw1_mask;
+        } else if (post_op == SharpFetchPostOp::ClearStrideAndBitshiftDw2WithImm) {
+            buffer.stride = 0;
+            buffer.num_records <<= post_op_dw2_shift;
         } else if (post_op == SharpFetchPostOp::OffsetByProgramBase) {
             buffer.base_address += info.ProgramBase();
         }
@@ -184,7 +197,7 @@ struct ImageResource {
         // A cube is sampled as an array (MIMG DA bit), a 3D image never is. Only for plain
         // sampling: a size query need not set the bit.
         if (!is_written && !is_atomic && !needs_native) {
-            return image.IsCube() ? is_array : !(is_3d && is_array);
+            return image.GetType() == AmdGpu::ImageType::Cube ? is_array : !(is_3d && is_array);
         }
         return true;
     }
@@ -256,16 +269,15 @@ struct PushData {
     static constexpr u32 YOffsetIndex = 1;
     static constexpr u32 XScaleIndex = 2;
     static constexpr u32 YScaleIndex = 3;
-    static constexpr u32 UdRegsIndex = 4;
-    static constexpr u32 BufOffsetIndex = UdRegsIndex + NUM_USER_DATA_REGS / 4;
-    static constexpr u32 MotionParamIndex = BufOffsetIndex + NUM_BUFFERS / 16 + 1;
+    static constexpr u32 BufOffsetIndex = 4;
+    /// port: members after the three buf_offsets vectors (see spirv_emit_context.cpp)
+    static constexpr u32 MotionParamIndex = BufOffsetIndex + 3;
     static constexpr u32 SceneSizeIndex = MotionParamIndex + 1;
 
     float xoffset;
     float yoffset;
     float xscale;
     float yscale;
-    std::array<u32, NUM_USER_DATA_REGS> ud_regs;
     std::array<u8, NUM_BUFFERS> buf_offsets;
     u32 motion_param; ///< port: object motion parameter index (0: off)
     u32 scene_size; ///< reduced width | height << 16; zero means native pixel coordinates

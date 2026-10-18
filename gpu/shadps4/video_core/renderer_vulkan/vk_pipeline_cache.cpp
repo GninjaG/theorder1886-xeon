@@ -103,6 +103,16 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
 
+/// port: selections keep their own copy (workers fill them while other threads add
+/// permutations, which moves the specializations the upstream pointer referred to).
+static std::optional<Shader::Gcn::FetchShaderData> ToFetchShader(
+    const Shader::Gcn::FetchShaderData& data) {
+    if (data.Empty()) {
+        return std::nullopt;
+    }
+    return data;
+}
+
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
 
@@ -159,13 +169,14 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
     auto& info = sel.runtime_infos[u32(l_stage)];
     const auto& regs = (*sel.regs);
     const auto BuildCommon = [&](const auto& program) {
-        info.props.num_user_data = program.settings.num_user_regs;
-        info.props.num_input_vgprs = program.settings.vgpr_comp_cnt;
-        info.props.num_allocated_vgprs = program.NumVgprs();
         info.props.fp_denorm_mode32 = program.settings.fp_denorm_mode32;
         info.props.fp_denorm_mode16_64 = program.settings.fp_denorm_mode64;
         info.props.fp_round_mode32 = program.settings.fp_round_mode32;
         info.props.fp_round_mode16_64 = program.settings.fp_round_mode64;
+        info.props.num_allocated_vgprs = program.NumVgprs();
+        info.props.num_user_data = program.settings.num_user_regs;
+        info.props.num_input_vgprs = program.settings.vgpr_comp_cnt;
+        info.props.dx10_clamp = program.settings.dx10_clamp;
     };
     info.Initialize(stage, l_stage);
     switch (stage) {
@@ -238,6 +249,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.hw.fs.addr_flags = regs.ps_input_addr;
         info.hw.fs.num_inputs = regs.num_interp;
         info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
+        info.hw.fs.depth_before_shader = regs.depth_shader_control.depth_before_shader;
         info.hw.fs.num_samples =
             regs.ps_input_addr.sample_coverage_ena && regs.ps_input_ena.sample_coverage_ena
                 ? regs.aa_config.NumSamples()
@@ -266,10 +278,10 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         const auto& ps_inputs = regs.ps_inputs;
         for (u32 i = 0; i < regs.num_interp; i++) {
             info.hw.fs.inputs[i] = {
-                .param_index = u8(ps_inputs[i].input_offset),
-                .is_default = bool(ps_inputs[i].use_default),
-                .is_flat = bool(ps_inputs[i].flat_shade),
-                .default_value = u8(ps_inputs[i].default_value),
+                .param_index = u16(ps_inputs[i].input_offset),
+                .is_default = u16(ps_inputs[i].use_default),
+                .is_flat = u16(ps_inputs[i].flat_shade),
+                .default_value = u16(ps_inputs[i].default_value),
             };
         }
         for (u32 i = 0; i < Shader::MaxColorBuffers; i++) {
@@ -296,6 +308,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.props.fp_denorm_mode16_64 = cs_pgm.settings.fp_denorm_mode64;
         info.props.fp_round_mode32 = cs_pgm.settings.fp_round_mode32;
         info.props.fp_round_mode16_64 = cs_pgm.settings.fp_round_mode64;
+        info.props.dx10_clamp = cs_pgm.settings.dx10_clamp;
         info.hw.cs.workgroup_size = {cs_pgm.num_thread_x.full, cs_pgm.num_thread_y.full,
                                      cs_pgm.num_thread_z.full};
         info.hw.cs.tgid_enable = {cs_pgm.IsTgidEnabled(0), cs_pgm.IsTgidEnabled(1),
@@ -312,6 +325,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.sw.vs.step_rate_1 = regs.vgt_instance_step_rate_1;
         info.sw.vs.vertex_sgpr_offset = sel.draw_indirect_params.vertex_sgpr_offset;
         info.sw.vs.instance_sgpr_offset = sel.draw_indirect_params.instance_sgpr_offset;
+        info.sw.vs.is_indirect = sel.draw_indirect_params.is_indirect;
         info.sw.vs.tess_emulated_primitive =
             regs.primitive_type == AmdGpu::PrimitiveType::RectList ||
             regs.primitive_type == AmdGpu::PrimitiveType::QuadList;
@@ -544,10 +558,10 @@ std::string DescribeSpecDifference(const Shader::StageSpecialization& a,
         const auto& y = b.images[i];
         if (a.bitset[binding++] && x != y) {
             const auto sharp = a.info->images[i].GetSharp(*a.info);
-            add(fmt::format("image {} type {}/{} int {}/{} storage {}/{} cube {}/{} srgb {}/{} "
+            add(fmt::format("image {} type {}/{} int {}/{} storage {}/{} fmask {}/{} srgb {}/{} "
                             "bindings {}/{} (T# {:#x} {}x{}x{} fmt {}/{} mips {}-{})",
                             i, u32(x.type), u32(y.type), x.is_integer, y.is_integer, x.is_storage,
-                            y.is_storage, x.is_cube, y.is_cube, x.is_srgb, y.is_srgb,
+                            y.is_storage, x.is_fmask, y.is_fmask, x.is_srgb, y.is_srgb,
                             x.num_bindings, y.num_bindings, sharp.Address(), u32(sharp.width + 1),
                             u32(sharp.height + 1), u32(sharp.depth + 1), u32(sharp.GetDataFmt()),
                             u32(sharp.GetNumberFmt()), u32(sharp.base_level),
@@ -909,7 +923,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
                     *worker_pipeline_caches[AsyncCompiler::WorkerIndex()],
-                    s.infos, s.runtime_infos, s.fetch_shader, s.modules, build->data, false);
+                    s.infos, s.runtime_infos, s.fetch_shader ? &*s.fetch_shader : nullptr, s.modules,
+                    build->data, false);
                 return build;
             }, urgent);
             if (queued) {
@@ -946,7 +961,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         g_pipeline_restore_only = can_async;
         it.value() = std::make_unique<GraphicsPipeline>(
             instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
-            sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, false);
+            sel.runtime_infos, sel.fetch_shader ? &*sel.fetch_shader : nullptr, sel.modules,
+            sdata, false);
         g_pipeline_restore_only = false;
         if (!it.value()->Handle()) {
             graphics_pipelines.erase(it);
@@ -1595,7 +1611,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         worker.stages.push_back(
             {program, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
         sel.fresh_permutation |= it->fresh;
-        return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
+        return std::make_tuple(&info, it->module, ToFetchShader(it->spec.fetch_shader_data),
                                HashCombine(params.hash, perm_idx));
     }
 
@@ -1644,7 +1660,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             program_cache.emplace(params.hash, std::move(new_program));
         }
         sel.fresh_permutation = true;
-        return std::make_tuple(&program->info, module, program->modules[0].spec.fetch_shader_data,
+        return std::make_tuple(&program->info, module,
+                               ToFetchShader(program->modules[0].spec.fetch_shader_data),
                                perm_hash);
     }
 
@@ -1743,7 +1760,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
     sel.fresh_permutation |= program->modules[perm_idx].fresh;
     return std::make_tuple(&program->info, module,
-                           program->modules[perm_idx].spec.fetch_shader_data, perm_hash);
+                           ToFetchShader(program->modules[perm_idx].spec.fetch_shader_data),
+                           perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,

@@ -20,22 +20,17 @@ extern "C" __thread sigjmp_buf* runtime_fault_recover;
 
 namespace PortToggle {
 enum : std::uint64_t {
-    RegionCache = 1,
     FetchShaderCache = 2,
-    PageTrackingEarlyExit = 4,
     PendingPollLimit = 8,
     ThreadedRecording = 16,
     ImageDescCache = 32,
-    LockFreeUploadCheck = 64,
     FindImageCache = 128,
     DeferredUploads = 256,
-    AccessMemo = 512,
     TextureBindingMemo = 1024,
     CoarseReadTracking = 2048,
     PreparedResources = 4096,
     DrawPreparation = 8192,
     DeferredStreamCopies = 16384,
-    HotPages = 32768,
     FaultWindow = 65536,
     ParallelCopies = 131072,
     AsyncFences = 262144,
@@ -82,7 +77,6 @@ inline bool Disabled(std::uint64_t bit) {
 namespace PortStats {
 /// Guest writes caught by page protection, and pages currently left unprotected as hot.
 inline std::atomic<std::uint64_t> tracker_faults{0};
-inline std::atomic<std::int64_t> hot_pages{0};
 /// Stall diagnostics (THEORDER_FRAME_STATS): per-frame deltas printed for frames over 40 ms.
 inline std::atomic<std::uint64_t> images_registered{0};
 inline std::atomic<std::uint64_t> image_upload_bytes{0};

@@ -742,15 +742,13 @@ void *runtime_low_map(size_t size, int prot) {
 }
 /* ---- GPU library interface (gpu/shim/theordergpu.cpp) ---- */
 /* Optimizations switched off at run time (diagnostics): the number in the file named by
- * THEORDER_TOGGLE_FILE, re-read every 250 ms. Bits: 1 region cache, 2 fetch shader cache,
- * 4 page tracking early exit, 8 pending-op poll limit, 16 threaded Vulkan recording,
- * 32 texture descriptor cache, 64 lock-free upload check, 128 image lookup cache,
- * 256 buffer uploads on the recording thread, 512 barrier tracker insert memo,
+ * THEORDER_TOGGLE_FILE, re-read every 250 ms. Bits: 2 fetch shader cache,
+ * 8 pending-op poll limit, 16 threaded Vulkan recording, 32 texture descriptor cache,
+ * 128 image lookup cache, 256 buffer uploads on the recording thread,
  * 1024 texture binding memo, 2048 page-granular read tracking for barriers,
  * 4096 resource sharps read by the draw-preparation workers,
  * 8192 prepared draws from the draw-preparation workers,
  * 16384 small read-only buffer copies on the recording thread,
- * 32768 hot pages (opt-in with THEORDER_HOT_PAGES=1),
  * 65536 unprotect the 256 KiB window around a guest write fault (THEORDER_FAULT_WINDOW KiB),
  * 131072 large guest memory copies split across copy threads (THEORDER_COPY_THREADS),
  * 262144 with THEORDER_ASYNC_FENCES=1: wait for guest copies at fences again,

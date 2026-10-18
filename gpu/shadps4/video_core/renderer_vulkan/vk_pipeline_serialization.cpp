@@ -40,9 +40,11 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 9u; // port: GCN NaN rules (compares, min3, saturate, rsq)
-static constexpr u32 ShaderMetaVersion = 8u; // port: SPIR-V hash
-static constexpr u32 PipelineKeyVersion = 5u; // port: Info layout (ImageResource::needs_native)
+// port: past both histories (port 9/8/5, upstream 9/6/3 and #5365's binary 10): caches of
+// either are rebuilt. The meta layout lost the fetch shader (StageSpecialization carries it).
+static constexpr u32 ShaderBinaryVersion = 11u;
+static constexpr u32 ShaderMetaVersion = 9u;
+static constexpr u32 PipelineKeyVersion = 6u;
 } // namespace Serialization
 
 namespace Vulkan {
@@ -776,7 +778,6 @@ u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) 
 }
 
 bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
-                    std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                     Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash) {
     Serialization::Reader meta{ar};
 
@@ -803,8 +804,6 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
     if (binary_version != ShaderBinaryVersionFor(info)) {
         return false;
     }
-
-    fetch_shader_data = spec.fetch_shader_data;
     return true;
 }
 
@@ -945,7 +944,7 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
                            modules = sel.modules, sdata]() mutable {
             auto pipeline = std::make_unique<GraphicsPipeline>(
                 instance, scheduler, desc_heap, profile, key, *pipeline_cache, infos,
-                runtime_infos, fetch, modules, sdata, true);
+                runtime_infos, fetch ? &*fetch : nullptr, modules, sdata, true);
             std::scoped_lock lock{warmup_results_mutex};
             warmup_graphics.emplace_back(key, std::move(pipeline));
             return true;
@@ -953,7 +952,8 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     } else {
         it.value() = std::make_unique<GraphicsPipeline>(
             instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
-            sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, true);
+            sel.runtime_infos, sel.fetch_shader ? &*sel.fetch_shader : nullptr, sel.modules, sdata,
+            true);
     }
 
     sel.infos.fill(nullptr);
@@ -969,7 +969,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     spec.info = &program->info;
     size_t perm_idx{};
     u64 spv_hash{};
-    if (!LoadShaderMeta(ar, program->info, sel.fetch_shader, spec, perm_idx, spv_hash)) {
+    if (!LoadShaderMeta(ar, program->info, spec, perm_idx, spv_hash)) {
         return false;
     }
 
@@ -1016,6 +1016,10 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
 
     sel.infos[stage] = &it_pgm.value()->info;
     sel.modules[stage] = module;
+    if (const auto& fetch = it_pgm.value()->modules[perm_idx].spec.fetch_shader_data;
+        !fetch.Empty()) {
+        sel.fetch_shader = fetch;
+    }
 
     return true;
 }
@@ -1062,10 +1066,9 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         Serialization::Archive meta_ar{std::move(meta_blob)};
         auto info = std::make_unique<Shader::Info>();
         Shader::StageSpecialization spec{};
-        std::optional<Shader::Gcn::FetchShaderData> fetch;
         size_t perm_idx{};
         u64 spv_hash{};
-        if (!LoadShaderMeta(meta_ar, *info, fetch, spec, perm_idx, spv_hash)) {
+        if (!LoadShaderMeta(meta_ar, *info, spec, perm_idx, spv_hash)) {
             stop = "meta version";
             break;
         }
@@ -1531,8 +1534,11 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
                 u64 spv_hash{};
-                if (LoadShaderMeta(meta_ar, stage->program->info, stage->fetch, stage->spec,
-                                   stage->perm_idx, spv_hash)) {
+                if (LoadShaderMeta(meta_ar, stage->program->info, stage->spec, stage->perm_idx,
+                                   spv_hash)) {
+                    if (!stage->spec.fetch_shader_data.Empty()) {
+                        stage->fetch = stage->spec.fetch_shader_data;
+                    }
                     stage->start = stage->spec.start.unified;
                     std::vector<u32> spv;
                     db.Load(Storage::BlobType::ShaderBinary,
@@ -1748,7 +1754,7 @@ void PipelineCache::PumpWarmUp() {
             } else {
                 built.graphics = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, graphics_key, *pipeline_cache, infos,
-                    no_runtime_infos, fetch, modules, sdata, true);
+                    no_runtime_infos, fetch ? &*fetch : nullptr, modules, sdata, true);
             }
             warm.built.Push(std::move(built));
             return true;
@@ -1894,9 +1900,9 @@ void StageSpecialization::Serialize(Serialization::Archive& ar) const {
 
     spec.Write(bitset.to_string());
 
-    if (fetch_shader_data) {
-        spec.Write(sizeof(*fetch_shader_data));
-        fetch_shader_data->Serialize(ar);
+    if (!fetch_shader_data.Empty()) {
+        spec.Write(sizeof(fetch_shader_data));
+        fetch_shader_data.Serialize(ar);
     } else {
         spec.Write(size_t{0});
     }
