@@ -9,6 +9,7 @@
 
 #include "common/assert.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_discard_frag.h"
+#include "shader_recompiler/backend/spirv/emit_spirv_per_vertex.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_quad_rect.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_blend_rewrite.h"
@@ -211,10 +212,26 @@ GraphicsPipeline::GraphicsPipeline(
         });
     }
     stage = u32(Shader::SwStage::Geometry);
+    const u32 fs_stage = u32(Shader::SwStage::Fragment);
     if (infos[stage]) {
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eGeometry,
             .module = modules[stage],
+            .pName = "main",
+        });
+    } else if (infos[fs_stage] &&
+               (preloading ? !sdata.per_vertex_gs.empty()
+                           : Shader::Backend::SPIRV::NeedsPerVertexAuxGS(
+                                 profile, *infos[fs_stage], runtime_infos[fs_stage]))) {
+        // port: GPUs without barycentrics: the three vertices' values and I/J for the pixel
+        // shader (characters drew black on GTX 10 and Intel, issues #1, #10, #15).
+        if (!preloading) {
+            sdata.per_vertex_gs = Shader::Backend::SPIRV::EmitPerVertexAuxGS(
+                profile, *infos[fs_stage], runtime_infos[fs_stage]);
+        }
+        shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eGeometry,
+            .module = CompileSPV(sdata.per_vertex_gs, instance.GetDevice()),
             .pName = "main",
         });
     }

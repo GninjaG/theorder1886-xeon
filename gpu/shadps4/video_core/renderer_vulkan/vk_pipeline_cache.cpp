@@ -298,6 +298,13 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
               !regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Local))) ||
              lowers_user_clip_planes) &&
             profile.needs_clip_distance_emulation;
+        // port: the per-vertex geometry shader of GPUs without barycentrics needs a vertex shader
+        // straight before and triangle lists; left 0 elsewhere so permutations stay as they were.
+        info.hw.fs.vs_direct_triangles =
+            !profile.supports_amd_shader_explicit_vertex_parameter &&
+            !profile.supports_fragment_shader_barycentric &&
+            regs.stage_enable.raw == AmdGpu::ShaderStageEnable::VgtStages::Vs &&
+            sel.graphics_key.prim_type == AmdGpu::PrimitiveType::TriangleList;
         break;
     }
     case HwStage::Compute: {

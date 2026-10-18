@@ -107,8 +107,14 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         ctx.profile.supports_fragment_shader_barycentric) {
         ++comp;
     }
-    // port: neither barycentric extension (GTX 10, Intel HD and Arc): the triangle's center, a
-    // defined value where the registers were undefined (the shader is logged at emit).
+    // port: neither barycentric extension (GTX 10, Intel HD and Arc): I/J from the per-vertex
+    // geometry shader where it applies (persp_center only)...
+    if (attr == IR::Attribute::BaryCoordSmooth && Sirit::ValidId(ctx.bary_coord_gs)) {
+        return ctx.OpLoad(ctx.F32[1],
+                          ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_gs, ctx.ConstU32(comp)));
+    }
+    // ...else the triangle's center, a defined value where the registers were undefined (the
+    // shader is logged at emit).
     if ((IR::IsBarycentricCoord(attr) || attr == IR::Attribute::BaryCoordPullModel) &&
         !ctx.profile.supports_amd_shader_explicit_vertex_parameter &&
         !ctx.profile.supports_fragment_shader_barycentric) {

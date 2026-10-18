@@ -54,6 +54,14 @@ struct InfoPersistent {
     HwStage hw_stage;
     SwStage sw_stage;
 
+    struct Interpolation {
+        Qualifier primary;
+        Qualifier auxiliary;
+    };
+    /// port: persisted (shader cache): the per-vertex geometry shader of GPUs without
+    /// barycentrics is built from it with the pipeline (emit_spirv_per_vertex.h).
+    std::array<Interpolation, IR::NumParams> fs_interpolation{};
+
     u8 mrt_mask{};
     bool has_fetch_shader{};
     bool has_bitwise_xor{};
@@ -95,10 +103,6 @@ struct Info : InfoPersistent {
         Dynamic = 1 << 1,
     };
 
-    struct Interpolation {
-        Qualifier primary;
-        Qualifier auxiliary;
-    };
 
     std::span<const u32> user_data;
     std::vector<u32> flattened_ud_buf;
@@ -135,7 +139,6 @@ struct Info : InfoPersistent {
     bool stores_tess_level_inner{};
     bool translation_failed{};
 
-    std::array<Interpolation, IR::NumParams> fs_interpolation{};
 
     Info() = default;
     Info(HwStage stage_, SwStage l_stage_, ShaderParams params)

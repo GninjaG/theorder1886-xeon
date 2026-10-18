@@ -269,6 +269,7 @@ public:
     Id base_vertex{};
     Id base_instance{};
     Id frag_coord{};
+    Id bary_coord_gs{}; ///< port: I/J from the per-vertex geometry shader (emit_spirv_per_vertex.h)
     Id front_facing{};
     Id frag_depth{};
     Id stencil_ref{};

@@ -236,7 +236,11 @@ struct HwFragmentRuntimeInfo {
     u32 depth_before_shader : 1;
     /// port: writes the object motion vector to MotionVectors::Output.
     u32 motion_vectors : 1;
-    u32 : 11;
+    /// port: fed directly by the vertex shader with triangle lists, set only on GPUs without
+    /// barycentrics (else it would split permutations for nothing): the per-vertex geometry
+    /// shader can be used (emit_spirv_per_vertex.h).
+    u32 vs_direct_triangles : 1;
+    u32 : 10;
 
     bool operator==(const HwFragmentRuntimeInfo& other) const noexcept {
         return std::ranges::equal(color_buffers, other.color_buffers) &&
@@ -247,6 +251,7 @@ struct HwFragmentRuntimeInfo {
                dual_source_blending == other.dual_source_blending &&
                clip_distance_emulation == other.clip_distance_emulation &&
                motion_vectors == other.motion_vectors &&
+               vs_direct_triangles == other.vs_direct_triangles &&
                depth_before_shader == other.depth_before_shader &&
                std::ranges::equal(inputs.begin(), inputs.begin() + num_inputs, other.inputs.begin(),
                                   other.inputs.begin() + num_inputs);

@@ -90,6 +90,8 @@ public:
         std::vector<u32> tcs{};
         std::vector<u32> tes{};
         std::vector<u32> fragment{};
+        /// port: per-vertex geometry shader of GPUs without barycentrics (emit_spirv_per_vertex.h).
+        std::vector<u32> per_vertex_gs{};
 
         void Serialize(Serialization::Archive& ar) const;
         bool Deserialize(Serialization::Archive& ar);

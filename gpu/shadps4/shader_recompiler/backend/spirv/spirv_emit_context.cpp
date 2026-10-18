@@ -3,6 +3,7 @@
 
 #include "common/assert.h"
 #include "common/div_ceil.h"
+#include "shader_recompiler/backend/spirv/emit_spirv_per_vertex.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -363,6 +364,9 @@ void EmitContext::DefineInputs() {
         break;
     }
     case SwStage::Fragment: {
+        // port: GPUs without barycentrics get per-vertex values and I/J from a geometry shader.
+        const bool can_expand = CanPerVertexInterp(profile, runtime_info);
+        const auto per_vertex_locs = ComputePerVertexLocations(profile, info, runtime_info);
         if (FragmentMotion() || info.loads.GetAny(IR::Attribute::FragCoord) ||
             (info.loads.GetAny(IR::Attribute::BaryCoordPullModel) &&
              !profile.supports_amd_shader_explicit_vertex_parameter)) {
@@ -395,6 +399,10 @@ void EmitContext::DefineInputs() {
             } else if (profile.supports_fragment_shader_barycentric && !ValidId(bary_coord)) {
                 bary_coord =
                     DefineVariable(F32[3], spv::BuiltIn::BaryCoordKHR, spv::StorageClass::Input);
+            } else if (can_expand) {
+                // I/J interpolated from the geometry shader's (0,0)/(1,0)/(0,1).
+                bary_coord_gs = DefineInput(F32[2], per_vertex_locs.bary_coord_loc);
+                Name(bary_coord_gs, "bary_coord_gs");
             }
         }
         if (info.loads.GetAny(IR::Attribute::BaryCoordPullModel)) {
@@ -455,7 +463,7 @@ void EmitContext::DefineInputs() {
         // #15) a shader that reads its barycentric registers itself, not through v_interp, has no
         // source for them. Logged once per shader.
         if (!profile.supports_amd_shader_explicit_vertex_parameter &&
-            !profile.supports_fragment_shader_barycentric) {
+            !profile.supports_fragment_shader_barycentric && !can_expand) {
             constexpr std::array bary_attributes = {
                 IR::Attribute::BaryCoordSmooth,      IR::Attribute::BaryCoordSmoothCentroid,
                 IR::Attribute::BaryCoordSmoothSample, IR::Attribute::BaryCoordPullModel,
@@ -491,9 +499,13 @@ void EmitContext::DefineInputs() {
             const auto [primary, auxiliary] = info.fs_interpolation[i];
             const Id type = F32[num_components];
             const Id attr_id = [&] {
-                const auto bind_location = input.param_index + (has_clip_distance_inputs ? 1 : 0);
+                const u32 bind_location =
+                    can_expand ? per_vertex_locs.slot_loc[i]
+                               : input.param_index + (has_clip_distance_inputs ? 1 : 0);
+                // KHR barycentrics and the geometry shader's three flat values both read an array
+                // of the three vertices; AMD interpolates at each vertex instead.
                 if (primary == Qualifier::PerVertex &&
-                    profile.supports_fragment_shader_barycentric) {
+                    !profile.supports_amd_shader_explicit_vertex_parameter) {
                     return Name(DefineInput(TypeArray(type, ConstU32(3U)), bind_location),
                                 fmt::format("fs_in_attr{}_p", i));
                 }
@@ -502,7 +514,9 @@ void EmitContext::DefineInputs() {
             if (primary == Qualifier::PerVertex) {
                 Decorate(attr_id, profile.supports_amd_shader_explicit_vertex_parameter
                                       ? spv::Decoration::ExplicitInterpAMD
-                                      : spv::Decoration::PerVertexKHR);
+                                  : profile.supports_fragment_shader_barycentric
+                                      ? spv::Decoration::PerVertexKHR
+                                      : spv::Decoration::Flat);
             } else if (primary != Qualifier::Smooth) {
                 Decorate(attr_id, primary == Qualifier::Flat ? spv::Decoration::Flat
                                                              : spv::Decoration::NoPerspective);

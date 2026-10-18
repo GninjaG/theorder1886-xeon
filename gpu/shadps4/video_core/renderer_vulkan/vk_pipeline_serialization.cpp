@@ -41,10 +41,11 @@
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // port: past both histories (port 9/8/5, upstream 9/6/3 and #5365's binary 10): caches of
-// either are rebuilt. The meta layout lost the fetch shader (StageSpecialization carries it).
-static constexpr u32 ShaderBinaryVersion = 11u;
-static constexpr u32 ShaderMetaVersion = 9u;
-static constexpr u32 PipelineKeyVersion = 6u;
+// either are rebuilt. The meta layout lost the fetch shader (StageSpecialization carries it) and
+// keeps fs_interpolation; pipelines keep the per-vertex geometry shader (binary 12, meta 10, key 7).
+static constexpr u32 ShaderBinaryVersion = 12u;
+static constexpr u32 ShaderMetaVersion = 10u;
+static constexpr u32 PipelineKeyVersion = 7u;
 } // namespace Serialization
 
 namespace Vulkan {
@@ -895,6 +896,7 @@ void GraphicsPipeline::SerializationSupport::Serialize(Serialization::Archive& a
     sdata.Write(multisampling);
     sdata.Write(tcs);
     sdata.Write(tes);
+    sdata.Write(per_vertex_gs);
 }
 
 bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive& ar) {
@@ -906,6 +908,7 @@ bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive&
     sdata.Read(multisampling);
     sdata.Read(tcs);
     sdata.Read(tes);
+    sdata.Read(per_vertex_gs);
     return true;
 }
 
