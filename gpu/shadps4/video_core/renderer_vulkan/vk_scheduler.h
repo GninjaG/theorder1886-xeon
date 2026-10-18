@@ -743,6 +743,7 @@ public:
     /// everything it uses (capture by value): it may run later on the recording thread.
     template <typename Func>
     void Record(Func&& func) {
+        records_since_submit.fetch_add(1, std::memory_order_relaxed);
         if (!recording_threaded || direct_mode) {
             func(current_cmdbuf);
             return;
@@ -855,6 +856,12 @@ public:
 
     /// CommandBuffer() calls that waited for a recording thread (THEORDER_FRAME_STATS).
     static inline std::atomic<u64> direct_recordings{0};
+
+    /// port: commands recorded into the current command buffer (Rasterizer::SplitLongSubmission).
+    [[nodiscard]] u64 RecordsSinceSubmit() const noexcept {
+        return records_since_submit.load(std::memory_order_relaxed);
+    }
+    std::atomic<u64> records_since_submit{0};
 
     /// Returns the current command buffer tick.
     [[nodiscard]] u64 CurrentTick() const noexcept {

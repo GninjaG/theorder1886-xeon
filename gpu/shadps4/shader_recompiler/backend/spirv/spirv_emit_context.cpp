@@ -9,7 +9,11 @@
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/runtime_info.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdio>
+#include <mutex>
+#include <unordered_set>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <spirv/unified1/spirv.hpp11>
@@ -445,6 +449,31 @@ void EmitContext::DefineInputs() {
                 bary_coord_nopersp_sample = DefineVariable(
                     F32[3], spv::BuiltIn::BaryCoordNoPerspKHR, spv::StorageClass::Input);
                 // Decorate(bary_coord_nopersp_sample, spv::Decoration::Sample);
+            }
+        }
+        // port: without either barycentric extension (GTX 10, Intel HD and Arc: issues #1, #10,
+        // #15) a shader that reads its barycentric registers itself, not through v_interp, has no
+        // source for them. Logged once per shader.
+        if (!profile.supports_amd_shader_explicit_vertex_parameter &&
+            !profile.supports_fragment_shader_barycentric) {
+            constexpr std::array bary_attributes = {
+                IR::Attribute::BaryCoordSmooth,      IR::Attribute::BaryCoordSmoothCentroid,
+                IR::Attribute::BaryCoordSmoothSample, IR::Attribute::BaryCoordPullModel,
+                IR::Attribute::BaryCoordNoPersp,     IR::Attribute::BaryCoordNoPerspCentroid,
+                IR::Attribute::BaryCoordNoPerspSample,
+            };
+            for (const auto attribute : bary_attributes) {
+                if (info.loads.GetAny(attribute)) {
+                    static std::mutex logged_mutex;
+                    static std::unordered_set<u64> logged;
+                    std::scoped_lock lock{logged_mutex};
+                    if (logged.size() < 64 && logged.insert(info.pgm_hash).second) {
+                        std::printf("Shader %016llx reads %s itself; this GPU has no barycentrics\n",
+                                    static_cast<unsigned long long>(info.pgm_hash),
+                                    IR::NameOf(attribute).c_str());
+                    }
+                    break;
+                }
             }
         }
 

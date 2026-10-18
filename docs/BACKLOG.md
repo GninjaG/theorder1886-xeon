@@ -26,20 +26,34 @@ readbacks); see docs/PROGRESS.md.
 5. **Pool bubbles and GPU particles** — todo. Dynamic GDS offset (cs 0x873b1ade), addr64 MUBUF,
    inline V# loads (vs 0xc75dd317, 586 permutations in our cache) (TdlifePeng d0cfaf355,
    b30a794bf, 082d6ae0a). Smoke particles wrong ("like Knack", PR #4798 comments).
-6. **Upstream recompiler and video core fixes** — todo: merge upstream main (128 files, 50 with
+6. **Upstream recompiler and video core fixes** — doing (2026-10-18): branch `upstream-0.20`
+   (ab5c8c2) has shadPS4 0.20.1 (bloodborne_pc's resolution of the same merge) plus #5406, #5384,
+   #5365 and #5364; boots and passes the tests, frame rate A/B still to do (another game held the
+   GPU during the first one). Was: merge upstream main (128 files, 50 with
    port changes; bloodborne_pc 087bbf3 resolved the same merge from the same base). Includes CE/DE
    counter sync (#5406), stencil-only depth (#5384), CFG fallthrough (#5365), phi order (#5364),
    all mips in CopyImageWithBuffer (#5368), CMask (#5046), tiled mip layout (#5196), 2048 tile
    table (#5307), depth-overlap subresources (#5229), layer-count copies (#5299), subgroup barriers
    (#5285), MIN/MAX blend factors (#5197), EXEC scope (#5220), image type compatibility (#5133).
 7. **NVIDIA SSBO store-load barrier** (TdlifePeng fb95ce445) and the hatching seen once — todo.
-8. **Aim blur (0c), black triangle (6), one-frame artifacts** — re-check after 1-7.
+8. **Aim blur (0c), black triangle (6), one-frame artifacts** — re-check after 1-7. The
+   stretched black triangles of #8 (poles and wires, RTX 30/50) match bloodborne_pc 5012c6f: index
+   buffers bound with the draw's count, read past it as index 0 by drivers that check; in the merge.
+9. **Black characters without fragment barycentrics** (#1 Intel Arc, #10 Intel HD 630, #15 GTX
+   1070 Ti; RTX and AMD fine) — doing. Neither VK_AMD_shader_explicit_vertex_parameter nor
+   VK_KHR_fragment_shader_barycentric: a pixel shader that reads its barycentric registers itself
+   (not through v_interp) gets no source for them (bary_coord is never defined). The log now names
+   such shaders; THEORDER_NO_BARYCENTRIC=1 runs that path on any GPU. Next: reproduce here, then
+   give those shaders barycentrics (e.g. from a pass-through geometry shader).
 
 ### R2. Stability and progression
 1. **60 FPS mode in QTEs** — todo. illusion0001's 60 FPS patch notes softlocks in chapters 6 and 9
    QTEs; ours changes the simulation clock instead, untested there. Test with out/user_ch9; if it
    locks, find the QTE timer (RE) or drop to 30 for QTEs.
-2. **End of chapter 8 / chapter 9 crash** (#11, ErrorOutOfHostMemory on AMD; deadlock between the
+2. **End of chapter 8 / chapter 9 crash** (#11: vkEndCommandBuffer fails with
+   ErrorOutOfHostMemory on an RX Vega at the chapter IX load, one command buffer per guest
+   submission; long submissions are now split after 65536 commands, THEORDER_SPLIT_COMMANDS;
+   needs a test on AMD. Earlier: ErrorOutOfHostMemory on AMD; deadlock between the
    game and render threads from memory protection plus a readback, PR #4798; TdlifePeng e23e35535
    read-only mirror view) — todo.
 3. **Chapter 2 crash** ("ArrayPtr is not implemented", PR #4798 comment) — todo: find the shader.
@@ -63,7 +77,19 @@ readbacks); see docs/PROGRESS.md.
 2. Items 1, 3, 4 below; upstream renderer optimizations (#5112, #5219), memory tracker (#5100).
 3. gow3_pc b646683: partial-height integer views reuse the cached image (image churn).
 4. VRAM on 4-8 GB cards (bloodborne_pc acfe3a8, 96502c8, 5f65e2d); textures over budget here
-   (4.5 of 2.5 GB, nothing evicted; upstream GC part 2, #3396).
+   (4.5 of 2.5 GB, nothing evicted; upstream GC part 2, #3396). In the merge: bloodborne_pc's
+   time-based collector (20 s idle, 5 s under pressure), GPU-written tiled images written back,
+   arena memory falling back to system memory and a VRAM reserve (5f65e2d).
+5. **Command buffer pages shared with shader-written data** (item 3's main cost, found
+   2026-10-18): The Order embeds two 192-byte shader-written blocks (0x106ea85360, 0x106ea85440)
+   in its command buffers, beside the packets our Gnm driver writes and a fence the game polls.
+   Each packet written there and each fence read downloaded a 512 KiB window after a full GPU
+   wait: 39 writes and 14 reads per second, 0.42 s of each second in the rooftop scene (0.6.0).
+   In the merge, a published copy-back settles a range (its pages leave the GPU-modified state)
+   and watched ranges sharing an accessed page are promoted together: ~9 downloads per second,
+   10-25 ms. Measured while another game used the GPU: confirm on an idle GPU.
+6. MarkAsMaybeGpuDirty (upstream 0.20.1) hashed whole images on every use: 14% of the draw
+   recording thread; the merge only flags them.
 
 ### R4. Launcher and features (from the sibling ports)
 Controller diagrams and keyboard icons in game (gow3_pc #234, #471), Exit to Desktop (#462),
@@ -95,6 +121,12 @@ HiDPI and GUI scale (#584), window fitted to the screen (#470), screenshots/vibr
   runs here; Check() now names the failing call, asked for a new log, RAM size and page file.
 - 2026-10-18: #12 (CUSA00076: its code differs from 01.02, the 60 FPS patch is left out) answered;
   #14 waits for a second session after 0.5.0; #15 (0.4.1, "GTX", black screen, no log) unanswered.
+- 2026-10-18 afternoon: #12's 01.00 log gave the sites: one signature takes rcx or rax now (cc55320).
+  #15 is a GTX 1070 Ti with black characters (video): the barycentric path of #1/#10 (R1.9). #11's
+  new log: vkEndCommandBuffer out of host memory on AMD (R2.2). #8 (RTX 3080, 0.6.0): log, video
+  and a save (savedata/1/CUSA00035, rooftop); stretched polygons fixed by the merge's index buffer
+  binding. #16 (Armoury outfits, DLC folders as add-ons), #17 (other regions), #18 (RX 9070
+  flicker in chapter 2, no log) to answer.
 
 ## 0c. Everything blurred while aiming — done (2026-10-18)
 The CPU computes the focus from a GPU-written buffer that relaxed readbacks never brought back

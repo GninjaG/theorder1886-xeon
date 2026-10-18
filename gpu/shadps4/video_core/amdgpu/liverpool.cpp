@@ -787,6 +787,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     const auto base_addr = reinterpret_cast<uintptr_t>(dcb.data());
     while (!dcb.empty()) {
         ProcessCommands();
+        if (rasterizer) {
+            rasterizer->SplitLongSubmission();
+        }
 
         const auto* header = reinterpret_cast<const PM4Header*>(dcb.data());
         const u32 type = header->type;
@@ -1519,6 +1522,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         ProcessCommands();
         if (rasterizer) {
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // port: compute work uses the caches
+            rasterizer->SplitLongSubmission();
         }
 
         auto* header = reinterpret_cast<const PM4Header*>(acb.data());

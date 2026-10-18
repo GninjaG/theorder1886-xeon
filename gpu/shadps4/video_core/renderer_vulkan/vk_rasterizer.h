@@ -147,6 +147,8 @@ public:
 
     u64 Flush();
     void Finish();
+    /// port: submits early once a guest submission has recorded very many commands.
+    void SplitLongSubmission();
     void OnSubmit();
     /// A guest-visible fence or CPU write: pending image downloads land first.
     void OnFence();

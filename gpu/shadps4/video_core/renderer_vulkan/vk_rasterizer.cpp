@@ -1546,6 +1546,26 @@ void Rasterizer::Finish() {
     scheduler.Finish();
 }
 
+// port: The Order records a whole guest submission into one command buffer; at the start of
+// chapter IX (an area load, thousands of uploads) AMD's driver failed vkEndCommandBuffer with
+// ErrorOutOfHostMemory (issue #11). Submissions already happen mid-stream (readback waits), so
+// a long one is split here, between guest command batches. A rooftop frame records ~10k.
+void Rasterizer::SplitLongSubmission() {
+    static const u64 limit = [] {
+        const char* env = std::getenv("THEORDER_SPLIT_COMMANDS");
+        return env ? std::strtoull(env, nullptr, 10) : u64{65536};
+    }();
+    if (limit == 0 || scheduler.RecordsSinceSubmit() < limit) {
+        return;
+    }
+    static std::atomic<u32> logged{0};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 4) {
+        std::printf("GPU: long submission split after %llu commands\n",
+                    static_cast<unsigned long long>(scheduler.RecordsSinceSubmit()));
+    }
+    Flush();
+}
+
 void Rasterizer::OnSubmit() {
     DrainDrawPipe();
     buffer_cache.TickFrame();
