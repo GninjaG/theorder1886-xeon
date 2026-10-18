@@ -529,6 +529,7 @@ bool Instance::CreateDevice() {
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
     // port: DLSS (optional bridge DLL) needs its own device extensions on NVIDIA GPUs.
+    const size_t extensions_before_dlss = enabled_extensions.size();
     std::vector<const char*> dlss_extensions;
     if (Dlss* dlss = Dlss::Get()) {
         dlss->AppendDeviceExtensions(*instance, physical_device, dlss_extensions);
@@ -776,6 +777,21 @@ bool Instance::CreateDevice() {
     }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
+    if (device_result != vk::Result::eSuccess &&
+        enabled_extensions.size() > extensions_before_dlss) {
+        if (Dlss* dlss = Dlss::Get()) {
+            dlss->Disable(fmt::format("vkCreateDevice with NGX extensions failed: {}",
+                                      vk::to_string(device_result)));
+        }
+        enabled_extensions.resize(extensions_before_dlss);
+        device_chain.get<vk::DeviceCreateInfo>().enabledExtensionCount =
+            static_cast<u32>(enabled_extensions.size());
+        device_chain.get<vk::DeviceCreateInfo>().ppEnabledExtensionNames =
+            enabled_extensions.data();
+        auto [retry_result, retry_dev] = physical_device.createDeviceUnique(device_chain.get());
+        device_result = retry_result;
+        dev = std::move(retry_dev);
+    }
     if (device_result != vk::Result::eSuccess) {
         LOG_CRITICAL(Render_Vulkan, "Failed to create device: {}", vk::to_string(device_result));
         return false;
@@ -806,7 +822,7 @@ bool Instance::CreateDevice() {
                           vk::TimeDomainEXT::eClockMonotonicRaw) != time_domains.cend();
 #else
             // Tracy limitation means only Windows and Linux can use host time domain.
-            // https://github.com/shadps4-emu/tracy/blob/c6d779d78508514102fbe1b8eb28bda10d95bb2a/public/tracy/TracyVulkan.hpp#L384-L389
+            // https://github.com/shadps4-emu/tracy/blob/c6d779d780508514102fbe1b8eb28bda10d95bb2a/public/tracy/TracyVulkan.hpp#L384-L389
             const bool has_host_time_domain = false;
 #endif
             if (has_host_time_domain) {
@@ -917,12 +933,19 @@ void Instance::CollectPhysicalMemoryInfo() {
         // We reserve some memory for the system.
         const u64 system_memory = std::min<u64>(total_memory_budget / 8, 1_GB);
         total_memory_budget -= system_memory;
-        return;
+    } else {
+        // Leave at least 8 GB for the system on integrated GPUs.
+        const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
+        total_memory_budget =
+            static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(2_GB)));
     }
-    // Leave at least 8 GB for the system on integrated GPUs.
-    const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
-    total_memory_budget =
-        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(2_GB)));
+    const std::string model_name{GetModelName()};
+    const std::string driver_name = fmt::format("{} {}", vendor_name, GetDriverVersionName());
+    const std::string api_version = GetReadableVersion(properties.apiVersion);
+    std::printf("GPU: %s, %llu MiB VRAM budget, driver %s, Vulkan %s\n", model_name.c_str(),
+                static_cast<unsigned long long>(total_memory_budget / (1024 * 1024)),
+                driver_name.c_str(), api_version.c_str());
+    std::fflush(stdout);
 }
 
 void Instance::CollectImageFormatInfo() {

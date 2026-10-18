@@ -133,6 +133,7 @@ public:
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
                    desc.is_depth == existing.is_depth;
         })};
+        sampler_resources[index].associated_images |= desc.associated_images;
         return index;
     }
 
@@ -305,7 +306,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         // resource lists of a program must not depend on what its T#s hold: the pipeline layout
         // of every permutation comes from the first translation, and a stale FMask T# in a
         // texture slot (The Order's material shader) shifted every later binding.
-        descriptors.Add(image_res);
+        const u32 image_binding = descriptors.Add(image_res);
         if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
             auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
             descriptors.Add(SamplerResource{
@@ -315,6 +316,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                                               ? UNKNOWN_LOCATION
                                               : SharpLocationFromSource(lod_prod.Inst()),
                 .is_depth = bool(inst_info.is_depth),
+                .associated_images = image_binding < 64 ? (1ULL << image_binding) : 0ULL,
             });
         }
 
@@ -365,6 +367,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .post_op_tsharp_dw3_off =
                 lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
+            .associated_images = image_binding < 64 ? (1ULL << image_binding) : 0ULL,
         });
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
     } else {

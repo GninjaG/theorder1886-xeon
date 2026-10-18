@@ -167,7 +167,13 @@ struct StageSpecialization {
     void ForEachSharp(auto& spec_list, auto& desc_list, auto&& func) {
         for (const auto& desc : desc_list) {
             auto& spec = spec_list.emplace_back();
-            const auto sharp = desc.GetSharp(*info);
+            const auto sharp = [&] {
+                if constexpr (requires { desc.GetSharp(*info, false); }) {
+                    return desc.GetSharp(*info, false);
+                } else {
+                    return desc.GetSharp(*info);
+                }
+            }();
             if (!sharp) {
                 continue;
             }

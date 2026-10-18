@@ -274,9 +274,10 @@ static ABI int32_t thread_once(int32_t *once,void (ABI *routine)(void)) {
 static ABI int32_t posix_once(int32_t *once,void (ABI *routine)(void)) { return thread_once(once,routine) ? 22 : 0; }
 #define KEYS 256
 typedef void (ABI *KeyDestructor)(void *);
-static struct { int used; KeyDestructor destructor; } keys[KEYS];
+static struct { int used, is_mt_rng; KeyDestructor destructor; void *caller; } keys[KEYS];
 static pthread_mutex_t key_lock=PTHREAD_MUTEX_INITIALIZER;
 static _Thread_local void *key_values[KEYS];
+static _Thread_local uint32_t *lazy_mt_rng;
 /* THEORDER_KEY_TRACE=1: key creations and stores with their callers and threads (first 400);
  * the thread is the system's id, as in fault reports. */
 #ifdef _WIN32
@@ -290,11 +291,28 @@ static int key_trace(void) {
     if (trace<0) trace=getenv("THEORDER_KEY_TRACE")!=NULL;
     return trace && __atomic_fetch_add(&events,1,__ATOMIC_RELAXED)<400;
 }
+static int is_mt_rng_caller(void *caller) {
+    uintptr_t low=(uintptr_t)caller & 0xfffu;
+    return low==0xfa3u || low==0xf82u; /* sub_89fa60 -> 0x89ff9e / 0x89ff7d ([0x16a2640]) */
+}
+static int is_singleton_tls_caller(void *caller) {
+    uintptr_t low=(uintptr_t)caller & 0xfffu;
+    return is_mt_rng_caller(caller) || low==0xbedu || low==0xc0eu || low==0xdb3u || low==0xdd4u;
+}
 static int32_t key_create_by(uint32_t *key,KeyDestructor destructor,void *caller) {
     if (!key) return ERR(22);
     pthread_mutex_lock(&key_lock);
+    if (is_singleton_tls_caller(caller)) {
+        for (uint32_t i=1;i<KEYS;++i) if (keys[i].used && keys[i].caller==caller) {
+            pthread_mutex_unlock(&key_lock);
+            *key=i;
+            if (key_trace()) printf("Key %u reused for singleton %p on thread %lu\n",i,caller,TRACE_TID());
+            return 0;
+        }
+    }
     for (uint32_t i=1;i<KEYS;++i) if (!keys[i].used) {
-        keys[i].used=1; keys[i].destructor=destructor;
+        keys[i].used=1; keys[i].is_mt_rng=is_mt_rng_caller(caller);
+        keys[i].destructor=destructor; keys[i].caller=caller;
         pthread_mutex_unlock(&key_lock);
         *key=i;
         if (key_trace()) printf("Key %u created by %p on thread %lu\n",i,caller,TRACE_TID());
@@ -308,7 +326,7 @@ static ABI int32_t key_delete(uint32_t key) {
     if (!key || key>=KEYS) return ERR(22);
     pthread_mutex_lock(&key_lock);
     int32_t r=keys[key].used ? 0 : ERR(22);
-    keys[key].used=0; keys[key].destructor=NULL;
+    keys[key].used=0; keys[key].is_mt_rng=0; keys[key].destructor=NULL; keys[key].caller=NULL;
     pthread_mutex_unlock(&key_lock);
     return r;
 }
@@ -318,7 +336,31 @@ static int32_t key_set_by(uint32_t key,void *value,void *caller) {
     key_values[key]=value; return 0;
 }
 static ABI int32_t key_set(uint32_t key,void *value) { return key_set_by(key,value,__builtin_return_address(0)); }
-static ABI void *key_get(uint32_t key) { return key && key<KEYS ? key_values[key] : NULL; }
+static ABI void *key_get(uint32_t key) {
+    if (!key || key>=KEYS) return NULL;
+    void *v=key_values[key];
+    if (v) return v;
+    if (keys[key].used && keys[key].is_mt_rng) {
+        void *caller=__builtin_return_address(0);
+        if (((uintptr_t)caller & 0xfffu)==0x79du) return NULL; /* sub_8a0330 teardown free check */
+        if (!lazy_mt_rng) {
+            /* sub_814870 layout: 624 state words (+0), 624 tempered words (+0x9c0), index (+0x1380 = 0x270). */
+            lazy_mt_rng=calloc(1,0x1384);
+            if (lazy_mt_rng) {
+                uint32_t s=(uint32_t)TRACE_TID() ^ 0xf7a0b5ecu;
+                lazy_mt_rng[0]=s;
+                for (uint32_t i=1;i<624;++i) {
+                    s=1812433253u*(s^(s>>30))+i;
+                    lazy_mt_rng[i]=s;
+                }
+                lazy_mt_rng[0x1380/4]=0x270;
+                fprintf(stderr,"Runtime: lazy MT19937 TLS initialized for key %u at %p (thread %lu)\n",key,caller,TRACE_TID());
+            }
+        }
+        return lazy_mt_rng;
+    }
+    return NULL;
+}
 void runtime_thread_keys_cleanup(void) {
     for (int round=0;round<4;++round) {
         int any=0;
@@ -330,6 +372,7 @@ void runtime_thread_keys_cleanup(void) {
         }
         if (!any) break;
     }
+    if (lazy_mt_rng) { free(lazy_mt_rng); lazy_mt_rng=NULL; }
 }
 static ABI int32_t posix_key_create(uint32_t *k,KeyDestructor d) { int32_t r=key_create_by(k,d,__builtin_return_address(0)); return r ? r&0xffff : 0; }
 static ABI int32_t posix_key_delete(uint32_t k) { int32_t r=key_delete(k); return r ? r&0xffff : 0; }

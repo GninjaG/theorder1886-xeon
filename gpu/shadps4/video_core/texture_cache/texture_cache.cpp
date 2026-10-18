@@ -564,7 +564,11 @@ void TextureCache::InvalidateAlias(Image& image) {
 }
 
 static u64 MaybeDirtyHash(const Image& image) {
-    return XXH3_64bits(std::bit_cast<const u8*>(image.info.guest_address), image.info.guest_size);
+    // Mip 0 is sufficient to detect CPU modifications to a sub-page/two-page texture without
+    // hashing the full mip tail (+33% bytes on mipmapped textures).
+    const u64 size = image.info.mips_layout[0].size ? image.info.mips_layout[0].size
+                                                    : image.info.guest_size;
+    return XXH3_64bits(std::bit_cast<const u8*>(image.info.guest_address), size);
 }
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
@@ -759,7 +763,8 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
 std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& image_info,
                                                            BindingType binding,
                                                            ImageId cache_image_id,
-                                                           ImageId merged_image_id) {
+                                                           ImageId merged_image_id,
+                                                           bool native_reads) {
     static constexpr u64 NUM_FRAMES_BEFORE_REMOVAL = 32;
 
     auto& cache_image = slot_images[cache_image_id];
@@ -770,6 +775,58 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
     if (image_info.guest_address == cache_image.info.guest_address) {
         const u32 lhs_block_size = image_info.num_bits * image_info.guest_samples;
         const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.guest_samples;
+        // port (gow3_pc b646683): a partial-height integer view (e.g. a 1920x800 letterboxed or
+        // screen-effect pass reading a 1920x1080 target with integer coordinates) shares the same
+        // pitch and tile mode: reuse the full-height cached image through a format-compatible
+        // view instead of treating the height difference as pool reuse and allocating a new image.
+        const auto& a = image_info;
+        const auto& b = cache_image.info;
+        const auto is_integer = [](vk::Format format) {
+            switch (format) {
+            case vk::Format::eR8Uint:
+            case vk::Format::eR8Sint:
+            case vk::Format::eR8G8Uint:
+            case vk::Format::eR8G8Sint:
+            case vk::Format::eR8G8B8A8Uint:
+            case vk::Format::eR8G8B8A8Sint:
+            case vk::Format::eB8G8R8A8Uint:
+            case vk::Format::eB8G8R8A8Sint:
+            case vk::Format::eA2B10G10R10UintPack32:
+            case vk::Format::eA2B10G10R10SintPack32:
+            case vk::Format::eR16Uint:
+            case vk::Format::eR16Sint:
+            case vk::Format::eR16G16Uint:
+            case vk::Format::eR16G16Sint:
+            case vk::Format::eR16G16B16A16Uint:
+            case vk::Format::eR16G16B16A16Sint:
+            case vk::Format::eR32Uint:
+            case vk::Format::eR32Sint:
+            case vk::Format::eR32G32Uint:
+            case vk::Format::eR32G32Sint:
+            case vk::Format::eR32G32B32Uint:
+            case vk::Format::eR32G32B32Sint:
+            case vk::Format::eR32G32B32A32Uint:
+            case vk::Format::eR32G32B32A32Sint:
+                return true;
+            default:
+                return false;
+            }
+        };
+        static const bool partial_views_enabled = [] {
+            const char* value = std::getenv("THEORDER_PARTIAL_HEIGHT_VIEWS");
+            return !value || value[0] != '0';
+        }();
+        if (partial_views_enabled && !PortToggle::Disabled(PortToggle::PartialHeightViews) &&
+            (binding == BindingType::Texture || binding == BindingType::Storage) && native_reads &&
+            a.pixel_format != b.pixel_format && is_integer(a.pixel_format) &&
+            lhs_block_size == rhs_block_size && a.pitch == b.pitch && a.tile_mode == b.tile_mode &&
+            a.type == b.type && a.size.width <= b.size.width && a.size.height < b.size.height &&
+            a.size.depth == 1 && b.size.depth == 1 && a.resources.levels == 1 &&
+            a.resources.layers == 1 && b.resources.levels == 1 && b.resources.layers == 1 &&
+            !a.props.is_block && !b.props.is_block && !a.props.is_depth && !b.props.is_depth &&
+            IsVulkanFormatCompatible(b.pixel_format, a.pixel_format)) {
+            return {cache_image_id, -1, -1};
+        }
         if (image_info.BlockDim() != cache_image.info.BlockDim() ||
             lhs_block_size != rhs_block_size) {
             // Very likely this kind of overlap is caused by allocation from a pool.
@@ -1031,7 +1088,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
 
     u64 key_hash = info.guest_address ^ info.guest_size << 17 ^ u64(info.pixel_format) << 40 ^
                    u64(info.size.width) << 24 ^ info.size.height ^ u64(desc.type) << 58 ^
-                   u64(exact_fmt) << 63;
+                   u64(exact_fmt) << 63 ^ u64(desc.needs_native) << 62;
     key_hash = (key_hash ^ key_hash >> 33) * 0xFF51AFD7ED558CCDull;
     key_hash = (key_hash ^ key_hash >> 33) * 0xC4CEB9FE1A85EC53ull;
     key_hash ^= key_hash >> 33;
@@ -1052,7 +1109,8 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         cached.address == info.guest_address &&
         cached.size == info.guest_size && cached.extent == info.size &&
         cached.format == info.pixel_format && cached.type == info.type &&
-        cached.exact_fmt == exact_fmt && cached.binding == desc.type &&
+        cached.exact_fmt == exact_fmt && cached.needs_native == desc.needs_native &&
+        cached.binding == desc.type &&
         cached.levels == info.resources.levels && cached.layers == info.resources.layers &&
         !PortToggle::Disabled(PortToggle::FindImageCache)) {
         Image& image = slot_images[cached.image_id];
@@ -1105,7 +1163,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
 
             const auto& merged_info = image_id ? slot_images[image_id].info : info;
             auto [overlap_image_id, overlap_view_mip, overlap_view_slice] =
-                ResolveOverlap(merged_info, desc.type, cache_id, image_id);
+                ResolveOverlap(merged_info, desc.type, cache_id, image_id, desc.needs_native);
             if (overlap_image_id) {
                 image_id = overlap_image_id;
                 view_mip = overlap_view_mip;
@@ -1151,6 +1209,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         .format = info.pixel_format,
         .type = info.type,
         .exact_fmt = exact_fmt,
+        .needs_native = desc.needs_native,
         .binding = desc.type,
         .levels = info.resources.levels,
         .layers = info.resources.layers,

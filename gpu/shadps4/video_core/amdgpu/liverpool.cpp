@@ -796,12 +796,21 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
 
         switch (type) {
         default:
-            UNREACHABLE_MSG("Wrong PM4 type {}", type);
-            break;
-        case 0:
-            UNREACHABLE_MSG("Unimplemented PM4 type 0, base reg: {}, size: {}",
-                            header->type0.base.Value(), header->type0.NumWords());
-            break;
+        case 0: {
+            // port (bloodborne_pc c07f0ff): a command buffer the guest reuses before the GPU
+            // thread reaches its end holds non-type-3 words. Stop reading this buffer so the
+            // submission's cleanup still runs instead of aborting the game.
+            static u32 logged = 0;
+            if (logged < 16) {
+                ++logged;
+                LOG_WARNING(Render_Vulkan,
+                            "PM4 type {} header {:#010x} at word {} of {} (skipping rest of buffer)",
+                            type, *reinterpret_cast<const u32*>(header),
+                            (reinterpret_cast<uintptr_t>(dcb.data()) - base_addr) / 4, dcb.size());
+            }
+            dcb = {};
+            continue;
+        }
         case 2:
             // Type-2 packet are used for padding purposes
             dcb = NextPacket(dcb, 1);

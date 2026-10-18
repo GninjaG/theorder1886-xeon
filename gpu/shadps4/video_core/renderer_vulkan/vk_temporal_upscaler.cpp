@@ -1305,17 +1305,21 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
 void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
                               VideoCore::ImageId depth, bool native_viewport) {
     if (!Scaled() && vs_hash == ui_trigger_vs) done_this_frame = true;
-    if (!Scaled() || !color) {
+    if (!Scaled()) {
         return;
     }
     if (ui_phase) {
-        // A UI movie can start without stencil and enable it for later text/masks.
-        if (color == ui_color && depth && depth != ui_depth) {
+        // A UI movie or Scaleform stencil mask draw can start without stencil or without a color
+        // target and enable depth/stencil for later text/masks (bloodborne_pc 3e3b760).
+        if ((color == ui_color || (!color && ui_color)) && depth && depth != ui_depth) {
             EnsureUiResources(ui_width, ui_height, ui_format,
                               texture_cache.GetImage(depth).info.pixel_format);
             PrepareUiDepth(depth);
             ui_depth = depth;
         }
+        return;
+    }
+    if (!color) {
         return;
     }
     const auto& image = texture_cache.GetImage(color);

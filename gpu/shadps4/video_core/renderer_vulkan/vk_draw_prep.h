@@ -51,7 +51,8 @@ struct PreparedStage {
 inline u64 ImageDescHash(const AmdGpu::Image& sharp, const Shader::ImageResource& res) {
     std::array<u64, 4> key;
     std::memcpy(key.data(), &sharp, sizeof(key));
-    const u32 flags = u32(res.is_written) | u32(res.is_depth) << 1 | u32(res.is_array) << 2;
+    const u32 flags = u32(res.is_written) | u32(res.is_depth) << 1 | u32(res.is_array) << 2 |
+                      u32(res.needs_native) << 3;
     u64 hash = flags * 0x9E3779B97F4A7C15ull;
     for (const u64 word : key) {
         hash = (hash ^ word) * 0xFF51AFD7ED558CCDull;

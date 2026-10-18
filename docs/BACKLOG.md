@@ -64,24 +64,26 @@ readbacks); see docs/PROGRESS.md.
    read-only mirror view) — todo.
 3. **Chapter 2 crash** ("ArrayPtr is not implemented", PR #4798 comment) — todo: find the shader.
 4. Rare start hangs after a killed run (Progress 2026-10-17) — doing.
-4b. **Boot fault at 0xc00ed7** (1 in ~30 starts, 2026-10-18): the main thread creates the game
-   mode's teams (sub_46f050, count = vtable+0x60 of the game mode object); teams 4+ take a
-   per-thread Mersenne Twister from pthread key [0x16a2640] (sub_c00e70), and the main thread had
-   none yet (NULL + 0x1380). Each thread registers its generator through 0x89ff40 (key created by
-   the first caller, set at 0x8a0003); normally the main thread does it before the teams.
-   THEORDER_KEY_TRACE=1 logs key creations/stores with callers and system thread ids, to match the
-   faulting thread when it recurs.
+4b. **Boot fault at 0xc00ed7** — done (2026-10-18): `sub_89fa60` unlocked the singleton registry
+   mutex (`[0x16abd28]`) between its lookup (`sub_208d60`) and `scePthreadKeyCreate` for keys
+   `[0x16a2660]`, `[0x16b1b90]` and `[0x16a2640]`, allowing a worker thread (`sub_20a560` /
+   `sub_802210`) to overwrite `[0x16a2640]` after another thread stored its `0x1384`-byte MT19937
+   state (`sub_814870`). `runtime_kernel.c` now deduplicates those singleton key creations under
+   `g_key_mutex` and lazily seeds a per-thread fallback MT19937 state if `[0x16a2640]` is read
+   before `sub_89fa60` stores it.
 4c. **Present thread driver fault** (nvoglv64.dll+0xf0e128 in vkWaitForFences of
    Presenter::GetRenderFrame via PrepareBlankFrame, 1 in 8 boots, 2026-10-18; 0 in 8 with 0.5.0):
    watch for it in more runs before looking for a race in the blank-frame path.
-5. gow3_pc: empty shader guard (368d899), sparse binding queue (195c7ab, RADV/Steam Deck) — todo.
+5. gow3_pc: empty shader guard (368d899) — done (2026-10-18, `TranslateProgram` substitutes
+   `s_endpgm`); sparse binding queue (195c7ab, RADV/Steam Deck) — todo.
 
 ### R3. Performance
 1. Pipeline compiles during play (the main blinking cause on a new PC, #14): ship the pipeline
    key list a full playthrough meets and build it at the first start; cut permutations (upstream
    PR #5218 skips images and samplers behind untaken branches).
 2. Items 1, 3, 4 below; upstream renderer optimizations (#5112, #5219), memory tracker (#5100).
-3. gow3_pc b646683: partial-height integer views reuse the cached image (image churn).
+3. gow3_pc b646683: partial-height integer views reuse the cached image (image churn) — done
+   (2026-10-18, `TextureCache::ResolveOverlap` + `THEORDER_PARTIAL_HEIGHT_VIEWS`).
 4. VRAM on 4-8 GB cards (bloodborne_pc acfe3a8, 96502c8, 5f65e2d); textures over budget here
    (4.5 of 2.5 GB, nothing evicted; upstream GC part 2, #3396). In the merge: bloodborne_pc's
    time-based collector (20 s idle, 5 s under pressure), GPU-written tiled images written back,

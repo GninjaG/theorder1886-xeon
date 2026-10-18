@@ -110,3 +110,24 @@ earlier (push side `sub_20b010` or node reuse). Node fields: `+8` job function, 
 dependency counter pointer, `+0x38` a completion counter decremented after the job runs.
 - Analytic in-scattering of light volumes (Sun et al.): PS 15c552f8, a2925aa8, 64b3f066, fd7df5bc
   into a 960x400 R16G16B16A16 buffer, F table in a 512x512 R32 texture.
+
+## Per-thread TLS and Mersenne Twister (`sub_89fa60`, `sub_8a0330`, `0xc00ed7`)
+
+- `sub_8a10a0` (`0x8a1863..0x8a1884`) installs `sub_89fa60` at `[0x170d438]` (thread-start hook,
+  invoked by worker threads `sub_20a560` at `0x20a582` and the streaming thread `sub_802210` at
+  `0x80224e`) and `sub_8a0330` at `[0x170d440]` (thread-exit hook), then calls `sub_89fa60(1)` on
+  the main thread.
+- `sub_89fa60` creates three singleton `scePthreadKeyCreate` keys stored at `[0x16a2660]`
+  (caller `0x89fbed`/`0x89fc0e`), `[0x16b1b90]` (`0x89fdb3`/`0x89fdd4`) and `[0x16a2640]`
+  (`0x89ff82`/`0x89ffa3`). In each block, `sub_89fa60` locks the singleton registry mutex
+  (`[0x16abd28]`), calls `sub_208d60` (hash lookup), and unlocks the mutex *before* testing whether
+  the entry was found and calling `scePthreadKeyCreate` + `sub_208e50` (insert). On fast host CPU
+  scheduling, two threads entering `sub_89fa60` concurrently can both miss in `sub_208d60` and
+  overwrite `[0x16a2640]` with a second key after the first thread already stored its TLS pointer.
+- Key `[0x16a2640]` holds a `0x1384`-byte per-thread Mersenne Twister (MT19937) buffer allocated
+  at `0x89ffc1` and seeded by `sub_814870(buf, seed)` (`624` `uint32_t` state words at `+0x000`,
+  `624` tempered output words at `+0x9c0..+0x137c`, current index `uint32_t` at `+0x1380`
+  initialized to `0x270` = `624` so the first draw calls `sub_814740` to twist and temper). All
+  1,267 call sites in `eboot.elf` (including `sub_c00e70` at `0xc00ec9`, called by `sub_46f050`
+  from `sub_445120`) dereference `[rax + 0x1380]` without a `NULL` check.
+

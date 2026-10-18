@@ -60,8 +60,15 @@ void EmitControlFlowGraph(IR::Program& program, Pools& pools, Gcn::CFG& cfg,
     program.post_order_blocks = Shader::IR::PostOrder(program.blocks.front());
 }
 
-IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Info& info,
+IR::Program TranslateProgram(const std::span<const u32>& code_in, Pools& pools, Info& info,
                              RuntimeInfo& runtime_info, const Profile& profile) {
+    static constexpr std::array<u32, 1> fallback_endpgm{0xBF810000u}; // s_endpgm
+    const std::span<const u32> code =
+        code_in.empty() ? std::span<const u32>{fallback_endpgm} : code_in;
+    if (code_in.empty()) {
+        LOG_WARNING(Render_Recompiler,
+                    "TranslateProgram received an empty instruction stream; substituting s_endpgm");
+    }
     // Ensure first instruction is expected.
     constexpr u32 token_mov_vcchi = 0xBEEB03FF;
     if (code[0] != token_mov_vcchi) {

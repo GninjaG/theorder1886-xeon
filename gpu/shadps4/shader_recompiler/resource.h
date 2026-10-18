@@ -216,10 +216,12 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (mip_fallback_mode != MipStorageFallbackMode::DynamicIndex) {
+            return 1;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
-        return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
-                   ? (tsharp.last_level - tsharp.base_level + 1)
-                   : 1;
+        return tsharp.last_level >= tsharp.base_level ? (tsharp.last_level - tsharp.base_level + 1)
+                                                      : 1;
     }
 };
 using ImageResourceList = boost::container::static_vector<ImageResource, NUM_IMAGES>;
@@ -229,8 +231,10 @@ struct SamplerResource {
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    u64 associated_images{};
 
-    constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
+    constexpr AmdGpu::Sampler GetSharp(const auto& info,
+                                       bool clamp_integer_filters = true) const noexcept {
         AmdGpu::Sampler sampler{};
         sharp_fetch.Fetch(info.FlatUserData().data(), &sampler);
         if (post_op == SharpFetchPostOp::DisableAnisoIfSingleLod) {
@@ -249,6 +253,31 @@ struct SamplerResource {
         } else if (post_op == SharpFetchPostOp::ClearAnisoRatioAndThreshold) {
             sampler.max_aniso.Assign(AmdGpu::AnisoRatio::One);
             sampler.aniso_threshold.Assign(0);
+        }
+        // port: Vulkan disallows linear/anisotropic filtering when sampling an integer image
+        // (VUID-vkCmdDispatchIndirect-magFilter-04553); GCN forces point filtering on integer T#s.
+        if (clamp_integer_filters && associated_images != 0 &&
+            (sampler.xy_mag_filter != AmdGpu::Filter::Point ||
+             sampler.xy_min_filter != AmdGpu::Filter::Point ||
+             sampler.z_filter != 0 ||
+             sampler.mip_filter == AmdGpu::MipFilter::Linear ||
+             sampler.max_aniso != AmdGpu::AnisoRatio::One)) {
+            u64 mask = associated_images;
+            while (mask != 0) {
+                const u32 idx = std::countr_zero(mask);
+                mask &= mask - 1;
+                if (idx < info.images.size() &&
+                    AmdGpu::IsInteger(info.images[idx].GetSharp(info).GetNumberFmt())) {
+                    sampler.xy_mag_filter.Assign(AmdGpu::Filter::Point);
+                    sampler.xy_min_filter.Assign(AmdGpu::Filter::Point);
+                    sampler.z_filter.Assign(0);
+                    if (sampler.mip_filter == AmdGpu::MipFilter::Linear) {
+                        sampler.mip_filter.Assign(AmdGpu::MipFilter::Point);
+                    }
+                    sampler.max_aniso.Assign(AmdGpu::AnisoRatio::One);
+                    break;
+                }
+            }
         }
         return sampler;
     }

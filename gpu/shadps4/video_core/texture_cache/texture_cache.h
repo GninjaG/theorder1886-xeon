@@ -102,11 +102,13 @@ public:
         ImageInfo info;
         ImageViewInfo view_info;
         BindingType type{BindingType::Texture};
+        bool needs_native{}; ///< port: integer-coordinate reads (ResolveOverlap partial-height views)
 
         ImageDesc() = default;
         ImageDesc(const AmdGpu::Image& image, const Shader::ImageResource& desc)
             : info{image, desc}, view_info{image, desc},
-              type{desc.is_written ? BindingType::Storage : BindingType::Texture} {}
+              type{desc.is_written ? BindingType::Storage : BindingType::Texture},
+              needs_native{desc.needs_native} {}
         ImageDesc(const AmdGpu::ColorBuffer& buffer, AmdGpu::CbDbExtent hint)
             : info{buffer, hint}, view_info{buffer}, type{BindingType::RenderTarget} {}
         ImageDesc(const AmdGpu::DepthBuffer& buffer, AmdGpu::DepthView view,
@@ -251,7 +253,8 @@ public:
     [[nodiscard]] std::tuple<ImageId, int, int> ResolveOverlap(const ImageInfo& info,
                                                                BindingType binding,
                                                                ImageId cache_img_id,
-                                                               ImageId merged_image_id);
+                                                               ImageId merged_image_id,
+                                                               bool native_reads = false);
 
     /// Resolves depth overlap and either re-creates the image or returns existing one
     [[nodiscard]] ImageId ResolveDepthOverlap(const ImageInfo& requested_info, BindingType binding,
@@ -640,6 +643,7 @@ private:
         vk::Format format{};
         AmdGpu::ImageType type{};
         bool exact_fmt = false;
+        bool needs_native = false;
         BindingType binding{};
         u32 levels = 0;
         u32 layers = 0;

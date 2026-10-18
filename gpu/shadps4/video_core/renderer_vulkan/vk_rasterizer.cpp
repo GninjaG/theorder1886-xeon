@@ -2411,7 +2411,8 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
                                                                    u64 hash) {
     std::array<u64, 4> key;
     std::memcpy(key.data(), &sharp, sizeof(key));
-    const u32 flags = u32(res.is_written) | u32(res.is_depth) << 1 | u32(res.is_array) << 2;
+    const u32 flags = u32(res.is_written) | u32(res.is_depth) << 1 | u32(res.is_array) << 2 |
+                      u32(res.needs_native) << 3;
     // Two-way set associative: a frame binds a few thousand distinct T#s.
     auto* set = &image_desc_cache[(hash % (image_desc_cache.size() / 2)) * 2];
     const auto matches = [&](const ImageDescCacheEntry& e) {
@@ -2554,7 +2555,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const Shader::MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;
         // Same as image_desc.NumBindings(stage), without fetching the T# again.
         const u32 num_bindings =
-            mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex
+            (mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex &&
+             tsharp.last_level >= tsharp.base_level)
                 ? static_cast<u32>(tsharp.last_level - tsharp.base_level + 1)
                 : 1u;
         const bool proxy_candidate = sample_proxies && num_bindings == 1 &&

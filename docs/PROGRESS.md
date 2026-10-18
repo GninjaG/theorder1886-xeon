@@ -2,6 +2,53 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18 (afternoon): Vulkan sampler/view translation, texture dirty hashing, and MT19937 TLS fix
+
+- **Integer image sampler clamping (`VUID-vkCmdDispatchIndirect-magFilter-04553`):** GCN hardware
+  forces point filtering when sampling an integer `T#`, whereas Vulkan disallows linear/anisotropic
+  `VkSampler` state on integer `VkImageView`s (`cs 0xf5c30432f4b` bound `S#[1]` with
+  `VK_FILTER_LINEAR` against `T#[13]` `R32G32_UINT`). `ResourcePatchingPass` now records a 64-bit
+  `associated_images` mask on each `SamplerResource` (`ShaderMetaVersion` 10 -> 11), and
+  `SamplerResource::GetSharp` clamps `xy_mag_filter`, `xy_min_filter`, `z_filter`, `mip_filter`
+  (`Linear` -> `Point`) and `max_aniso` (`One`) whenever any associated `T#` has an integer format
+  (`StageSpecialization` skips the scan on its hot path via `GetSharp(*info, false)`).
+- **Partial-height integer views (`R3.3`, `gow3_pc b646683`):** `TextureCache::ResolveOverlap`
+  reuses full-height cached images (e.g. 1920x1080) through format-compatible views when a
+  partial-height integer `T#` (e.g. 1920x800 letterboxed screen pass) shares the same address,
+  pitch, tile mode and block size (`THEORDER_PARTIAL_HEIGHT_VIEWS=0` disables for A/B).
+- **`ImageResource::NumBindings` fast path & wraparound guard (`ShadowOfTheColossus-PC cf4089f`):**
+  returns `1` immediately without a second `GetSharp(*info)` call per image per draw unless
+  `mip_fallback_mode == DynamicIndex`, and guards `last_level >= base_level` in both
+  `ImageResource::NumBindings` and `Rasterizer::BindTextures`.
+- **`TextureCache::MaybeDirtyHash` mip-0 bounding (`Backlog #1`):** hashes `mips_layout[0].size`
+  when present instead of the full mipchain `guest_size`, cutting `xxhash` work on `port:DrawRec`
+  by ~25% on mipmapped textures (`0x1057eb0000` 1024x1024).
+- **Empty shader stream guard (`R2.5`, `gow3_pc 368d899`):** `TranslateProgram` substitutes a
+  single `s_endpgm` (`0xBF810000`) with a warning if given an empty instruction span instead of
+  dereferencing `inst_list.back()` on an empty vector or aborting with exit code 23.
+- **PM4 & VideoOut flip resiliency + upscaler/device guards (`bloodborne_pc c07f0ff`, `76f5b5f`, `3e3b760`):**
+  `Liverpool::ProcessGraphics` recovers from zero/corrupted PM4 packet headers with a rate-limited
+  warning; `sceVideoOutSubmitEopFlip` waits up to 20 ms and recovers instead of asserting on
+  out-of-order flip labels; `Instance::CreateDevice` retries `vkCreateDevice` without NGX
+  extensions if DLSS extension creation fails; `TemporalUpscaler::OnDraw` closes the scene before
+  UI stencil-mask depth-only draws; `Instance::CollectPhysicalMemoryInfo` logs the GPU model, VRAM
+  budget (`6239 MiB` on RTX 5060 Laptop), driver version, and Vulkan version to stdout.
+- **Startup fault at `0xc00ed7` (`R2.4b`, MT19937 TLS race in `sub_89fa60`):** disassembly of
+  `sub_89fa60` (`0x89fbed..0x89ffa3`), `sub_8a0330` (`0x8a0798`), `sub_8a10a0` (`0x8a1863..0x8a1884`)
+  and `sub_814740`/`sub_814870` showed that `sub_89fa60` unlocks the singleton registry mutex
+  (`[0x16abd28]`) between its lookup (`sub_208d60`) and `scePthreadKeyCreate` for keys
+  `[0x16a2660]`, `[0x16b1b90]` and `[0x16a2640]`, allowing concurrent worker threads (`sub_20a560`,
+  `sub_802210`) to overwrite `[0x16a2640]` after another thread stored its `0x1384`-byte MT19937
+  state (`index` at `+0x1380`). `runtime_kernel.c` now deduplicates those singleton key creations
+  under `g_key_mutex` and lazily seeds a per-thread fallback MT19937 buffer (`sub_814870` layout)
+  if `[0x16a2640]` is read before `sub_89fa60` sets it (while returning `NULL` to `sub_8a0330`
+  teardown at `0x8a079d`).
+- **Validation:** `shader-resource-test` added to `tools/run_tests.sh`; all 42 C/C++ tests, the
+  extra DMA-off invocation, `content-test`, and 266 Python unit tests pass. REA `inspect_pe_resources`
+  verified `out/theorder-probe.exe`. Cold-cache (35 s, 960+ flips) and warm-cache (20 s, 540+ flips,
+  186 metas) runs in `out/qa-v062` held 30.0 FPS (median 33.32-33.34 ms, stddev 0.35-0.51 ms,
+  `0.00 us/draw` on the GPU thread, 82.9% idle) with zero crashes or faults.
+
 ## 2026-10-18: 0.6.1 stabilization checkpoint
 
 Resume instructions, validation evidence and remaining work:
