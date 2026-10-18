@@ -207,13 +207,11 @@ Problemas conhecidos:
 ## Controles
 
 Controle (DualSense, Xbox e outros, via SDL3) e teclado funcionam juntos; a tabela de teclas está
-no README. Não há suporte a mouse. **Insert** (ou R3+L2 no controle) abre o menu do port (tela,
+no README; o mouse gira a câmera e seus botões atiram e miram (F7 liga e desliga). **Insert** (ou R3+L2 no controle) abre o menu do port (tela,
 limite de quadros e overlay de desempenho).
 
 ## Arquivos (código-fonte)
 
-- `Jogar The Order 1886.bat`, `Jogar - Inicio Rapido.bat`, `Jogar - Modo Performance.bat`:
-  atalhos para `python run.py`.
 - `launcher/port_launcher_win.py`: o launcher (empacotado por `packaging/windows/package.sh`).
 - `out/theorder-probe.exe`: o executável do port (gerado por `bash build.sh`).
 - `user/savedata/`, `user/cache/CUSA00035/`: saves e cache de shaders e pipelines.

@@ -70,13 +70,6 @@ $env:THEORDER_GAME_DIR = 'D:\path\CUSA00035'
 python run.py
 ```
 
-Or double-click one of the batch files (their menus are in Portuguese):
-
-- **`Jogar The Order 1886.bat`**: a menu that starts the game normally, or with the engine's own
-  options described below (level shortcuts, a lighter "performance" mode).
-- **`Jogar - Inicio Rapido.bat`**: starts the game (`python run.py`).
-- **`Jogar - Modo Performance.bat`**: starts it with the lighter engine options.
-
 ### Engine options
 
 These options exist in the game's executable; `run.py` passes them on. What they do in the retail
