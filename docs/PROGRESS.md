@@ -2,6 +2,42 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18 (morning): aim blur, VSM shadows, readbacks, deep backlog
+
+**Aim blur (the player's report):** aiming blurred the whole picture. The aim depth of field
+(prepare ps 15ce7c20, gather ps 7f6645bb instead of 0949c713) got focus distances ~1e-17 in its
+constants ([75..78]; -20, -18, 20, 1620 when not aiming), so the CoC was its maximum (0.18)
+everywhere. The CPU computes them from a 32 KiB buffer that cs b3d87c7f writes every frame from
+the half-resolution depth (a ring of three at 0x106ee88000/98000/a8000; per TdlifePeng it also
+fits the shadow cascades): relaxed readbacks never brought it back to guest memory, the eboot's
+copy loop at 0x5DDE5 read zeros. Precise readbacks fixed it but deadlocked at start (a host copy
+on the recorder thread faulted on a read-protected page into ReadMemory, which waited for the
+recorder) and cost ~8%. Now: host copies read guest memory through the backing view (as
+upstream's CopySparseMemory); small GPU-written buffers (<= 64 KiB) are read-protected until the
+CPU reads one, which is then copied back after each GPU write through the deferred image
+readback queue (BufferCache::QueueReadbacks; a CPU write to a watched range stops watching it).
+Aiming is sharp, focus on the target. Cost on the rooftop at 60 FPS: ~3-4 FPS, from longer full
+GPU waits elsewhere (below), not the watch itself (16 ranges, ~0 read faults/s).
+**VSM shadows:** the shadow maps' conversion (cs 8ea0ef5b) reads each tile's HTILE ZMask and
+takes ZMask 0 as an empty tile. HTILE clears are skipped dispatches and nothing writes HTILE when
+depth is drawn, so the guest bytes were 0: casters went missing from the 512x512 atlas.
+TextureCache::HtileReadValue: a shader reading an HTILE surface sees 0xfffc000f (expanded) once
+the slice was drawn after its clear, 0xfffc0000 before (THEORDER_HTILE_READ=0 for A/B).
+**Also:** the float atomic min/max fallback (GPUs without VK_EXT_shader_atomic_float2: NVIDIA)
+ran both atomics through an OpSelect (TdlifePeng a5ecab35b); such shaders alone are translated
+again (ShaderBinaryVersionFor). gow3_pc a101edb: backing-view writes (readbacks, downloads) mark
+textures over them CPU-dirty. The 42 "isn't dword aligned" shaders all bind one 16-bit stream
+(0x1010aaa57a, dfmt 16 uint) read with 16-bit loads: harmless.
+**Byte-precise CPU writes, tried and dropped:** ~110 write faults a second on the rooftop each
+download a 512 KiB window after a full GPU wait (~0.4 s of waits a second, buffer_cache.cpp
+DownloadMemory). None of 6656 landed on bytes the GPU wrote, but skipping the GPU's bytes at the
+next upload hung the game at boot: a ring buffer (0x105b502000, CPU at +0x3b4, GPU +0x414..0x813)
+is written by the CPU over the GPU's bytes after an earlier fault unprotected the page.
+**Tools:** tools/run_tests.sh builds and runs the 35 C/C++ tests (from the repo root) and the
+Python suite (two tests never built on Windows: sigjmp_buf, setenv; one asserted a fourth menu
+tab). THEORDER_GPU_PROFILE works without an upscaler. Frame stats print read faults and protect
+calls per second. THEORDER_DIAG_CS=<hash> limits dispatch image dumps to one shader.
+
 ## 2026-10-17 (night): HUD at 16:9, live FOV, blinking, mouse look
 
 **HUD:** the aspect patches now give Iggy the original 2.40:1 height (0x838f09/0x83944f) and set

@@ -6,6 +6,78 @@ Status: `todo`, `doing`, `done (commit)`, `parked (why)`. Details and history: d
 Measuring scene: the London rooftop from the user's save (THEORDER_USER_DIR=out/user_gameplay,
 default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/draw.
 
+## Road to 1.0.0 (2026-10-18): playable from start to finish without graphics bugs
+
+Sources read on 2026-10-18: upstream shadPS4 (174 commits after the vendored b4e7ae7, cloned in
+~/tools/shadPS4-upstream), TdlifePeng/shadPS4 branch `1886` (20 commits written for this game,
+shadPS4 PR #4798 and its comments: a player finished the game on it), the sibling ports
+(bloodborne_pc merged upstream 5aa7ffa3 onto the same base and port threading; gow3_pc texture,
+queue and recompiler fixes), illusion0001's patch notes. Shader hashes below are in our cache.
+
+### R1. Graphics correctness (1.0 blockers)
+1. **Float atomic min/max fallback runs both atomics** — done (2026-10-18). Control flow instead of
+   OpSelect; only shaders with float atomics are translated again.
+2. **Buffers bound 2 bytes off a dword** — done (finding, 2026-10-18): one 16-bit stream read with
+   16-bit loads (word offsets are exact); the warning now names slot, V# and access types.
+3. **VSM shadows** — done (2026-10-18): HTILE reads emulated (TextureCache::HtileReadValue).
+4. **Texture streaming through the backing view** — done (2026-10-18, gow3_pc a101edb).
+0c (aim blur) — done (2026-10-18): CPU reads of GPU-written buffers (read watch + deferred buffer
+readbacks); see docs/PROGRESS.md.
+5. **Pool bubbles and GPU particles** — todo. Dynamic GDS offset (cs 0x873b1ade), addr64 MUBUF,
+   inline V# loads (vs 0xc75dd317, 586 permutations in our cache) (TdlifePeng d0cfaf355,
+   b30a794bf, 082d6ae0a). Smoke particles wrong ("like Knack", PR #4798 comments).
+6. **Upstream recompiler and video core fixes** — todo: merge upstream main (128 files, 50 with
+   port changes; bloodborne_pc 087bbf3 resolved the same merge from the same base). Includes CE/DE
+   counter sync (#5406), stencil-only depth (#5384), CFG fallthrough (#5365), phi order (#5364),
+   all mips in CopyImageWithBuffer (#5368), CMask (#5046), tiled mip layout (#5196), 2048 tile
+   table (#5307), depth-overlap subresources (#5229), layer-count copies (#5299), subgroup barriers
+   (#5285), MIN/MAX blend factors (#5197), EXEC scope (#5220), image type compatibility (#5133).
+7. **NVIDIA SSBO store-load barrier** (TdlifePeng fb95ce445) and the hatching seen once — todo.
+8. **Aim blur (0c), black triangle (6), one-frame artifacts** — re-check after 1-7.
+
+### R2. Stability and progression
+1. **60 FPS mode in QTEs** — todo. illusion0001's 60 FPS patch notes softlocks in chapters 6 and 9
+   QTEs; ours changes the simulation clock instead, untested there. Test with out/user_ch9; if it
+   locks, find the QTE timer (RE) or drop to 30 for QTEs.
+2. **End of chapter 8 / chapter 9 crash** (#11, ErrorOutOfHostMemory on AMD; deadlock between the
+   game and render threads from memory protection plus a readback, PR #4798; TdlifePeng e23e35535
+   read-only mirror view) — todo.
+3. **Chapter 2 crash** ("ArrayPtr is not implemented", PR #4798 comment) — todo: find the shader.
+4. Rare start hangs after a killed run (Progress 2026-10-17) — doing.
+4b. **Boot fault at 0xc00ed7** (1 in ~30 starts, 2026-10-18): the main thread creates the game
+   mode's teams (sub_46f050, count = vtable+0x60 of the game mode object); teams 4+ take a
+   per-thread Mersenne Twister from pthread key [0x16a2640] (sub_c00e70), and the main thread had
+   none yet (NULL + 0x1380). Each thread registers its generator through 0x89ff40 (key created by
+   the first caller, set at 0x8a0003); normally the main thread does it before the teams.
+   THEORDER_KEY_TRACE=1 logs key creations/stores with callers and system thread ids, to match the
+   faulting thread when it recurs.
+4c. **Present thread driver fault** (nvoglv64.dll+0xf0e128 in vkWaitForFences of
+   Presenter::GetRenderFrame via PrepareBlankFrame, 1 in 8 boots, 2026-10-18; 0 in 8 with 0.5.0):
+   watch for it in more runs before looking for a race in the blank-frame path.
+5. gow3_pc: empty shader guard (368d899), sparse binding queue (195c7ab, RADV/Steam Deck) — todo.
+
+### R3. Performance
+1. Pipeline compiles during play (the main blinking cause on a new PC, #14): ship the pipeline
+   key list a full playthrough meets and build it at the first start; cut permutations (upstream
+   PR #5218 skips images and samplers behind untaken branches).
+2. Items 1, 3, 4 below; upstream renderer optimizations (#5112, #5219), memory tracker (#5100).
+3. gow3_pc b646683: partial-height integer views reuse the cached image (image churn).
+4. VRAM on 4-8 GB cards (bloodborne_pc acfe3a8, 96502c8, 5f65e2d); textures over budget here
+   (4.5 of 2.5 GB, nothing evicted; upstream GC part 2, #3396).
+
+### R4. Launcher and features (from the sibling ports)
+Controller diagrams and keyboard icons in game (gow3_pc #234, #471), Exit to Desktop (#462),
+HiDPI and GUI scale (#584), window fitted to the screen (#470), screenshots/vibration/filtering
+(#341), frame generation (bloodborne_pc 026f8ff), Discord presence (gow3_pc #217).
+
+### R5. Coverage and cleanup
+1. Saves: user_gameplay (ch. 1-2 rooftop), user_aim (street fight), user_ch9 (end of ch. 8). A
+   run per chapter needs more saves (community saves are encrypted; chapter select after a save).
+2. Remove what nothing uses (tools, env vars, docs of finished plans); check each launcher option
+   reaches the game. tools/soak.sh, restart.sh, press.sh use pgrep and out/session.log (Linux era).
+3. tools/run_tests.sh runs every unit test; scene-resolution, taa-shader and camera-motion crash on
+   Windows (null Vulkan-Hpp dispatch: they expect the Linux .so's own dispatcher) — todo.
+
 ## GitHub issues (2026-10-17)
 - #3 (01.00 eboot crashed at start): fixed in 0.3.3 (01.02-only hooks and patch sites); asked
   the reporter to test.
@@ -21,6 +93,19 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
   shadPS4 reports); GCN NaN rules ported (shadPS4 #5257/#5346), not reproduced here. #11 (RX Vega 64,
   chapter IX, ErrorOutOfHostMemory; the same in shadPS4 on that PC): the reporter's chapter IX save
   runs here; Check() now names the failing call, asked for a new log, RAM size and page file.
+- 2026-10-18: #12 (CUSA00076: its code differs from 01.02, the 60 FPS patch is left out) answered;
+  #14 waits for a second session after 0.5.0; #15 (0.4.1, "GTX", black screen, no log) unanswered.
+
+## 0c. Everything blurred while aiming — done (2026-10-18)
+The CPU computes the focus from a GPU-written buffer that relaxed readbacks never brought back
+(docs/PROGRESS.md 2026-10-18). Check: out/user_aim, L2 held from 45 s, the target sharp.
+
+## 0d. White tutorial prompt band — todo (seen 2026-10-18)
+The "hatching" over the street fight's buildings is the tutorial prompt's background (a dark brush
+band with diagonal lines: the game's style). Once, when the player went down ("BLACKWATER"), the
+band was white and had no text yet (out/aimdump/fix1 frame 38): a fade-in, or an Iggy color
+transform/blend going wrong. Next: compare with PS4 footage of the Blackwater prompt; if wrong,
+capture the frame and look at the Iggy draw's blend state and cxform constants.
 
 ## 0b. Blinking objects (draws skipped while pipelines build) — doing
 0.4.1: stored keys jump the compile queue, more compiler threads (cold rooftop 100966 -> 34706
@@ -73,9 +158,15 @@ the next CPU write of the page (sceGnmDispatchInitDefaultHardwareState), no gain
   next to it ("stale"), so its data needs that submission. Total unchanged; and the label through
   the backing view hung the game (a GFX wait on 0x1066181700 saw an older value: the GPU's copy of
   the label stays old and a later download brings it back).
-- Next: only a byte-precise page model (CPU writes that miss the GPU bytes need no download)
-  avoids it; the uploads of CPU-modified pages would then have to skip GPU-written bytes.
-- Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction);
+- Tried (2026-10-18, not kept): the byte-precise model. 2026-10-18 rooftop at 60 FPS: ~110 such
+  downloads a second, ~0.4 s of waits a second; none of 6656 hit GPU-written bytes. Skipping the
+  GPU's bytes at upload hung the boot: the CPU later rewrites 0x105b502000's ring buffer over the
+  GPU's old bytes without faulting (the page was unprotected by an earlier write).
+- Next: know which bytes the CPU writes after a fault (emulate the faulting stores, keeping the
+  page protected for those pages only), or make the GPU's bytes reach memory without a full wait
+  (copy them back right after the write and wait for that submission only).
+- Tools: THEORDER_FRAME_STATS prints "Buffer downloads by time" (window, CPU writes, instruction)
+  and "Write-fault downloads: N on GPU-written bytes, M beside them";
   THEORDER_GPU_WRITE_WATCH=<hex> prints the writable bindings in that address's 64 KiB.
 
 ## 4. Scene-load pauses (pipeline restores) — doing
