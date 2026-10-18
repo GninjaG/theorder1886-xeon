@@ -277,17 +277,33 @@ typedef void (ABI *KeyDestructor)(void *);
 static struct { int used; KeyDestructor destructor; } keys[KEYS];
 static pthread_mutex_t key_lock=PTHREAD_MUTEX_INITIALIZER;
 static _Thread_local void *key_values[KEYS];
-static ABI int32_t key_create(uint32_t *key,KeyDestructor destructor) {
+/* THEORDER_KEY_TRACE=1: key creations and stores with their callers and threads (first 400);
+ * the thread is the system's id, as in fault reports. */
+#ifdef _WIN32
+__declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
+#define TRACE_TID() ((unsigned long)GetCurrentThreadId())
+#else
+#define TRACE_TID() ((unsigned long)gettid())
+#endif
+static int key_trace(void) {
+    static int trace=-1, events;
+    if (trace<0) trace=getenv("THEORDER_KEY_TRACE")!=NULL;
+    return trace && __atomic_fetch_add(&events,1,__ATOMIC_RELAXED)<400;
+}
+static int32_t key_create_by(uint32_t *key,KeyDestructor destructor,void *caller) {
     if (!key) return ERR(22);
     pthread_mutex_lock(&key_lock);
     for (uint32_t i=1;i<KEYS;++i) if (!keys[i].used) {
         keys[i].used=1; keys[i].destructor=destructor;
         pthread_mutex_unlock(&key_lock);
-        *key=i; return 0;
+        *key=i;
+        if (key_trace()) printf("Key %u created by %p on thread %lu\n",i,caller,TRACE_TID());
+        return 0;
     }
     pthread_mutex_unlock(&key_lock);
     return ERR(35);
 }
+static ABI int32_t key_create(uint32_t *key,KeyDestructor destructor) { return key_create_by(key,destructor,__builtin_return_address(0)); }
 static ABI int32_t key_delete(uint32_t key) {
     if (!key || key>=KEYS) return ERR(22);
     pthread_mutex_lock(&key_lock);
@@ -296,10 +312,12 @@ static ABI int32_t key_delete(uint32_t key) {
     pthread_mutex_unlock(&key_lock);
     return r;
 }
-static ABI int32_t key_set(uint32_t key,void *value) {
+static int32_t key_set_by(uint32_t key,void *value,void *caller) {
     if (!key || key>=KEYS || !keys[key].used) return ERR(22);
+    if (key_trace()) printf("Key %u = %p by %p on thread %lu\n",key,value,caller,TRACE_TID());
     key_values[key]=value; return 0;
 }
+static ABI int32_t key_set(uint32_t key,void *value) { return key_set_by(key,value,__builtin_return_address(0)); }
 static ABI void *key_get(uint32_t key) { return key && key<KEYS ? key_values[key] : NULL; }
 void runtime_thread_keys_cleanup(void) {
     for (int round=0;round<4;++round) {
@@ -313,9 +331,9 @@ void runtime_thread_keys_cleanup(void) {
         if (!any) break;
     }
 }
-static ABI int32_t posix_key_create(uint32_t *k,KeyDestructor d) { int32_t r=key_create(k,d); return r ? r&0xffff : 0; }
+static ABI int32_t posix_key_create(uint32_t *k,KeyDestructor d) { int32_t r=key_create_by(k,d,__builtin_return_address(0)); return r ? r&0xffff : 0; }
 static ABI int32_t posix_key_delete(uint32_t k) { int32_t r=key_delete(k); return r ? r&0xffff : 0; }
-static ABI int32_t posix_key_set(uint32_t k,void *v) { int32_t r=key_set(k,v); return r ? r&0xffff : 0; }
+static ABI int32_t posix_key_set(uint32_t k,void *v) { int32_t r=key_set_by(k,v,__builtin_return_address(0)); return r ? r&0xffff : 0; }
 
 #define MAX_EVENT_FLAGS 256
 typedef struct {
