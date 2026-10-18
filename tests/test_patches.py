@@ -195,6 +195,25 @@ class SignatureTests(unittest.TestCase):
         self.assertEqual(len(sites), 7)
         self.assertEqual({struct.unpack_from('<d', image, s)[0] for s in sites}, {0.5625})
 
+    def test_frame_rate_patch_finds_the_01_00_sites(self):
+        # CUSA00076 01.00 (issue #12): the same four sites, one of them through rcx instead of
+        # rax (48 c7 81 .. c7 41 where 01.02 has 48 c7 80 .. c7 40).
+        sites = ['49 69 97 18 01 00 00 35 82 00 00 48 39 d1 0f',
+                 '48 29 ca 48 69 c2 35 82 00 00 e9 15 02 00 00',
+                 '48 29 c1 48 69 c1 35 82 00 00 eb 0a',
+                 '48 c7 81 80 00 00 00 35 82 00 00 c7 41 7c 01 00 00 00']
+        image = bytearray(16)
+        constants = []
+        for site in sites:
+            data = bytes.fromhex(site)
+            constants.append(len(image) + data.index(bytes.fromhex('35820000')))
+            image += data + bytes(16)
+        skipped = {}
+        writes = compile_patches(ORDER, ['Frame Rate Patch - 60 FPS'], None, [(0, len(image))],
+                                 bytes(image), skipped, reference=False)
+        self.assertEqual(skipped, {})
+        self.assertEqual(sorted(writes), [(c, bytes.fromhex('1b410000')) for c in sorted(constants)])
+
     def test_frame_time_sites_show_the_constant_in_context(self):
         import patches
         image = bytes(16) + bytes.fromhex('48 69 c2 35 82 00 00 e9 15 02 00 00') + bytes(8)

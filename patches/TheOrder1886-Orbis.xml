@@ -20,7 +20,7 @@
             <Line Type="bytes" Address="0x00486a93" Value="1b410000" Pattern="49 69 97 18 01 00 00 35 82 00 00 48 39 d1" At="7"/>
             <Line Type="bytes" Address="0x00345ca7" Value="1b410000" Pattern="48 69 c2 35 82 00 00 e9 ?? ?? ?? ??" At="3"/>
             <Line Type="bytes" Address="0x00345eb5" Value="1b410000" Pattern="48 69 c1 35 82 00 00 eb ??" At="3"/>
-            <Line Type="bytes" Address="0x0044904c" Value="1b410000" Pattern="48 c7 80 80 00 00 00 35 82 00 00 c7 40 7c 01 00 00 00" At="7"/>
+            <Line Type="bytes" Address="0x0044904c" Value="1b410000" Pattern="48 c7 ?? 80 00 00 00 35 82 00 00 c7 ?? 7c 01 00 00 00" At="7"/>
         </PatchList>
     </Metadata>
     <Metadata Title="The Order 1886"
