@@ -62,6 +62,15 @@ public:
                             });
     }
 
+    /// port: protects (or stops protecting) the GPU-modified pages of a range for CPU reads
+    /// in relaxed readback mode (RegionManager::WatchReads).
+    void WatchReads(VAddr cpu_addr, u64 size, bool enable) noexcept {
+        IteratePages<false>(cpu_addr, size, [enable](RegionManager* manager, u64 offset, size_t size) {
+            std::scoped_lock lk{manager->lock};
+            manager->WatchReads(manager->GetCpuAddr() + offset, size, enable);
+        });
+    }
+
     /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified(VAddr dirty_cpu_addr, u64 query_size) noexcept {
         IteratePages<false>(dirty_cpu_addr, query_size,

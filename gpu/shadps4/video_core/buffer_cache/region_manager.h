@@ -42,6 +42,37 @@ public:
         gpu.Clear();
         writeable.Fill();
         readable.Fill();
+        read_watch.Clear();
+    }
+
+    /// port: relaxed readbacks also protect the GPU-modified pages of read-watched ranges for
+    /// reads (BufferCache::NoteSmallWrite): a CPU read of a buffer the GPU wrote faults once and
+    /// downloads it. THEORDER_READ_WATCH=0 turns it off.
+    static bool ReadWatchActive() {
+        static const bool active = [] {
+            const char* env = std::getenv("THEORDER_READ_WATCH");
+            return EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed &&
+                   !(env && env[0] == '0');
+        }();
+        return active;
+    }
+
+    /// port: whether the GPU-modified pages of [addr, addr + size) are protected for reads.
+    void WatchReads(u64 addr, u64 size, bool enable) {
+        const size_t offset = addr - cpu_addr;
+        const size_t start_page = SanitizeAddress(offset) / TRACKER_BYTES_PER_PAGE;
+        const size_t end_page =
+            Common::DivCeil(SanitizeAddress(offset + size), TRACKER_BYTES_PER_PAGE);
+        if (start_page >= NUM_PAGES_PER_REGION || end_page <= start_page) {
+            return;
+        }
+        if (enable) {
+            read_watch.SetRange(start_page, end_page);
+            UpdateProtection<true, true>();
+        } else {
+            read_watch.UnsetRange(start_page, end_page);
+            UpdateProtection<false, true>();
+        }
     }
     explicit RegionManager() = default;
 
@@ -103,7 +134,8 @@ public:
         }
         if constexpr (type == Type::CPU) {
             UpdateProtection<!enable, false>();
-        } else if (EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise) {
+        } else if (EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise ||
+                   ReadWatchActive()) {
             UpdateProtection<enable, true>();
         }
     }
@@ -205,12 +237,17 @@ private:
     template <bool track, bool is_read>
     void UpdateProtection() {
         RENDERER_TRACE;
-        RegionBits mask = is_read ? (~gpu ^ readable) : (cpu ^ writeable);
+        // port: relaxed readbacks hide only the read-watched GPU-modified pages.
+        const RegionBits hidden = !is_read ? RegionBits{}
+                                  : EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise
+                                      ? gpu
+                                      : (gpu & read_watch);
+        RegionBits mask = is_read ? (~hidden ^ readable) : (cpu ^ writeable);
         if (mask.None()) {
             return;
         }
         if constexpr (is_read) {
-            readable = ~gpu;
+            readable = ~hidden;
         } else {
             writeable = cpu;
         }
@@ -288,6 +325,7 @@ private:
     RegionBits gpu;
     RegionBits writeable;
     RegionBits readable;
+    RegionBits read_watch; ///< port: WatchReads
 };
 
 } // namespace VideoCore

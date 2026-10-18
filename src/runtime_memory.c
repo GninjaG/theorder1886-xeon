@@ -839,6 +839,27 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
     read_unlock();
     return ok;
 }
+/* Reads through the backing view (as shadPS4's CopySparseMemory does), so host copies never
+ * fault on pages the GPU tracking protects; unmapped or reserved bytes read as zero. */
+void runtime_memory_read_backing(uintptr_t address, void *data, uint64_t size) {
+    unsigned char *out=data;
+    read_lock();
+    for (uintptr_t at=address, end=address+size; at<end;) {
+        size_t i=vma_index(at);
+        if (i==vma_count) { memset(out+(at-address),0,end-at); break; }
+        if (vmas[i].start>at) {
+            uintptr_t gap=vmas[i].start<end ? vmas[i].start : end;
+            memset(out+(at-address),0,gap-at);
+            at=gap;
+            continue;
+        }
+        uint64_t n=(vmas[i].end<end ? vmas[i].end : end)-at;
+        if (vmas[i].kind==KIND_RESERVED) memset(out+(at-address),0,n);
+        else memcpy(out+(at-address),backing_base+vmas[i].phys+(at-vmas[i].start),n);
+        at+=n;
+    }
+    read_unlock();
+}
 /* Per-thread cache of recently found regions for the GPU's per-draw queries:
  * entries hold for as long as the table generation they were read at. */
 typedef struct { uint64_t generation; uintptr_t start, end; int kind; } CachedRegion;

@@ -114,6 +114,18 @@ public:
     /// Invalidates any image in the logical page range.
     void InvalidateMemory(VAddr addr, size_t size);
 
+    /// port: a recorded buffer-to-staging copy joins the deferred image readbacks: written to
+    /// guest memory once the GPU is done (BufferCache::QueueReadbacks).
+    void QueueBufferReadback(VAddr address, u64 size, Vulkan::StagingBufferRef staging);
+    [[nodiscard]] bool DeferredReadbacks() const noexcept {
+        return deferred_readbacks;
+    }
+
+    /// port (gow3_pc a101edb): guest memory written through the backing view (readbacks, buffer
+    /// downloads) skips page tracking. Any lock may be held: images over the range are marked
+    /// CPU-dirty at the next UpdateImage or GC tick (ApplyBackingWrites).
+    void NoteBackingWrite(VAddr address, u64 size);
+
     /// Marks an image as dirty if it exists at the provided address.
     void InvalidateMemoryFromGPU(VAddr address, size_t max_size);
 
@@ -160,6 +172,7 @@ public:
         constexpr u32 Registered = static_cast<u32>(ImageFlagBits::Registered);
         constexpr u32 Aliased = static_cast<u32>(ImageFlagBits::Aliased);
         return (flags & (Dirty | Registered | Aliased)) == Registered &&
+               !has_backing_writes.load(std::memory_order_acquire) &&
                image.track_addr == image.guest_begin && image.track_addr_end == image.guest_end &&
                image.lru_touched_tick == gc_tick;
     }
@@ -179,12 +192,14 @@ public:
             // Images sharing memory with another take the locked path: SynchronizeAlias.
             constexpr u32 Aliased = static_cast<u32>(ImageFlagBits::Aliased);
             if ((flags & (Dirty | Registered | Aliased)) == Registered &&
+                !has_backing_writes.load(std::memory_order_acquire) &&
                 image.track_addr == image.guest_begin && image.track_addr_end == image.guest_end &&
                 image.lru_touched_tick == gc_tick) {
                 return;
             }
         }
         std::scoped_lock lock{mutex};
+        ApplyBackingWrites();
         Image& image = slot_images[image_id];
         TrackImage(image_id);
         TouchImage(image);
@@ -273,6 +288,22 @@ public:
         return std::nullopt;
     }
 
+    /// port: the HTILE word a shader reading the HTILE surface at `address` sees, or nothing.
+    /// Depth is never compressed here, so tiles read as expanded (ZMask 0xF: read the depth
+    /// image) once the slice was drawn after its clear, and as cleared (ZMask 0) before that.
+    /// Min/max depth stay the full range (radv's initial values). The Order's shadow map
+    /// conversion (cs 0x8ea0ef5b) takes ZMask 0 tiles as empty: no shadows without this.
+    std::optional<u32> HtileReadValue(VAddr address) const {
+        const auto it = surface_metas.find(address);
+        if (it == surface_metas.end() || it->second.type != MetaType::HTile ||
+            it->second.shader_written) {
+            return std::nullopt;
+        }
+        const bool cleared = it->second.clear_mask & 1;
+        const u32 expanded = it->second.htile_stencil ? 0xfffff3ffu : 0xfffc000fu;
+        return cleared ? expanded & ~0xfu : expanded;
+    }
+
     /// Returns true if a slice of the specified metadata surface has been cleared.
     bool IsMetaCleared(VAddr address, u32 slice) const {
         const auto& it = surface_metas.find(address);
@@ -287,9 +318,19 @@ public:
         auto it = surface_metas.find(address);
         if (it != surface_metas.end()) {
             it.value().clear_mask = u32(-1);
+            it.value().shader_written = false;
             return true;
         }
         return false;
+    }
+
+    /// port: a shader wrote a metadata surface with more than a clear (it encodes it): readers
+    /// see those words, not HtileReadValue's, until the next clear.
+    void NoteMetaShaderWrite(VAddr address) {
+        auto it = surface_metas.find(address);
+        if (it != surface_metas.end()) {
+            it.value().shader_written = true;
+        }
     }
 
     /// Updates the state of a slice of the specified metadata surface.
@@ -479,6 +520,11 @@ private:
     void RetireReadbacks();
     PageTable page_table;
     std::mutex mutex;
+    /// port: under `mutex`. GPU-modified images hold the written data themselves.
+    void ApplyBackingWrites();
+    std::mutex backing_writes_mutex;
+    std::vector<std::pair<VAddr, u64>> backing_writes;
+    std::atomic<bool> has_backing_writes{false};
     /// port: images with the same guest address (guarded by `mutex`). `backing` holds the
     /// complete contents; `writer` is a newer write not yet copied into it.
     struct AliasState {
@@ -528,6 +574,8 @@ private:
     struct MetaDataInfo {
         MetaType type;
         s32 clear_mask = -1;
+        bool htile_stencil{}; ///< port: HTILE words carry stencil state (HtileReadValue)
+        bool shader_written{}; ///< port: NoteMetaShaderWrite since the last clear
     };
     tsl::robin_map<VAddr, MetaDataInfo> surface_metas;
 };

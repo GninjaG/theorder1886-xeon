@@ -6,6 +6,11 @@
 #include "port_copy.h"
 
 #include <deque>
+#include <map>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <boost/container/small_vector.hpp>
 
 #include "common/interval_set.h"
@@ -112,7 +117,27 @@ public:
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
 
+    /// port: records the copy back to guest memory of every CPU-read buffer the GPU wrote since
+    /// the last call (deferred like image readbacks; published when the GPU is done).
+    void QueueReadbacks();
+
 private:
+    /// port: a small written binding: read-watched until the CPU reads it, then copied back
+    /// after each GPU write (relaxed readbacks; The Order's per-tile depth buffer that sets
+    /// the aim focus and the shadow cascades is read by the CPU every frame).
+    void NoteSmallWrite(VAddr device_addr, u32 size);
+    /// port: after a CPU read fault downloaded `device_addr`: its watched range becomes a
+    /// readback buffer.
+    void PromoteReadback(VAddr device_addr);
+    /// port: a CPU write to a watched range: not a pure GPU output, never watched again (its
+    /// pages flipped protection twice a frame: ~5% of the frame in the rooftop scene).
+    void UnwatchCpuWritten(VAddr device_addr, u64 size);
+    static constexpr u32 ReadWatchMaxBytes = 64 * 1024;
+    std::mutex read_watch_mutex;
+    std::map<VAddr, u32> read_watched;                ///< protected for reads until read
+    std::unordered_set<VAddr> never_watched;          ///< written by the CPU (UnwatchCpuWritten)
+    std::unordered_map<VAddr, u32> readback_buffers;  ///< copied back after GPU writes
+    std::vector<VAddr> readback_dirty;                ///< written since QueueReadbacks
     struct ArenaBinds {
         const Buffer* arena;
         boost::container::small_vector<vk::SparseMemoryBind, 32> binds;
@@ -162,7 +187,12 @@ private:
 
     StreamBuffer stream_buffer;
     Buffer gds_buffer;
+    /// port: guarded by gpu_ranges_mutex: written on the draw recording thread, subtracted by
+    /// downloads on the GPU thread, read by guest write faults (TouchesGpuBytes).
     RangeSet gpu_modified_ranges;
+    std::mutex gpu_ranges_mutex;
+    /// port: whether [device_addr, device_addr + size) holds bytes a GPU binding wrote.
+    bool TouchesGpuBytes(VAddr device_addr, u64 size);
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;

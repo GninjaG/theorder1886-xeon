@@ -148,6 +148,20 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     return true;
 }
 
+void TextureCache::QueueBufferReadback(VAddr address, u64 size, Vulkan::StagingBufferRef staging) {
+    std::scoped_lock lock{readback_mutex};
+    RetireReadbacks();
+    if (!pending_readbacks.CanFit(size)) {
+        ++readbacks_waited;
+        scheduler.Finish();
+        RetireReadbacks();
+    }
+    WatchReadback<true>(address, size);
+    pending_readbacks.Push(address, size, scheduler.CurrentTick(), staging);
+    has_pending_readbacks.store(true, std::memory_order_release);
+    ++readbacks_queued;
+}
+
 void TextureCache::CancelReadbacks(VAddr address, u64 size) {
     if (!deferred_readbacks) return;
     std::scoped_lock lock{readback_mutex};
@@ -546,6 +560,36 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
             MarkAsMaybeDirty(image_id, image);
         }
     });
+}
+
+void TextureCache::NoteBackingWrite(VAddr address, u64 size) {
+    std::scoped_lock lock{backing_writes_mutex};
+    backing_writes.emplace_back(address, size);
+    has_backing_writes.store(true, std::memory_order_release);
+}
+
+void TextureCache::ApplyBackingWrites() {
+    if (!has_backing_writes.load(std::memory_order_acquire)) {
+        return;
+    }
+    std::vector<std::pair<VAddr, u64>> writes;
+    {
+        std::scoped_lock lock{backing_writes_mutex};
+        writes.swap(backing_writes);
+        has_backing_writes.store(false, std::memory_order_release);
+    }
+    // Readbacks and buffer downloads put GPU-written bytes in guest memory without a fault;
+    // textures cached there kept the old texels (gow3_pc #138: streamed textures).
+    for (const auto& [address, size] : writes) {
+        ForEachImageInRegion(address, size, [&](ImageId image_id, Image& image) {
+            // Images sharing memory with a GPU writer are synchronized by SynchronizeAlias.
+            if (True(image.flags & (ImageFlagBits::GpuModified | ImageFlagBits::Aliased))) {
+                return;
+            }
+            image.flags |= ImageFlagBits::CpuDirty;
+            UntrackImage(image_id);
+        });
+    }
 }
 
 void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
@@ -1143,9 +1187,19 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
 
     // Register meta data for this depth buffer
     if (desc.info.meta_info.htile_addr) {
-        surface_metas.emplace(desc.info.meta_info.htile_addr,
-                              MetaDataInfo{.type = MetaType::HTile,
-                                           .clear_mask = image.info.meta_info.htile_clear_mask});
+        const bool added =
+            surface_metas
+                .emplace(desc.info.meta_info.htile_addr,
+                         MetaDataInfo{.type = MetaType::HTile,
+                                      .clear_mask = image.info.meta_info.htile_clear_mask,
+                                      .htile_stencil = desc.info.props.has_stencil})
+                .second;
+        if (added && image.info.meta_info.htile_addr != desc.info.meta_info.htile_addr) {
+            std::printf("HTILE meta: %#llx for depth %#llx %ux%u\n",
+                        static_cast<unsigned long long>(desc.info.meta_info.htile_addr),
+                        static_cast<unsigned long long>(image.info.guest_address),
+                        image.info.size.width, image.info.size.height);
+        }
         image.info.meta_info.htile_addr = desc.info.meta_info.htile_addr;
     }
 
@@ -1671,6 +1725,10 @@ void TextureCache::RunGarbageCollector() {
     SCOPE_EXIT {
         ++gc_tick;
     };
+    {
+        std::scoped_lock lock{mutex};
+        ApplyBackingWrites();
+    }
 
     GarbageCollectImages();
     GarbageCollectSamplers();

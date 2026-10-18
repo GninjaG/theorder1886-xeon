@@ -41,6 +41,7 @@ int runtime_memory_write_backing(uintptr_t address, const void *data,
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end,
                           int *mapped);
+void runtime_memory_read_backing(uintptr_t address, void *data, uint64_t size);
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read,
                                 int write);
 typedef void (*RuntimeGpuRange)(uintptr_t address, uint64_t size);
@@ -137,22 +138,11 @@ bool MemoryManager::IsValidGpuMapping(VAddr virtual_addr, u64 size) {
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
   return runtime_memory_clamp(virtual_addr, size);
 }
+// Through the backing view, as upstream: a host copy thread reading a page the GPU tracking
+// protects for reads (precise readbacks) faulted into ReadMemory, which waits for the draw
+// recorder: a deadlock when the copy ran on the recorder itself.
 static void CopySparseSerial(VAddr source, u8 *dest, u64 size) {
-  while (size) {
-    uintptr_t start = 0, end = 0;
-    int mapped = 0;
-    if (!runtime_memory_region(source, &start, &end, &mapped)) {
-      end = source + size;
-    }
-    const u64 n = std::min<u64>(size, end - source);
-    if (mapped)
-      std::memcpy(dest, reinterpret_cast<const void *>(source), n);
-    else
-      std::memset(dest, 0, n);
-    source += n;
-    dest += n;
-    size -= n;
-  }
+  runtime_memory_read_backing(source, dest, size);
 }
 void MemoryManager::CopySparseMemory(VAddr source, u8 *dest, u64 size) {
   // port: large uploads (streaming) are split across the copy threads.
@@ -169,8 +159,15 @@ void MemoryManager::CopySparseMemory(VAddr source, u8 *dest, u64 size) {
 bool MemoryManager::TryWriteBacking(void *address, const void *data, u64 size) {
   PortWriteLog::Note(reinterpret_cast<uintptr_t>(address), data, size,
                      PortWriteLog::Backing);
-  return runtime_memory_write_backing(reinterpret_cast<uintptr_t>(address),
-                                      data, size) != 0;
+  const bool written = runtime_memory_write_backing(
+                           reinterpret_cast<uintptr_t>(address), data, size) != 0;
+  // The write skipped page tracking: textures over it must reload. Labels and fences
+  // (<= 8 bytes) never hold texels; each would send every texture through the locked path.
+  if (written && rasterizer && size > 8) {
+    rasterizer->GetTextureCache().NoteBackingWrite(
+        reinterpret_cast<VAddr>(address), size);
+  }
+  return written;
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size,
                            MemoryPermission perms) {

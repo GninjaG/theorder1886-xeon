@@ -106,9 +106,42 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 BufferCache::~BufferCache() = default;
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
+    if (RegionManager::ReadWatchActive()) {
+        UnwatchCpuWritten(device_addr, size);
+    }
+    // Byte-precise writes were tried here (2026-10-18): every write-fault download landed beside
+    // the GPU's bytes, but a ring buffer at 0x105b502000 is written by the CPU over bytes the
+    // GPU wrote a frame earlier, after an earlier write had unprotected the page: skipping the
+    // GPU's bytes at upload dropped the CPU's new data and the game hung at its first frames.
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
         ReadMemory(device_addr, size, true, assume_locks);
     });
+}
+
+bool BufferCache::TouchesGpuBytes(VAddr device_addr, u64 size) {
+    std::scoped_lock lock{gpu_ranges_mutex};
+    return gpu_modified_ranges.Intersects(device_addr, size);
+}
+
+void BufferCache::UnwatchCpuWritten(VAddr device_addr, u64 size) {
+    std::scoped_lock lock{read_watch_mutex};
+    if (read_watched.empty()) {
+        return;
+    }
+    // The ranges that start before the write's end and end after its start.
+    auto it = read_watched.upper_bound(device_addr + size);
+    while (it != read_watched.begin()) {
+        --it;
+        if (it->first + it->second <= device_addr) {
+            if (device_addr - it->first > ReadWatchMaxBytes) {
+                break; // ranges are at most ReadWatchMaxBytes long
+            }
+            continue;
+        }
+        never_watched.insert(it->first);
+        memory_tracker->WatchReads(it->first, it->second, false);
+        it = read_watched.erase(it);
+    }
 }
 
 // port: the game fills its per-frame buffers (constants, skinning output) sequentially and
@@ -213,6 +246,16 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
         const u32 first_block = device_addr >> block_shift;
         const u32 last_block = (device_addr + size - 1) >> block_shift;
         const auto* arena = GetArena(first_block, last_block);
+        if (is_write && stats) {
+            // Whether the CPU write lands on bytes the GPU wrote or only shares their page.
+            static u64 inside = 0, outside = 0;
+            ++(TouchesGpuBytes(device_addr, size) ? inside : outside);
+            if ((inside + outside) % 512 == 0) {
+                std::printf("Write-fault downloads: %llu on GPU-written bytes, %llu beside them\n",
+                            static_cast<unsigned long long>(inside),
+                            static_cast<unsigned long long>(outside));
+            }
+        }
 
         // GPU-modified ranges come as many small scattered islands,
         // so the download is widened to a window around the request
@@ -227,12 +270,87 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
         NoteDownload(window_start, is_write, std::chrono::steady_clock::now() - started, rip);
         if (is_write) {
             memory_tracker->MarkRegionAsCpuModified(device_addr, size);
+        } else if (RegionManager::ReadWatchActive()) {
+            PromoteReadback(device_addr);
         }
     };
     if (assume_locks) {
         flush_request();
     } else {
         liverpool->SendCommand<true>(std::move(flush_request));
+    }
+}
+
+void BufferCache::NoteSmallWrite(VAddr device_addr, u32 size) {
+    std::scoped_lock lock{read_watch_mutex};
+    if (const auto it = readback_buffers.find(device_addr); it != readback_buffers.end()) {
+        it->second = std::max(it->second, size);
+        if (std::ranges::find(readback_dirty, device_addr) == readback_dirty.end()) {
+            readback_dirty.push_back(device_addr);
+        }
+        return;
+    }
+    // Most small written buffers are never read by the CPU: watched once, they cost nothing
+    // until a read. The cap bounds the map if an engine writes many distinct small ranges.
+    if (read_watched.size() < 4096 && !never_watched.contains(device_addr) &&
+        read_watched.emplace(device_addr, size).second) {
+        memory_tracker->WatchReads(device_addr, size, true);
+        const size_t n = read_watched.size() + never_watched.size();
+        if ((n & (n - 1)) == 0 && n >= 16) {
+            std::printf("Read watch: %zu ranges watched, %zu written by the CPU\n",
+                        read_watched.size(), never_watched.size());
+        }
+    }
+}
+
+void BufferCache::PromoteReadback(VAddr device_addr) {
+    std::scoped_lock lock{read_watch_mutex};
+    for (auto it = read_watched.begin(); it != read_watched.end(); ++it) {
+        if (device_addr < it->first || device_addr >= it->first + it->second) {
+            continue;
+        }
+        const VAddr address = it->first;
+        const u32 size = it->second;
+        read_watched.erase(it);
+        readback_buffers.emplace(address, size);
+        memory_tracker->WatchReads(address, size, false);
+        std::printf("Buffer readback: the CPU reads %#llx (%u bytes) after GPU writes; copied "
+                    "back after each write from now on\n",
+                    static_cast<unsigned long long>(address), size);
+        return;
+    }
+}
+
+void BufferCache::QueueReadbacks() {
+    std::vector<VAddr> dirty;
+    {
+        std::scoped_lock lock{read_watch_mutex};
+        if (readback_dirty.empty()) {
+            return;
+        }
+        dirty.swap(readback_dirty);
+    }
+    for (const VAddr address : dirty) {
+        u32 size;
+        {
+            std::scoped_lock lock{read_watch_mutex};
+            size = readback_buffers[address];
+        }
+        const u64 first_block = address >> block_shift;
+        const u64 last_block = (address + size - 1) >> block_shift;
+        const auto* arena = GetArena(first_block, last_block);
+        if (!texture_cache.DeferredReadbacks()) {
+            DownloadMemory(arena, address, size);
+            continue;
+        }
+        const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostCached, 16, true);
+        const vk::BufferCopy copy{
+            .srcOffset = arena->Offset(address),
+            .dstOffset = staging.offset,
+            .size = size,
+        };
+        runtime.CopyBuffer(arena, staging.buffer, std::span{&copy, 1});
+        texture_cache.QueueBufferReadback(address, size, staging);
     }
 }
 
@@ -254,6 +372,7 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
             constexpr u64 mask = ~(align - 1ULL);
             total_size_bytes += (new_size + align - 1) & mask;
         };
+        std::scoped_lock lock{gpu_ranges_mutex};
         gpu_modified_ranges.ForEachInRange(address, size, add_download);
         gpu_modified_ranges.Subtract(address, size);
     });
@@ -361,6 +480,33 @@ void PrintBufferStats() {
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
     texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
+    // port: a shader reading an HTILE surface sees what the hardware would have written there
+    // (TextureCache::HtileReadValue); nothing here writes HTILE while depth is drawn.
+    // THEORDER_HTILE_READ=0 leaves the guest bytes (A/B tests).
+    static const bool htile_read = [] {
+        const char* env = std::getenv("THEORDER_HTILE_READ");
+        return !env || env[0] != '0';
+    }();
+    if (!is_written && htile_read) {
+        if (const auto htile = texture_cache.HtileReadValue(device_addr)) {
+            const u64 first_block = device_addr >> block_shift;
+            const u64 last_block = (device_addr + size - 1) >> block_shift;
+            const auto* arena = GetArena(first_block, last_block);
+            EnsureResident(arena, first_block, last_block);
+            runtime.FillBuffer(arena, arena->Offset(device_addr), Common::AlignUp(size, 4u),
+                               *htile);
+            static std::mutex reported_mutex;
+            static std::unordered_map<VAddr, u32> reported;
+            {
+                std::scoped_lock lock{reported_mutex};
+                if (reported.size() < 64 && reported.emplace(device_addr, *htile).second) {
+                    std::printf("HTILE read: %#llx, %u bytes, word %#010x\n",
+                                static_cast<unsigned long long>(device_addr), size, *htile);
+                }
+            }
+            return {arena, arena->Offset(device_addr)};
+        }
+    }
     const bool stats = BufferStatsEnabled();
     if (stats) {
         PrintBufferStats();
@@ -408,7 +554,14 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             PortStats::buffer_upload_bytes.load(std::memory_order_relaxed) - uploaded_before;
     }
     if (is_written) {
-        gpu_modified_ranges.Add(device_addr, size);
+        {
+            std::scoped_lock lock{gpu_ranges_mutex};
+            gpu_modified_ranges.Add(device_addr, size);
+        }
+        texture_cache.NoteMetaShaderWrite(device_addr);
+        if (size <= ReadWatchMaxBytes && RegionManager::ReadWatchActive()) {
+            NoteSmallWrite(device_addr, size);
+        }
         // port: THEORDER_GPU_WRITE_WATCH=<hex address>: the first writable bindings in its 64 KiB
         // (the GPU-modified state is kept per page).
         static const VAddr watch = [] {
@@ -699,8 +852,8 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
 bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size) {
     if (auto type = texture_cache.IsMeta(device_addr)) {
         if (*type == TextureCache::MetaType::HTile) {
-            static constexpr u32 ZmaskUncompressed = 0xf;
-            runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
+            runtime.FillBuffer(arena, arena->Offset(device_addr), size,
+                               *texture_cache.HtileReadValue(device_addr));
             return true;
         } else {
             LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));

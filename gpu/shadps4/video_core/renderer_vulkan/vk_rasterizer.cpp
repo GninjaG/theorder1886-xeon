@@ -986,9 +986,11 @@ static void NoteUserData(const Shader::Info& stage, u32 first_slot) {
 }
 
 void Rasterizer::DiagPassBoundary(bool force) {
+    // Off with THEORDER_DIAG_CS (one compute shader's images only).
     static const bool enabled = [] {
         const char* env = std::getenv("THEORDER_DIAG_IMAGES");
-        return env && *env == '1';
+        const char* cs = std::getenv("THEORDER_DIAG_CS");
+        return env && *env == '1' && !(cs && *cs);
     }();
     if (!enabled) {
         return;
@@ -1063,6 +1065,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         static const char* scene_debug = std::getenv("THEORDER_SCENE_DEBUG");
         scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
         scene_targets->debug = scene_debug_frame;
+    } else if (GpuProfiler::Get() && regs.color_buffers[0] &&
+               FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+        NoteFrameStart(); // THEORDER_GPU_PROFILE without an upscaler: a frame per display pass
     }
     bind_prepared = used_prepared;
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
@@ -1452,7 +1457,12 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         const char* env = std::getenv("THEORDER_DIAG_IMAGES");
         return env && *env == '1';
     }();
-    if (diag_images && FrameCapture::IsRecording()) {
+    // THEORDER_DIAG_CS=<hex hash>: only that compute shader's images.
+    static const u64 diag_cs = [] {
+        const char* env = std::getenv("THEORDER_DIAG_CS");
+        return env ? std::strtoull(env, nullptr, 16) : 0;
+    }();
+    if (diag_images && FrameCapture::IsRecording() && (!diag_cs || cs.pgm_hash == diag_cs)) {
         char tag[32];
         std::snprintf(tag, sizeof(tag), "cs%08x", static_cast<u32>(cs.pgm_hash));
         const auto images = bound_images;
@@ -1541,6 +1551,7 @@ void Rasterizer::OnSubmit() {
         fault_process_pending = false;
         buffer_cache.ProcessFaultBuffer();
     }
+    buffer_cache.QueueReadbacks();
     texture_cache.ProcessDownloadImages();
     texture_cache.RunGarbageCollector();
     runtime.TickFrame();
@@ -2284,14 +2295,21 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
-                    // Once per shader: some scenes hit this in thousands of draws a second.
+                    // Once per shader and binding: some scenes hit this in thousands of draws a
+                    // second. 32-bit loads use dword offsets and lose the 2-byte remainder.
                     static std::mutex warned_mutex;
                     static std::unordered_set<u64> warned;
                     std::scoped_lock lock{warned_mutex};
-                    if (warned.insert(stage.pgm_hash).second) {
+                    if (warned.insert(stage.pgm_hash ^ (u64(binding.buffer) << 56)).second) {
                         LOG_WARNING(Render_Vulkan,
-                                    "Buffer binding in shader {:#x} isn't dword aligned",
-                                    stage.pgm_hash);
+                                    "Buffer binding in shader {:#x} isn't dword aligned: slot {} "
+                                    "address {:#x} stride {} records {} element size {} dfmt {} "
+                                    "nfmt {} types {:#x} formatted {} written {}",
+                                    stage.pgm_hash, binding.buffer, vsharp.base_address,
+                                    vsharp.GetStride(), vsharp.num_records,
+                                    vsharp.GetElementSize(), u32(vsharp.GetDataFmt()),
+                                    u32(vsharp.GetNumberFmt()), u32(desc.used_types),
+                                    desc.is_formatted, desc.is_written);
                     }
                 }
                 push_data.AddOffset(binding.buffer, adjust);
@@ -3377,6 +3395,7 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
 
 void Rasterizer::ProcessDownloadImages() {
     DrainDrawPipe();
+    buffer_cache.QueueReadbacks();
     texture_cache.ProcessDownloadImages();
 }
 

@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdio>
+#include <mutex>
+#include <unordered_set>
 #include <boost/container/small_vector.hpp>
 #include "port_toggles.h"
 #include "port_backtrace.h"
@@ -87,6 +90,16 @@ struct PageManager::Impl {
         } else {
             PortStats::read_faults.fetch_add(1, std::memory_order_relaxed);
             PortStats::Timer timer{PortStats::t_read_faults};
+            // port: which instructions read GPU-written memory (once each, first 64).
+            static std::mutex seen_mutex;
+            static std::unordered_set<const void*> seen;
+            if (const void* rip = Common::GetRip(context); !is_gpu_thread) {
+                std::scoped_lock lock{seen_mutex};
+                if (seen.size() < 64 && seen.insert(rip).second) {
+                    std::printf("Read fault: rip %p reads %#llx\n", rip,
+                                static_cast<unsigned long long>(addr));
+                }
+            }
             return rasterizer->ReadMemory(addr, 8, is_gpu_thread);
         }
         return false;
