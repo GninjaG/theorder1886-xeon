@@ -1,6 +1,8 @@
 /* Offline AppContent provider for the configured base-game profile.
- * No package/DLC mounting, downloads, entitlement or license emulation. */
+ * Add-on content (DLC) is the dumped add-on folders found at start (find_addons), mounted at
+ * /addcontN; no downloads, entitlement or license emulation. */
 #include "runtime.h"
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +10,17 @@
 #define NOT_LOADED ((int32_t)0x805a1001)
 #define PARAMETER ((int32_t)0x80d90002)
 #define BUSY ((int32_t)0x80d90003)
+#define NOT_FOUND ((int32_t)0x80d90005)
+#define NO_ENTITLEMENT ((int32_t)0x80d90007)
+#define INSTALLED 4u
+#define LABEL_OFFSET 20 /* CONTENT_ID "UP9000-CUSA00035_00-TO1886GAMEDLC100": the label follows */
+typedef struct { char data[17]; char padding[3]; } Label;
+typedef struct { Label label; uint32_t status; } AddcontInfo;
+typedef struct { char data[16]; } MountPoint;
+_Static_assert(sizeof(AddcontInfo)==24,"SceAppContentAddcontInfo layout");
+typedef struct { char label[17]; char title[64]; char host[512]; } Addon;
+static Addon addons[16];
+static unsigned addon_count;
 static unsigned refs, initialized, configured;
 static uint32_t parameters[5];
 static unsigned queries, lists;
@@ -48,6 +61,59 @@ static void require_loaded(void) {
     require_provider();
     if (!refs) { fputs("STOP: AppContent called before module load\n",stderr); exit(21); }
 }
+/* A string value of a param.sfo, or NULL. */
+static const char *sfo_string(const unsigned char *sfo,size_t size,const char *key) {
+    if (size<20 || memcmp(sfo,"\0PSF",4)) return NULL;
+    uint32_t keys,values,count;
+    memcpy(&keys,sfo+8,4); memcpy(&values,sfo+12,4); memcpy(&count,sfo+16,4);
+    for (uint32_t i=0;i<count && 20+16*(size_t)i+16<=size;++i) {
+        const unsigned char *e=sfo+20+16*i;
+        uint16_t key_offset,format; uint32_t length,data_offset;
+        memcpy(&key_offset,e,2); memcpy(&format,e+2,2); memcpy(&length,e+4,4); memcpy(&data_offset,e+12,4);
+        if (keys+key_offset>=size || values+(size_t)data_offset+length>size || format!=0x0204) continue;
+        const char *name=(const char *)sfo+keys+key_offset;
+        if (memchr(name,0,size-keys-key_offset) && !strcmp(name,key)) {
+            const char *value=(const char *)sfo+values+data_offset;
+            return memchr(value,0,length) ? value : NULL;
+        }
+    }
+    return NULL;
+}
+/* Add-on folders under dir: a sce_sys/param.sfo of category "ac" (The Order's two costume packs
+ * sit in the game folder as TO1886GAMEDLC100 and TO1886GAMEDLC200 in the dumps, issue #16). */
+static void find_addons(const char *dir) {
+    DIR *d=opendir(dir);
+    if (!d) return;
+    struct dirent *e;
+    while ((e=readdir(d)) && addon_count<sizeof(addons)/sizeof(addons[0])) {
+        if (e->d_name[0]=='.') continue;
+        char path[1024];
+        snprintf(path,sizeof(path),"%s/%s/sce_sys/param.sfo",dir,e->d_name);
+        FILE *f=fopen(path,"rb");
+        if (!f) continue;
+        unsigned char sfo[16384];
+        const size_t size=fread(sfo,1,sizeof(sfo),f);
+        fclose(f);
+        const char *category=sfo_string(sfo,size,"CATEGORY");
+        const char *content_id=sfo_string(sfo,size,"CONTENT_ID");
+        const char *title=sfo_string(sfo,size,"TITLE");
+        if (!category || strcmp(category,"ac") || !content_id || strlen(content_id)<=LABEL_OFFSET) continue;
+        Addon *a=&addons[addon_count];
+        memset(a,0,sizeof(*a));
+        snprintf(a->label,sizeof(a->label),"%s",content_id+LABEL_OFFSET);
+        snprintf(a->title,sizeof(a->title),"%s",title ? title : "");
+        snprintf(a->host,sizeof(a->host),"%s/%s",dir,e->d_name);
+        int duplicate=0;
+        for (unsigned i=0;i<addon_count;++i) duplicate|=!strcmp(addons[i].label,a->label);
+        if (!duplicate) ++addon_count;
+    }
+    closedir(d);
+}
+static int find_addon(const Label *label) {
+    for (unsigned i=0;i<addon_count;++i)
+        if (!strncmp(label->data,addons[i].label,sizeof(label->data)-1)) return (int)i;
+    return -1;
+}
 static ABI int32_t content_init(const unsigned char *init,unsigned char *boot) {
     require_loaded();
     if (!init || !boot) return PARAMETER;
@@ -55,7 +121,13 @@ static ABI int32_t content_init(const unsigned char *init,unsigned char *boot) {
     /* Only the reserved-zero init profile is implemented. */
     for (unsigned i=0;i<32;++i) if (init[i]) return PARAMETER;
     memset(boot,0,40); initialized=1;
-    puts("Runtime: AppContent initialized; offline base-game profile, no mounted add-ons");
+    char app0[512];
+    if (!runtime_file_host_path("/app0",app0,sizeof(app0))) find_addons(app0);
+    const char *extra=getenv("THEORDER_ADDON_DIR");
+    if (extra && *extra) find_addons(extra);
+    printf("Runtime: AppContent initialized; offline base-game profile, %u add-on(s)",addon_count);
+    for (unsigned i=0;i<addon_count;++i) printf("%s %s (%s)",i ? "," : ":",addons[i].label,addons[i].title);
+    putchar('\n');
     return 0;
 }
 static void require_initialized(void) {
@@ -69,29 +141,62 @@ static ABI int32_t param_int(uint32_t id,int32_t *out) {
     printf("Runtime: AppContent parameter %u = %d\n",id,*out);
     return 0;
 }
-static ABI int32_t addon_list(uint32_t service,void *list,uint32_t capacity,uint32_t *hits) {
+static ABI int32_t addon_list(uint32_t service,AddcontInfo *list,uint32_t capacity,uint32_t *hits) {
     require_initialized();
-    (void)service; /* any service label (CUSA00785 asks a nonzero one): no add-ons under any of them */
-    if ((!capacity || !list) && !hits) return PARAMETER;
-    /* No add-ons are mounted by this provider. Never touch unused list slots. */
-    if (hits) *hits=0;
-    ++lists; return 0;
-}
-static ABI int32_t addcont_mount(const void *mount_param, char *mount_path) {
-    (void)mount_param;
-    require_initialized();
-    puts("Runtime: AppContent addcont mounted");
-    if (mount_path) strcpy(mount_path, "/app0");
+    (void)service; /* any service label (CUSA00785 asks a nonzero one): the same add-ons */
+    ++lists;
+    if (!capacity || !list) {
+        if (!hits) return PARAMETER;
+        *hits=addon_count;
+        return 0;
+    }
+    const uint32_t n=addon_count<capacity ? addon_count : capacity;
+    for (uint32_t i=0;i<n;++i) {
+        memset(&list[i],0,sizeof(list[i]));
+        memcpy(list[i].label.data,addons[i].label,strlen(addons[i].label));
+        list[i].status=INSTALLED;
+    }
+    if (hits) *hits=n;
     return 0;
 }
-static ABI int32_t addcont_unmount(const void *unmount_param) {
-    (void)unmount_param;
-    puts("Runtime: AppContent addcont unmounted");
+static ABI int32_t addon_info(uint32_t service,const Label *label,AddcontInfo *info) {
+    require_initialized();
+    (void)service;
+    if (!label || !info) return PARAMETER;
+    const int i=find_addon(label);
+    if (i<0) return NO_ENTITLEMENT;
+    memset(info,0,sizeof(*info));
+    memcpy(info->label.data,addons[i].label,strlen(addons[i].label));
+    info->status=INSTALLED;
     return 0;
 }
-static ABI int32_t entitlement_key(const void *param, void *key) {
-    (void)param;
-    if (key) memset(key, 0, 16);
+static ABI int32_t addcont_mount(uint32_t service,const Label *label,MountPoint *mount) {
+    require_initialized();
+    (void)service;
+    if (!label || !mount) return PARAMETER;
+    const int i=find_addon(label);
+    if (i<0) return NOT_FOUND;
+    char guest[sizeof(mount->data)];
+    snprintf(guest,sizeof(guest),"/addcont%d",i);
+    if (runtime_file_mount(guest,addons[i].host)) return NOT_FOUND;
+    memset(mount->data,0,sizeof(mount->data));
+    memcpy(mount->data,guest,strlen(guest));
+    printf("Runtime: AppContent add-on %s mounted at %s\n",addons[i].label,guest);
+    return 0;
+}
+static ABI int32_t addcont_unmount(const MountPoint *mount) {
+    if (mount && mount->data[0]) {
+        char guest[sizeof(mount->data)+1]={0};
+        memcpy(guest,mount->data,sizeof(mount->data));
+        runtime_file_unmount(guest);
+    }
+    return 0;
+}
+static ABI int32_t entitlement_key(uint32_t service,const Label *label,unsigned char *key) {
+    (void)service;
+    if (!label || !key) return PARAMETER;
+    if (find_addon(label)<0) return NOT_FOUND;
+    memset(key,0,16);
     return 0;
 }
 uintptr_t runtime_content_resolve(const char *name) {
@@ -101,6 +206,7 @@ uintptr_t runtime_content_resolve(const char *name) {
     if (!strcmp(name,"R9lA82OraNs#libSceAppContent")) return (uintptr_t)content_init;
     if (!strcmp(name,"99b82IKXpH4#libSceAppContent")) return (uintptr_t)param_int;
     if (!strcmp(name,"xnd8BJzAxmk#libSceAppContent")) return (uintptr_t)addon_list;
+    if (!strcmp(name,"m47juOmH0VE#libSceAppContent")) return (uintptr_t)addon_info;
     if (!strcmp(name,"VANhIWcqYak#libSceAppContent")) return (uintptr_t)addcont_mount;
     if (!strcmp(name,"3rHWaV-1KC4#libSceAppContent")) return (uintptr_t)addcont_unmount;
     if (!strcmp(name,"XTWR0UXvcgs#libSceAppContent")) return (uintptr_t)entitlement_key;

@@ -59,6 +59,8 @@ void runtime_file_report(void);
 void runtime_file_configure(const char *app0, const char *user);
 int runtime_file_mount(const char *guest, const char *host);
 void runtime_file_unmount(const char *guest);
+/* Host path of a guest path through the mount table; 0 or a host errno. */
+int runtime_file_host_path(const char *guest, char *out, size_t size);
 int runtime_file_translate(const char *guest, char *out, size_t size);
 int64_t runtime_file_open(const char *path, int flags, int mode);
 int64_t runtime_file_close(int fd);

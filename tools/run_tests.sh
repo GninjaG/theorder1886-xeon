@@ -23,6 +23,12 @@ for t in "${tests[@]}"; do
         failed+=("$t"); tail -3 "out/test-$t.log"
     fi
 done
+# Runtime (C) tests that build on their own.
+if ! { clang -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_content.c \
+         src/runtime_content.c -o out/content-test && out/content-test && out/content-test --addons; } \
+     > out/test-content.log 2>&1; then
+    failed+=(content); tail -3 out/test-content.log
+fi
 # The launcher tests need Tk and a Windows home: a Windows Python (WINPYTHON, as package.sh).
 python=${WINPYTHON:-}
 for candidate in "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}"/Python/pythoncore-3*/python.exe \

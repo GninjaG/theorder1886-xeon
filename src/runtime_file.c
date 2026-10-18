@@ -112,6 +112,9 @@ static int translate(const char *guest,char *out,size_t size) {
     if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
     return result;
 }
+int runtime_file_host_path(const char *guest,char *out,size_t size) {
+    return translate(guest,out,size);
+}
 static int host_flags(int flags) {
     int r;
     switch (flags&3) { case 0: r=O_RDONLY; break; case 1: r=O_WRONLY; break; default: r=O_RDWR; }
