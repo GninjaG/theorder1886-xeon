@@ -22,10 +22,28 @@ Para rodar a partir do código-fonte: `bash build.sh` e `python run.py`.
 
 Novidades da 0.6.1:
 
+- **Núcleo de vídeo atualizado (shadPS4 0.20.1)** e **divisão de envios longos de comandos**
+  (evita estouro de memória do driver em cenas pesadas como o Capítulo IX, #11).
+- **Placas sem `fragmentShaderBarycentric` (GTX 10xx, Intel UHD/Iris, etc.)**: shaders que usam
+  interpolação por vértice agora ganham um geometry shader automático de fallback (#1, #10, #15).
+- **DLCs de trajes e armas (`addcont`)**: carregados automaticamente a partir da pasta do jogo (#16).
+- **Patch de 60 FPS na versão europeia CUSA00076 01.00**: locais do limitador encontrados
+  automaticamente (#12).
+- **Tradução Vulkan e cache de texturas**:
+  - Samplers ligados a texturas inteiras (`Sint`/`Uint`) têm filtros lineares/anisotrópicos
+    convertidos para `NEAREST` automaticamente (`VUID-vkCmdDispatchIndirect-magFilter-04553`),
+    com associação serializada no cache de pipelines (`ShaderMetaVersion = 11`).
+  - Views inteiras `1920x800` reutilizam diretamente os render targets `1920x1080` já em cache sem
+    re-upload ou cópia intermediária (`THEORDER_PARTIAL_HEIGHT_VIEWS=0` desativa).
+  - Verificação de alterações no cache de texturas (`MaybeDirtyHash`) agora lê apenas o mip 0 em
+    vez de todos os níveis de mipmap.
+  - Fast path em `ImageResource::NumBindings` e proteção contra shaders vazios (`s_endpgm`).
+- **Estabilidade na inicialização (TLS / MT19937)**: corrigida condição de corrida em `sub_89fa60`
+  onde múltiplas worker threads recriavam chaves TLS globais e causavam crash no boot (`0xc00ed7`).
 - **Endereços de shaders de 64 bits**: loads, stores e atomics MUBUF preservam o par de
   registradores de endereço e o carry dos offsets. A próxima execução recompila os shaders.
-- **Testes Vulkan no Windows**: os testes de resolução, TAA e movimento da câmera agora
-  executam com a mesma ABI do renderer, permitindo detectar regressões nesses caminhos.
+- **Testes Vulkan no Windows**: 42 alvos C/C++ (incluindo `shader-resource-test`, resolução, TAA e
+  câmera) e 266 testes Python validados na suíte integrada (`tools/run_tests.sh`).
 - **Presets de mods preservados** ao atualizar a cópia jogável em `dist`.
 - Leitura de V# inline via BDA disponível para testes com `THEORDER_DIRECT_MEMORY_ACCESS=1`;
   permanece experimental e desligada por padrão.
