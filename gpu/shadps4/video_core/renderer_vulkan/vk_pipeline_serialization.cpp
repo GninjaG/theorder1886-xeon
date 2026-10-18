@@ -58,6 +58,16 @@ u32 CurrentShaderBinaryVersion() {
         LightingTest::ShaderBinarySalt(LightingTest::Current().dref,
                                        AmdPathsOff::Current().shaderext));
 }
+
+// port: a translation fix that only some shaders meet raises their version alone, so only they
+// are translated again (a ShaderBinaryVersion bump rebuilds every pipeline: a cold-cache session).
+u32 ShaderBinaryVersionFor(const Shader::Info& info) {
+    u32 version = CurrentShaderBinaryVersion();
+    if (info.uses_buffer_atomic_float_min_max || info.uses_image_atomic_float_min_max) {
+        version += 1u << 16; // the float atomic min/max fallback runs one atomic (2026-10-18)
+    }
+    return version;
+}
 } // namespace
 
 namespace PipelineBinaryCache {
@@ -736,7 +746,7 @@ void RegisterShaderMeta(const Shader::Info& info,
     Serialization::Writer meta{ar};
 
     meta.Write(Serialization::ShaderMetaVersion);
-    meta.Write(CurrentShaderBinaryVersion());
+    meta.Write(ShaderBinaryVersionFor(info));
 
     meta.Write(perm_hash);
     meta.Write(perm_idx);
@@ -778,7 +788,8 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     u32 binary_version{};
     meta.Read(binary_version);
-    if (binary_version != CurrentShaderBinaryVersion()) {
+    // The layout is ShaderMetaVersion's; the expected binary version needs the shader's info.
+    if ((binary_version & 0xffffu) != CurrentShaderBinaryVersion()) {
         return false;
     }
 
@@ -789,6 +800,9 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
+    if (binary_version != ShaderBinaryVersionFor(info)) {
+        return false;
+    }
 
     fetch_shader_data = spec.fetch_shader_data;
     return true;
