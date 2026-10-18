@@ -71,6 +71,7 @@ enum : std::uint64_t {
     SceneMipBias = 1ull << 57, ///< negative LOD bias of G-buffer samplers at reduced scene sizes
     MappedRangeCopies = 1ull << 58, ///< Rasterizer::IsMapped reads a per-thread copy
     SyncBuildBudget = 1ull << 59, ///< known pipelines past 8 ms a frame build in the background
+    ComputeFallback = 1ull << 60, ///< a building compute permutation runs on a near one
     // Bits 20-29 are used as raw debug toggles by the camera/object motion and the upscaler.
 };
 inline bool Disabled(std::uint64_t bit) {

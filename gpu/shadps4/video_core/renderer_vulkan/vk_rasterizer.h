@@ -398,6 +398,9 @@ private:
     boost::container::static_vector<VideoCore::TextureCache::ImageDesc, Shader::NUM_IMAGES * 2>
         image_desc_storage;
     u64 bind_epoch = 0;
+    /// The bound compute pipeline's images when it runs another permutation's dispatch
+    /// (ComputePipeline::FallbackImages): images that would specialize differently are null.
+    const std::vector<Shader::ImageSpecialization>* bind_expected_images = nullptr;
     // port: render/depth target lookups memoized by their raw register bytes while image
     // registrations are unchanged (the descriptions depend only on those registers).
     struct TargetMemo {

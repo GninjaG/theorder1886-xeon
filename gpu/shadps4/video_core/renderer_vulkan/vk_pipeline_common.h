@@ -57,6 +57,9 @@ public:
         return is_compute;
     }
 
+    /// port: written to this session's list of pipelines in use (PipelineCache::NoteHot).
+    mutable bool hot_noted = false;
+
     using DescriptorWrites = std::vector<vk::WriteDescriptorSet>;
     void BindResources(DescriptorWrites& set_writes, const Shader::PushData& push_data) const;
 

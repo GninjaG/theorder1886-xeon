@@ -330,28 +330,28 @@ static DWORD WINAPI win_sampler_thread(LPVOID param) {
     const char *part=(const char *)param, *start=getenv("THEORDER_SAMPLE_START"),
                *secs=getenv("THEORDER_SAMPLE_SECS"), *out=getenv("THEORDER_SAMPLE_OUT");
     Sleep((start ? (DWORD)atoi(start) : 60)*1000);
-    wchar_t wpart[256], names[16][64];
+    wchar_t wpart[256], names[64][64];
     MultiByteToWideChar(CP_UTF8,0,part,-1,wpart,256);
-    HANDLE threads[16];
+    HANDLE threads[64];
     int count=0;
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
     THREADENTRY32 entry={.dwSize=sizeof(entry)};
     if (snapshot!=INVALID_HANDLE_VALUE && Thread32First(snapshot,&entry)) {
         do {
-            if (entry.th32OwnerProcessID!=GetCurrentProcessId() || count==16) continue;
+            if (entry.th32OwnerProcessID!=GetCurrentProcessId() || count==64) continue;
             HANDLE thread=OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_QUERY_LIMITED_INFORMATION,
                                      FALSE,entry.th32ThreadID);
             if (!thread) continue;
             PWSTR name=NULL;
-            int match=0;
-            if (SUCCEEDED(GetThreadDescription(thread,&name)) && name && *name) {
+            int match=!strcmp(part,"*"); /* "*": every thread, named or not (a hang) */
+            if (SUCCEEDED(GetThreadDescription(thread,&name)) && name && *name && !match) {
                 for (const wchar_t *p=wpart; *p && !match;) { /* each '|'-separated part */
                     size_t n=wcscspn(p,L"|");
                     for (const wchar_t *s=name; *s && !match; ++s) match=n && !wcsncmp(s,p,n);
                     p+=n+(p[n]==L'|');
                 }
             }
-            if (match) { wcsncpy(names[count],name,63); names[count][63]=0; threads[count++]=thread; }
+            if (match) { wcsncpy(names[count],name ? name : L"",63); names[count][63]=0; threads[count++]=thread; }
             else CloseHandle(thread);
             if (name) LocalFree(name);
         } while (Thread32Next(snapshot,&entry));

@@ -62,6 +62,15 @@ struct GraphicsPipelineKey {
     GraphicsPipelineKey() {
         std::memset(this, 0, sizeof(*this));
     }
+    // port: hash and == read every byte, padding included; a member-wise copy may leave the
+    // padding of the copy unset (the warm-up published copies the game never found).
+    GraphicsPipelineKey(const GraphicsPipelineKey& other) {
+        std::memcpy(this, &other, sizeof(*this));
+    }
+    GraphicsPipelineKey& operator=(const GraphicsPipelineKey& other) {
+        std::memcpy(static_cast<void*>(this), &other, sizeof(*this));
+        return *this;
+    }
 
     bool operator==(const GraphicsPipelineKey& key) const noexcept {
         return std::memcmp(this, &key, sizeof(key)) == 0;

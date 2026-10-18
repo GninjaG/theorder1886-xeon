@@ -6,6 +6,11 @@
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/renderer_vulkan/vk_pipeline_common.h"
 
+#include <atomic>
+#include <memory>
+#include <vector>
+#include "shader_recompiler/specialization.h"
+
 namespace VideoCore {
 class BufferCache;
 class TextureCache;
@@ -55,8 +60,24 @@ public:
         stages[int(Shader::SwStage::Compute)] = info;
     }
 
+    /// port: the image specializations of this pipeline's permutation, once the pipeline cache
+    /// lent it to a dispatch of another permutation (FallbackComputePipeline): images whose T#
+    /// specializes differently are bound null. Null while it never was. GPU thread writes once.
+    const std::vector<Shader::ImageSpecialization>* FallbackImages() const {
+        return fallback_images.load(std::memory_order_acquire);
+    }
+    void SetFallbackImages(std::span<const Shader::ImageSpecialization> images) const {
+        if (!fallback_storage) {
+            fallback_storage =
+                std::make_unique<std::vector<Shader::ImageSpecialization>>(images.begin(), images.end());
+            fallback_images.store(fallback_storage.get(), std::memory_order_release);
+        }
+    }
+
 private:
     ComputePipelineKey compute_key;
+    mutable std::unique_ptr<std::vector<Shader::ImageSpecialization>> fallback_storage;
+    mutable std::atomic<const std::vector<Shader::ImageSpecialization>*> fallback_images{};
 };
 
 } // namespace Vulkan

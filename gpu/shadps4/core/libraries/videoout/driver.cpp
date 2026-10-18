@@ -43,6 +43,7 @@ extern std::atomic<u64> g_port_translate_ns, g_port_emit_ns, g_port_pipeline_dri
 extern std::atomic<u64> g_port_capture_ns, g_port_async_ns, g_port_compile_wait_ns;
 extern std::atomic<u64> g_port_snapshot_ns, g_port_guest_wait_ns;
 extern std::atomic<u32> g_port_pending_draws;
+extern std::atomic<u32> g_port_fallback_dispatches;
 } // namespace Vulkan
 
 namespace Libraries::VideoOut {
@@ -509,14 +510,14 @@ void VideoOutDriver::Flip(const Request& req) {
             std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank %u Hz); "
                         "%u shader/pipeline compiles, %.1f ms; async: capture %.1f ms, workers "
                         "%.1f ms, sync wait %.1f ms, snapshots %.1f ms, GPU capture wait %.1f ms, "
-                        "%u pending draws; %llu recorder syncs; "
+                        "%u pending draws, %u fallback dispatches; %llu recorder syncs; "
                         "%.0f write faults/s, %lld hot pages; GPU thread %.2f us/draw, "
                         "%.0f draws/frame, idle %.1f%%; blocked: recorder %.1f%%, host copies "
                         "%.1f%% (%.0f/frame), copy threads %.1f%%, GPU ticks %.1f%%; "
                         "reduced-size draws %.0f/frame of %.0f in the scene\n",
                         frames / window, worst_ms, EmulatorSettings.GetVblankFrequency(), compiles,
                         compile_ns / 1e6, capture_ms, async_ms, wait_ms, snapshot_ms, guest_wait_ms,
-                        pending_draws,
+                        pending_draws, Vulkan::g_port_fallback_dispatches.exchange(0),
                         static_cast<unsigned long long>(direct),
                         faults / window, static_cast<long long>(PortStats::hot_pages.load()),
                         us_per_draw, draws_per_frame,

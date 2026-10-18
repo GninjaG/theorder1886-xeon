@@ -12,6 +12,7 @@
 #include <shared_mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -1261,10 +1262,17 @@ void PipelineCache::StartOnDemand() {
                                      Common::ElfInfo::Instance().GameSerial() /
                                      "pipeline-binaries");
             }
+            // Parked until exit, like the warm-up threads (StopWarmUp): this thread ending while
+            // the hot list warm-up ran crashed in its exit path (libc++, read of -1).
+            while (!stop.stop_requested()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
         });
     }
     std::printf("Pipeline startup: on demand, no bulk warm-up\n");
+    StartHotWarmUp();
 }
+
 
 // port: one cached shader stage read by the background warm-up, shared by every cached
 // pipeline that uses it. A pool thread fills it; the GPU thread merges it into program_cache
@@ -1281,6 +1289,8 @@ struct PipelineCache::WarmStage {
     bool module_kept = false;           ///< the module now belongs to a Program
     const Shader::Info* info = nullptr; ///< null: not usable (read failed or conflict)
     vk::ShaderModule result{};
+    const char* why = "not read"; ///< why info is null (THEORDER_PERMUTATION_LOG)
+    u32 start = 0; ///< the module's first descriptor binding (its specialization's start)
 
     ~WarmStage() {
         if (module && !module_kept) {
@@ -1312,6 +1322,8 @@ struct PipelineCache::BackgroundWarmup {
     WarmupInbox<Built> built;
     std::atomic<u32> total{0}, done{0};
     std::atomic<bool> reading{true}, stopping{false};
+    std::string reading_name; ///< hot list reader: the store name of the entry being read
+    u32 misnumbered = 0; ///< entries left to the game: a module's bindings start elsewhere
     std::atomic<u64> reader_ns{0}, entry_ns{0}, shader_io_ns{0}, module_ns{0};
     std::atomic<u64> read_queue_ns{0}, build_queue_ns{0}, build_ns{0};
     std::atomic<u32> entries{0}, modules{0}, submitted{0}, completed{0};
@@ -1323,6 +1335,98 @@ struct PipelineCache::BackgroundWarmup {
     std::chrono::steady_clock::time_point last_pump{}, last_report{};
     std::unique_ptr<WarmupPool> pool; ///< last: its jobs use the members above
 };
+
+namespace {
+// Pipelines kept in the list: about what a few chapters use (~650 on the London rooftop).
+constexpr size_t HotListMax = 2000;
+} // namespace
+
+void PipelineCache::StartHotWarmUp() {
+    const char* enabled = std::getenv("THEORDER_HOT_WARMUP");
+    if ((enabled && *enabled == '0') || !Storage::DataBase::Instance().IsOpened() ||
+        !Storage::DataBase::Instance().ConcurrentReads()) {
+        return;
+    }
+    const auto path = Common::FS::GetUserPath(Common::FS::PathType::CacheDir) /
+                      Common::ElfInfo::Instance().GameSerial() / "hot_pipelines.txt";
+    // The most recent use of each key last; the list is written back without repeats.
+    std::vector<std::string> keys;
+    {
+        std::vector<std::string> lines;
+        if (std::FILE* file = std::fopen(path.string().c_str(), "r")) {
+            char line[64];
+            while (std::fgets(line, sizeof(line), file)) {
+                std::string key{line};
+                while (!key.empty() && (key.back() == '\n' || key.back() == '\r')) {
+                    key.pop_back();
+                }
+                if (key.size() == 20 && (key[0] == 'g' || key[0] == 'c') && key[1] == '_') {
+                    lines.push_back(std::move(key));
+                }
+            }
+            std::fclose(file);
+        }
+        std::unordered_set<std::string> seen;
+        for (auto it = lines.rbegin(); it != lines.rend() && keys.size() < HotListMax; ++it) {
+            if (seen.insert(*it).second) {
+                keys.push_back(*it);
+            }
+        }
+        std::reverse(keys.begin(), keys.end());
+    }
+    if (std::FILE* file = std::fopen(path.string().c_str(), "w")) {
+        for (const auto& key : keys) {
+            std::fprintf(file, "%s\n", key.c_str());
+        }
+        std::fclose(file);
+    }
+    hot_list = std::fopen(path.string().c_str(), "a");
+    if (keys.empty()) {
+        return;
+    }
+    background = new BackgroundWarmup;
+    auto& warm = *background;
+    warm.started = std::chrono::steady_clock::now();
+    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
+    warm.total = u32(keys.size());
+    // Most recent first: the scene the last session ended in is likely the next one's start.
+    warm.pool->Push([this, &warm, keys = std::move(keys)] {
+        const auto reader_started = std::chrono::steady_clock::now();
+        auto& db = Storage::DataBase::Instance();
+        for (auto it = keys.rbegin(); it != keys.rend(); ++it) {
+            if (warm.stopping.load(std::memory_order_relaxed)) {
+                break;
+            }
+            std::vector<u8> data;
+            db.Load(Storage::BlobType::PipelineKey, *it, data);
+            if (data.empty()) {
+                static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+                if (log) {
+                    std::printf("Warm-up skipped %s: not in the store\n", it->c_str());
+                }
+                warm.done.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            warm.reading_name = *it;
+            ReadWarmEntry(warm, std::move(data));
+        }
+        warm.stages.clear();
+        warm.reader_ns = ElapsedNs(reader_started);
+        warm.reading = false;
+        return true;
+    });
+    std::printf("Pipeline warm-up: %u pipelines recent sessions used, in the background "
+                "(%u threads)\n", warm.total.load(), warm.threads);
+}
+
+void PipelineCache::NoteHot(const Pipeline& pipeline, char kind, u64 hash) {
+    pipeline.hot_noted = true;
+    if (hot_list) {
+        std::fprintf(hot_list, "%c_%#018llx\n", kind, static_cast<unsigned long long>(hash));
+        std::fflush(hot_list);
+    }
+}
 
 bool PipelineCache::StartBackgroundWarmUp() {
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
@@ -1363,6 +1467,7 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
     u32 version{};
     pldata.Read(version);
     if (version != Serialization::PipelineKeyVersion) {
+        std::printf("Warm-up skipped an entry of key version %u\n", version);
         return skip();
     }
     u32 is_compute{};
@@ -1379,6 +1484,15 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
     } else {
         entry.graphics_key.Deserialize(ar);
         entry.sdata.Deserialize(ar);
+        static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+        if (log && !warm.reading_name.empty()) {
+            const auto name = fmt::format("g_{:#018x}",
+                                          std::hash<GraphicsPipelineKey>{}(entry.graphics_key));
+            if (name != warm.reading_name) {
+                std::printf("Warm-up: %s holds the key of %s\n", warm.reading_name.c_str(),
+                            name.c_str());
+            }
+        }
         for (u32 i = 0; i < MaxShaderStages; ++i) {
             hashes[i] = entry.graphics_key.stage_hashes[i];
         }
@@ -1399,11 +1513,13 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             u64 module_time = 0;
             std::vector<u8> meta_blob;
             db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", hashes[i]), meta_blob);
+            const bool meta_blob_found = !meta_blob.empty();
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
                 u64 spv_hash{};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->fetch, stage->spec,
                                    stage->perm_idx, spv_hash)) {
+                    stage->start = stage->spec.start.unified;
                     std::vector<u32> spv;
                     db.Load(Storage::BlobType::ShaderBinary,
                             fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
@@ -1421,6 +1537,7 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             warm.shader_io_ns += ElapsedNs(io_started) - module_time;
             if (!stage->module) {
                 stage->merged = true; // unusable: info stays null
+                stage->why = meta_blob_found ? "no matching SPIR-V" : "no meta";
             }
         }
         entry.stages[i] = stage;
@@ -1445,13 +1562,27 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     // The game already uses this shader: its permutations are the ones that count.
     Program& program = *it_pgm->second;
     if (program.pending) {
+        stage.why = "program compiling";
         return false; // the game is compiling a permutation that takes the next index
     }
-    const auto it = std::ranges::find(program.modules, stage.spec, &Program::Module::spec);
+    // The pipeline's layout comes from the program's resource lists: a permutation stored with
+    // other lists (a resource only it declares) would bind outside the layout (Vulkan
+    // VUID-VkGraphicsPipelineCreateInfo-layout-07988). The game builds that one itself.
+    const auto& own = stage.program->info;
+    if (own.buffers.size() != program.info.buffers.size() ||
+        own.images.size() != program.info.images.size() ||
+        own.samplers.size() != program.info.samplers.size() ||
+        own.fmasks.size() != program.info.fmasks.size()) {
+        stage.why = "resources differ from the program's";
+        return false;
+    }
+    // Stored keys name the permutation by the index it was stored at; another session may have
+    // stored the same one at a lower index too. The stored slot is used when it holds it.
+    auto it = stage.perm_idx < program.modules.size() &&
+                      program.modules[stage.perm_idx].spec == stage.spec
+                  ? program.modules.begin() + stage.perm_idx
+                  : std::ranges::find(program.modules, stage.spec, &Program::Module::spec);
     if (it != program.modules.end()) {
-        if (size_t(std::distance(program.modules.begin(), it)) != stage.perm_idx) {
-            return false;
-        }
         if (!it->module) { // a deferred cached permutation (LoadCachedProgram): use this one
             it->module = stage.module;
             stage.module_kept = true;
@@ -1459,6 +1590,7 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
         stage.result = it->module;
     } else {
         if (stage.perm_idx < program.modules.size() && program.modules[stage.perm_idx].module) {
+            stage.why = "index holds another permutation";
             return false;
         }
         stage.spec.info = &program.info;
@@ -1497,6 +1629,13 @@ void PipelineCache::PumpWarmUp() {
                 : PublishFirst(compute_pipelines, built.compute_key, std::move(built.compute));
         warm.loaded += kept;
         warm.done.fetch_add(1, std::memory_order_relaxed);
+        static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+        if (log && !built.compute_key.value) {
+            std::printf("Warm-up published g_%#018llx kept %d\n",
+                        static_cast<unsigned long long>(
+                            std::hash<GraphicsPipelineKey>{}(built.graphics_key)),
+                        int(kept));
+        }
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -1513,6 +1652,12 @@ void PipelineCache::PumpWarmUp() {
         warm.read_queue_ns += ElapsedNs(entry.queued);
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key)) {
+            static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+            if (log && !entry.compute) {
+                std::printf("Warm-up skipped g_%#018llx: the game has it\n",
+                            static_cast<unsigned long long>(
+                                std::hash<GraphicsPipelineKey>{}(entry.graphics_key)));
+            }
             warm.done.fetch_add(1, std::memory_order_relaxed); // the game compiled it first
             continue;
         }
@@ -1536,7 +1681,39 @@ void PipelineCache::PumpWarmUp() {
                 fetch = stage.fetch; // the blocking load keeps the last stage's too
             }
         }
+        // Each module numbers its descriptors from where the previous stage's end (its
+        // specialization's start); the layout counts them from the stages' resource lists. A
+        // module whose start does not follow would use bindings outside the layout (Vulkan
+        // VUID-VkGraphicsPipelineCreateInfo-layout-07988): the game builds that pipeline itself.
+        for (u32 i = 0, binding = 0; usable && i < MaxShaderStages; ++i) {
+            if (!infos[i]) {
+                continue;
+            }
+            u32 count = u32(infos[i]->buffers.size() + infos[i]->samplers.size());
+            for (const auto& image : infos[i]->images) {
+                count += image.NumBindings(*infos[i]);
+            }
+            if (count && entry.stages[i]->start != binding) {
+                usable = false; // the stage itself may still fit another pipeline
+                ++warm.misnumbered;
+            }
+            binding += count;
+        }
         if (!usable) {
+            static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+            for (u32 i = 0; log && i < MaxShaderStages; ++i) {
+                if (entry.stages[i] && !entry.stages[i]->info) {
+                    std::printf("Warm-up skipped %c_%#018llx: stage %u %#llx: %s\n",
+                                entry.compute ? 'c' : 'g',
+                                static_cast<unsigned long long>(
+                                    entry.compute ? entry.compute_key.value
+                                                  : std::hash<GraphicsPipelineKey>{}(entry.graphics_key)),
+                                i, static_cast<unsigned long long>(entry.compute
+                                                                     ? entry.compute_key.value
+                                                                     : entry.graphics_key.stage_hashes[i]),
+                                entry.stages[i]->why);
+                }
+            }
             warm.done.fetch_add(1, std::memory_order_relaxed);
             continue;
         }
@@ -1576,9 +1753,11 @@ void PipelineCache::PumpWarmUp() {
     if (warm.reading || !warm.read.Empty() || !warm.pool->Idle() || !warm.built.Empty()) {
         return;
     }
-    std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
+    std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads; "
+                "%u left to the game, bindings numbered for another pipeline)\n",
                 warm.loaded, warm.total.load(),
-                std::chrono::duration<double>(now - warm.started).count(), warm.threads);
+                std::chrono::duration<double>(now - warm.started).count(), warm.threads,
+                warm.misnumbered);
     LOG_INFO(Render, "Preloaded {} pipelines in the background", warm.loaded);
     ReportPipelineBinaryCache();
     std::printf("Warm-up profile: reader wall %.3f s, entries %.3f s, shader IO/meta %.3f s, "

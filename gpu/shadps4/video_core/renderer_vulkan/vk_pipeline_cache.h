@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdio>
 #include <unordered_set>
 #include <functional>
 #include <unordered_map>
@@ -201,6 +202,12 @@ private:
     struct BackgroundWarmup;
     struct WarmStage;
     void ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data);
+    /// port: the pipelines recent sessions used (hot_pipelines.txt beside the cache), restored
+    /// in the background at start: on demand, each one met in the game skipped its draws for a
+    /// frame or more while it came back from the binary cache (objects blinking).
+    void StartHotWarmUp();
+    void NoteHot(const Pipeline& pipeline, char kind, u64 hash);
+    std::FILE* hot_list = nullptr;
     bool MergeWarmStage(WarmStage& stage);
     void PumpWarmUp();
     void StopWarmUp();
@@ -265,6 +272,7 @@ private:
     };
     tsl::robin_map<u64, ComputeRuns> compute_runs;
     bool SkippableDispatch(const Shader::Info& info) const;
+    const ComputePipeline* FallbackComputePipeline(u64 pgm_hash);
     void CountComputeRun(u64 pgm_hash);
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
     std::vector<Program*> pending_programs;

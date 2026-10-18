@@ -448,6 +448,7 @@ std::atomic<u64> g_port_capture_ns, g_port_async_ns, g_port_compile_wait_ns;
 std::atomic<u64> g_port_snapshot_ns, g_port_guest_wait_ns;
 std::atomic<u32> g_port_pool_reuses;
 std::atomic<u32> g_port_pending_draws;
+std::atomic<u32> g_port_fallback_dispatches;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -851,6 +852,9 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     if (prepared) {
         if (const auto* pipeline = TryPreparedPipeline(*prepared)) {
             used_prepared = prepared;
+            if (!pipeline->hot_noted) {
+                NoteHot(*pipeline, 'g', std::hash<GraphicsPipelineKey>{}(prepared->key));
+            }
             return pipeline;
         }
     }
@@ -909,6 +913,17 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 return build;
             }, urgent);
             if (queued) {
+                static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+                if (log) {
+                    LOG_WARNING(Render_Vulkan,
+                                "port: graphics pipeline {:#x} built in the background from flip "
+                                "{}: stored {}, fresh permutation {}, budget left {}, stages "
+                                "{:#x} {:#x}",
+                                std::hash<GraphicsPipelineKey>{}(sel.graphics_key),
+                                PortStats::flips.load(std::memory_order_relaxed), stored(),
+                                sel.fresh_permutation, SyncBuildBudgetLeft(),
+                                sel.graphics_key.stage_hashes[0], sel.graphics_key.stage_hashes[4]);
+                }
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
@@ -951,6 +966,9 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         sel.fetch_shader.reset();
     }
+    if (it->second && !it->second->hot_noted) {
+        NoteHot(*it->second, 'g', std::hash<GraphicsPipelineKey>{}(sel.graphics_key));
+    }
     return it->second.get();
 }
 
@@ -965,6 +983,9 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     const u64 pgm_hash = sel.infos[0]->pgm_hash;
     if (const auto found = compute_pipelines.find(compute_key); found != compute_pipelines.end()) {
         CountComputeRun(pgm_hash);
+        if (found->second && !found->second->hot_noted) {
+            NoteHot(*found->second, 'c', compute_key.value);
+        }
         return found->second.get();
     }
     // A pipeline an earlier session built is restored in 1-2 ms: built here (GetGraphicsPipeline).
@@ -1007,6 +1028,11 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
                 pending_compute.emplace(compute_key, std::move(build));
             }
         }
+        if (const auto* fallback = FallbackComputePipeline(pgm_hash)) {
+            ++g_port_fallback_dispatches;
+            CountComputeRun(pgm_hash);
+            return fallback;
+        }
         return nullptr;
     }
     const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);
@@ -1040,7 +1066,96 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         }
     }
     CountComputeRun(pgm_hash);
+    if (it->second && !it->second->hot_noted) {
+        NoteHot(*it->second, 'c', compute_key.value);
+    }
     return it->second.get();
+}
+
+namespace {
+/// Images of `a` (a new permutation) that differ from `b` in their T#-derived types only
+/// (dimension, integer or sRGB format, cube, swizzle): their count, or none when anything else
+/// differs (buffers, samplers, a storage image, the number of descriptors).
+std::optional<u32> ImageOnlyDifference(const Shader::StageSpecialization& a,
+                                       const Shader::StageSpecialization& b) {
+    if (a.images.size() != b.images.size()) {
+        return std::nullopt;
+    }
+    auto same = a;
+    u32 count = 0;
+    for (u32 i = 0; i < a.images.size(); ++i) {
+        const auto& x = a.images[i];
+        const auto& y = b.images[i];
+        if (x == y) {
+            continue;
+        }
+        if (x.is_storage || y.is_storage || x.num_bindings != y.num_bindings ||
+            x.is_fmask != y.is_fmask) {
+            return std::nullopt;
+        }
+        same.images[i] = y;
+        ++count;
+    }
+    return count && same == b ? std::optional<u32>{count} : std::nullopt;
+}
+} // namespace
+
+// port: while a new permutation of a skippable compute program builds, its dispatches run on a
+// built permutation that differs only in the types of some images, with those images bound null
+// (Rasterizer::BindTextures). The Order's particle lighting (0x804aeead) samples ~30 slots whose
+// T#s change dimension and format with the lights in view: hundreds of permutations, ~40 new
+// ones each session, and every skipped dispatch was smoke and particles blinking.
+const ComputePipeline* PipelineCache::FallbackComputePipeline(u64 pgm_hash) {
+    if (PortToggle::Disabled(PortToggle::ComputeFallback)) {
+        return nullptr;
+    }
+    const auto program = program_cache.find(pgm_hash);
+    if (program == program_cache.end()) {
+        return nullptr;
+    }
+    const auto& modules = program->second->modules;
+    const auto current = std::ranges::find(modules, sel.modules[0], &Program::Module::module);
+    if (current == modules.end()) {
+        return nullptr;
+    }
+    const ComputePipeline* best = nullptr;
+    size_t best_index = 0;
+    u32 best_count = ~0u;
+    for (size_t i = 0; i < modules.size(); ++i) {
+        const auto found = compute_pipelines.find(ComputePipelineKey{HashCombine(pgm_hash, i)});
+        if (found == compute_pipelines.end() || !found->second) {
+            continue;
+        }
+        if (const auto count = ImageOnlyDifference(current->spec, modules[i].spec);
+            count && *count < best_count) {
+            best = found->second.get();
+            best_index = i;
+            best_count = *count;
+        }
+    }
+    static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+    static std::unordered_set<size_t> logged;
+    if (log && logged.insert(compute_key.value).second) {
+        u32 built = 0, same_shape = 0;
+        for (size_t i = 0; i < modules.size(); ++i) {
+            if (compute_pipelines.contains(ComputePipelineKey{HashCombine(pgm_hash, i)})) {
+                ++built;
+                same_shape += modules[i].spec.images.size() == current->spec.images.size() &&
+                              modules[i].spec.buffers == current->spec.buffers &&
+                              modules[i].spec.samplers == current->spec.samplers &&
+                              modules[i].spec.bitset == current->spec.bitset;
+            }
+        }
+        LOG_WARNING(Render_Vulkan, "port: compute {:#x} permutation {}: {} of {} permutations "
+                    "built, {} with the same buffers/samplers/bound set, fallback {}",
+                    pgm_hash, std::distance(modules.begin(), current), built, modules.size(),
+                    same_shape, best ? fmt::format("{} ({} images)", best_index, best_count)
+                                     : std::string{"none"});
+    }
+    if (best) {
+        best->SetFallbackImages(modules[best_index].spec.images);
+    }
+    return best;
 }
 
 void PipelineCache::CountComputeRun(u64 pgm_hash) {

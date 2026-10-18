@@ -1673,6 +1673,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
+    bind_expected_images =
+        pipeline->IsCompute() ? static_cast<const ComputePipeline*>(pipeline)->FallbackImages()
+                              : nullptr;
     // port: G-buffer passes sample material textures for a scene rendered below the output
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
@@ -2358,7 +2361,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                               bool& barrier, bool on_helper) {
     const u32 first_image_idx = image_infos.size();
     TextureSet* set_slot = nullptr;
-    if (!on_helper && BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
+    const auto* expected_images =
+        stage.sw_stage == Shader::SwStage::Compute ? bind_expected_images : nullptr;
+    if (!on_helper && !expected_images &&
+        BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
         // Descriptor writes: one per image (no mip arrays in a memoized set).
         for (u32 i = 0; i < stage.images.size(); ++i) {
             auto& set_write = set_writes[write_index++];
@@ -2408,6 +2414,33 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             binding_proxy_ok.push_back(false);
             image_descriptor_array_sizes.push_back(1);
             continue;
+        }
+
+        // A fallback permutation's image of another type (FallbackComputePipeline) reads zeros.
+        if (expected_images && image_index < expected_images->size()) {
+            Shader::ImageSpecialization spec{};
+            spec.type = tsharp.GetViewType(image_desc.is_array);
+            spec.is_integer = AmdGpu::IsInteger(num_fmt);
+            spec.is_storage = image_desc.is_written;
+            spec.is_cube = tsharp.IsCube();
+            if (spec.is_storage) {
+                spec.dst_select = tsharp.DstSelect();
+            } else {
+                spec.is_srgb = num_fmt == AmdGpu::NumberFormat::Srgb;
+            }
+            spec.num_conversion = tsharp.GetNumberConversion();
+            spec.num_bindings = (*expected_images)[image_index].num_bindings;
+            if (spec != (*expected_images)[image_index]) {
+                set_ok = false;
+                const u32 count = std::max(spec.num_bindings, 1u);
+                for (u32 i = 0; i < count; ++i) {
+                    image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
+                    image_binding_entries.push_back(nullptr);
+                    binding_proxy_ok.push_back(false);
+                }
+                image_descriptor_array_sizes.push_back(count);
+                continue;
+            }
         }
 
         if (!memory->IsValidGpuMapping(tsharp.Address(), 1) ||
