@@ -27,13 +27,13 @@ default `--pad`), ~1430 draws/frame; at 0.3.2 it runs 28-30 FPS at 30, 14-17 us/
 skipped draws). Left: ~20-80 truly new pipelines per warm session (garbage T#s in unused slots
 make new permutations; shadPS4 PR #5218 "resource guards" is the approach), and restores past
 the 8 ms budget (~5 ms each, 2.2 ms of it the 2 MB file read).
+Night of 2026-10-17: hot_pipelines.txt restores the pipelines recent sessions used at start;
+the particle lighting compute runs on a near permutation while a new one builds. Left: the first
+session on a new PC or driver still compiles everything it meets (GitHub #14).
 
-## 0. UI past the screen edges with an aspect ratio patch — doing (found 2026-10-17)
-The 3D view is right (Vert+), but the Iggy UI is laid out for the taller picture: glyphs ~1.07x,
-positions spread with the height (~1.33x), the chapter title's right edge 35 px past the screen at
-16:9 (the player calls it "a zoom"). Next: find where the UI gets its display size (aspect at display
-device +0xe0, from the video config copied at +0x98) and give the UI the original 2.4 picture.
-Check: full-res frame dumps of the chapter I title (rooftop save, ~58 s) at original and 16:9.
+## 0. UI past the screen edges with an aspect ratio patch — done (2026-10-17 night)
+The aspect patches give Iggy the original 2.40:1 height and center it with GDraw's tile origin
+(docs/PROGRESS.md). Possible leftover: full-screen UI fades now cover the middle 2.40:1 band only.
 
 ## 1. GPU thread time per draw in heavy scenes — doing
 The 60 FPS mode drops far below 60 in gameplay: the GPU command thread is the limit

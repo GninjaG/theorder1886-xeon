@@ -2,6 +2,40 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-17 (night): HUD at 16:9, live FOV, blinking, mouse look
+
+**HUD:** the aspect patches now give Iggy the original 2.40:1 height (0x838f09/0x83944f) and set
+GDraw's tile origin y (+0x744 of the context at [0x1710168], written at 0x83a08a; vx/vy at
++0x740/+0x744 offset the viewport and scissor) to center it: 16:9 800/140, 16:10 720/180 (picture
+1728x1080), 21:9 800/5. Dumps match the original layout and size.
+**FOV:** vertical FOV = 2*atan(tan(h/2) * C), C = 1.35/aspect at the seven fov targets (0.5625
+original). patches.py resolves them (patch_status.json fov_sites), run.py passes
+THEORDER_FOV_SITES, probe.c makes the page writable, the menu (Display > Field of view, 50-200%)
+scales C live (theorder.ini fov=).
+**Blinking, the key copy:** GraphicsPipelineKey is hashed and compared byte by byte (padding
+included), but its implicit copy is member-wise: a copied key (PublishGraphics' `it.key()`, the
+warm-up's entries) could differ from the game's in padding, so the game never found a pipeline
+published under it and built it again (draws skipped again, workers busy all session as in
+GitHub #14). The key now copies all its bytes. With it, a warm 150 s rooftop session went from
+~400-500 background restores to ~40, most 5 s windows with 0 skipped draws.
+**Blinking, more:** (1) warm sessions still restored ~600 stored pipelines in the background during
+gameplay (on-demand mode, 8 ms restore budget per 33 ms): each skipped its draws. Now each
+session appends the pipelines it uses to cache/<serial>/hot_pipelines.txt (2000 most recent,
+compacted at start) and the next one restores them on the warm-up pool at start (~1870 in
+~10 s with validation, 3-4 s without; THEORDER_HOT_WARMUP=0 turns it off). Entries whose module
+numbers its descriptors from another start than the layout gives it are left to the game
+(they caused VUID-VkGraphicsPipelineCreateInfo-layout-07988). The MetaPrefetch thread now stays
+parked: its exit crashed once while the warm-up ran. Hangs at start were seen 3 times in ~60
+runs, each right after a long run was killed (none in 50 short runs with full-thread sampling;
+THEORDER_SAMPLE=* samples every thread for such a case). (2) The particle lighting compute 0x804aeead has ~30 image slots whose T#s change
+dimension/format with the lights: 500+ permutations, ~40 new a session, dispatches skipped while
+they build. A building permutation now runs on a built one that differs only in image types,
+those images bound null (FallbackComputePipeline, PortToggle::ComputeFallback bit 60).
+GitHub #14 (RX 9070 XT, first session): workers compiled all session; pending draws with 0 GPU
+thread compiles are the async builds.
+**Mouse:** mouse look as the right stick (bloodborne_pc's response curve), LMB R2, RMB L2, MMB
+R3, side buttons L1/R1, F7 and the menu toggle it; captured only while the game takes input.
+
 ## 2026-10-17 (20:10): blinking after 0.4.0, launcher fixes from gow3_pc, windows-v0.4.1
 
 **Blinking:** the player's first 0.4.0 session (ShaderBinaryVersion 9 rebuilt every pipeline)

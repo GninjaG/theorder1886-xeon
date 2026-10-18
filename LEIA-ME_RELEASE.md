@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.4.1
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.5.0
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,24 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
 
 ## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.5.0:
+
+- **Interface em 16:9, 16:10 e 21:9**: HUD e legendas mantêm o tamanho e a posição originais,
+  centralizados na imagem mais alta (antes cresciam ~7%, iam até as bordas e o título de capítulo
+  passava da borda direita). Telas cheias da interface (menu de pausa) ocupam a faixa central
+  2.40:1, como no jogo original, onde fora dela havia barras pretas.
+- **Campo de visão (FOV)** no menu do jogo (Insert / R3+L2 > Display): 50-200%, aplicado na hora;
+  acima de 100% mostra mais cenário em todos os lados.
+- **Câmera pelo mouse**: o mouse gira a câmera; botão esquerdo atira (R2), direito mira (L2), meio
+  R3, laterais L1/R1. F7 ou o menu desligam; sensibilidade no menu.
+- **Bem menos objetos piscando**: um erro na cópia da chave dos pipelines fazia o jogo não achar
+  pipelines já prontos e montá-los de novo (o objeto sumia de novo a cada vez). Corrigido, e os
+  pipelines usados nas últimas sessões são restaurados em segundo plano ao abrir o jogo. Numa
+  sessão de 150 s no telhado: de ~400-500 restaurações durante o jogo para ~40.
+- A iluminação de partículas e fumaça não some mais enquanto uma variante nova do shader compila.
+- Quando o patch de 60 FPS não é encontrado na sua versão do jogo, o `last_run.log` lista os
+  locais candidatos para o patch poder ser adaptado.
 
 Novidades da 0.4.1:
 
