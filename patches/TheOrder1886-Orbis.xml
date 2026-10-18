@@ -122,29 +122,5 @@
             <Line Type="bytes" Address="0x004507c4" Value="01" Pattern="C7 05 ?? ?? ?? ?? 02 00 00 00 49 8B 07 48 3B 45 E0" At="6"/>
         </PatchList>
     </Metadata>
-    <Metadata Title="The Order 1886"
-              Name="Unlock All Languages"
-              Note="Bypasses SKU/regional restrictions in eboot.bin, enabling all language options (Portuguese Brazil, Spanish Latin America, Russian, etc.) across any game dump."
-              Author="theorder1886-port"
-              PatchVer="1.0"
-              AppVer="01.02"
-              AppElf="eboot.bin"
-              isEnabled="false">
-        <PatchList>
-            <Line Type="bytes" Address="0x00a81696" Value="9090" Pattern="83 fb 10 77 0a b8 05 00 01 00 0f a3 d8 72 02 31 db" At="15"/>
-            <Line Type="bytes" Address="0x00768ede" Value="909090" Pattern="41 83 ff 10 77 0b b8 05 00 01 00 44 0f a3 f8 72 03 45 31 ff" At="18"/>
-        </PatchList>
-    </Metadata>
-    <Metadata Title="The Order 1886"
-              Name="Unlock The Armoury Menu"
-              Note="Unlocks 'The Armoury' costume selection page in the pause menu at any time, enabling access to all installed DLC costume packs (The Knight's Arsenal &amp; The Knight's Endurance)."
-              Author="theorder1886-port"
-              PatchVer="1.0"
-              AppVer="01.02"
-              AppElf="eboot.bin"
-              isEnabled="false">
-        <PatchList>
-            <Line Type="bytes" Address="0x0076aeeb" Value="9090" Pattern="48 83 e1 f8 48 8b 11 ff 50 10 85 c0 74 b5" At="12"/>
-        </PatchList>
-    </Metadata>
+
 </Patch>

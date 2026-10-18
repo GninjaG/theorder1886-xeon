@@ -200,16 +200,16 @@ static ABI int32_t entitlement_key(uint32_t service,const Label *label,unsigned 
     return 0;
 }
 uintptr_t runtime_content_resolve(const char *name) {
-    if (!strcmp(name,"g8cM39EUZ6o#libSceSysmodule")) return (uintptr_t)module_load;
-    if (!strcmp(name,"fMP5NHUOaMk#libSceSysmodule")) return (uintptr_t)module_loaded;
-    if (!strcmp(name,"eR2bZFAAU0Q#libSceSysmodule")) return (uintptr_t)module_unload;
-    if (!strcmp(name,"R9lA82OraNs#libSceAppContent")) return (uintptr_t)content_init;
-    if (!strcmp(name,"99b82IKXpH4#libSceAppContent")) return (uintptr_t)param_int;
-    if (!strcmp(name,"xnd8BJzAxmk#libSceAppContent")) return (uintptr_t)addon_list;
+    if (!strcmp(name,"g8cM39EUZ6o#libSceSysmodule") || !strcmp(name,"sceSysmoduleLoadModule")) return (uintptr_t)module_load;
+    if (!strcmp(name,"fMP5NHUOaMk#libSceSysmodule") || !strcmp(name,"sceSysmoduleIsModuleLoaded")) return (uintptr_t)module_loaded;
+    if (!strcmp(name,"eR2bZFAAU0Q#libSceSysmodule") || !strcmp(name,"sceSysmoduleUnloadModule")) return (uintptr_t)module_unload;
+    if (!strcmp(name,"R9lA82OraNs#libSceAppContent") || !strcmp(name,"sceAppContentInitialize")) return (uintptr_t)content_init;
+    if (!strcmp(name,"99b82IKXpH4#libSceAppContent") || !strcmp(name,"sceAppContentAppParamGetInt")) return (uintptr_t)param_int;
+    if (!strcmp(name,"xnd8BJzAxmk#libSceAppContent") || !strcmp(name,"sceAppContentGetAddcontInfoList")) return (uintptr_t)addon_list;
     if (!strcmp(name,"m47juOmH0VE#libSceAppContent")) return (uintptr_t)addon_info;
-    if (!strcmp(name,"VANhIWcqYak#libSceAppContent")) return (uintptr_t)addcont_mount;
-    if (!strcmp(name,"3rHWaV-1KC4#libSceAppContent")) return (uintptr_t)addcont_unmount;
-    if (!strcmp(name,"XTWR0UXvcgs#libSceAppContent")) return (uintptr_t)entitlement_key;
+    if (!strcmp(name,"VANhIWcqYak#libSceAppContent") || !strcmp(name,"sceAppContentAddcontMount")) return (uintptr_t)addcont_mount;
+    if (!strcmp(name,"3rHWaV-1KC4#libSceAppContent") || !strcmp(name,"sceAppContentAddcontUnmount")) return (uintptr_t)addcont_unmount;
+    if (!strcmp(name,"XTWR0UXvcgs#libSceAppContent") || !strcmp(name,"sceAppContentGetEntitlementKey")) return (uintptr_t)entitlement_key;
     return 0;
 }
 void runtime_content_report(void) {

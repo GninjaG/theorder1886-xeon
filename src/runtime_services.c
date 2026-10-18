@@ -579,20 +579,6 @@ static ABI int32_t ime_keyboard_update(void *handler) {
     return ime_keyboard_open ? 0 : IME_NOT_OPENED;
 }
 
-/* ---- AppContent add-on content: this port ships no DLC ---- */
-#define APPCONTENT_PARAMETER ((int32_t)0x80D90002)
-#define APPCONTENT_NOT_FOUND ((int32_t)0x80D90005)
-static ABI int32_t appcontent_mount(uint32_t label,const void *entitlement,void *mount) {
-    (void)label; (void)entitlement; (void)mount;
-    return APPCONTENT_NOT_FOUND;
-}
-static ABI int32_t appcontent_unmount(void) {
-    return 0;
-}
-static ABI int32_t appcontent_entitlement(uint32_t label,const void *entitlement,void *key) {
-    if (!entitlement || !key) return APPCONTENT_PARAMETER;
-    (void)label; return APPCONTENT_NOT_FOUND;
-}
 
 /* ---- DiscMap: the game is fully installed, no disc bitmap exists ---- */
 #define DISC_MAP_NO_BITMAP ((int32_t)0x81100004)
@@ -745,8 +731,6 @@ static const RuntimeExport exports[]={
     {"scePlayGoGetEta",playgo_eta}, {"scePlayGoPrefetch",playgo_prefetch},
     {"sceImeUpdate",ime_keyboard_update}, {"sceImeKeyboardOpen",ime_keyboard_open_fn},
     {"sceImeKeyboardGetResourceId",ime_keyboard_resource}, {"sceImeKeyboardClose",ime_keyboard_close_fn},
-    {"sceAppContentAddcontMount",appcontent_mount}, {"sceAppContentAddcontUnmount",appcontent_unmount},
-    {"sceAppContentGetEntitlementKey",appcontent_entitlement},
     {"sceVideoOutSetWindowModeMargins",ok_void},
     {"select",ok_void},
     {"order_stub_Xs9hdiD7sAA",ok_void},

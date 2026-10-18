@@ -371,10 +371,6 @@ def main():
         if profile:
             names = selected_patches(profile[1], profile[2], patches_val, patches_only)
             names = graphics_options.patch_names(names, graphics)
-            if profile[3] == 'The Order 1886':
-                for auto_patch in ('Unlock All Languages', 'Unlock The Armoury Menu'):
-                    if auto_patch not in names:
-                        names.append(auto_patch)
             names = graphics_options.restrict_to_available(names, patches.available_patches(profile[1], profile[2]))
             env['THEORDER_PATCHES'] = ';'.join(names)
             env['THEORDER_PATCHES_ONLY'] = '1'

@@ -2546,82 +2546,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             continue;
         }
 
-        // The Order: 1886: reject impossible/oversized T# descriptors before they hit the texture cache
-        {
-            const u32 w = tsharp.width + 1;
-            const u32 h = tsharp.height + 1;
-            const u32 pitch = tsharp.Pitch();
-            const u32 levels = tsharp.NumLevels();
-            const u32 layers = tsharp.NumLayers();
-            bool dim_reject = false;
-            u64 est_bytes = 0;
-            if (w > 16384 || h > 16384 || pitch > 16384) {
-                dim_reject = true;
-            } else if (levels > 1) {
-                const u32 maxdim =
-                    tsharp.GetType() == AmdGpu::ImageType::Color3D
-                        ? std::max({w, h, static_cast<u32>(tsharp.depth + 1)})
-                        : std::max({w, h, pitch});
-                if (levels > 31 || (maxdim >> (levels - 1)) == 0) {
-                    dim_reject = true;
-                }
-            }
-            if (!dim_reject && tsharp.IsGuestMsaa() && tsharp.GuestNumSamples() > 8) {
-                dim_reject = true;
-            }
-            if (!dim_reject && tsharp.tiling_index >= 27 && tsharp.tiling_index != 31) {
-                dim_reject = true;
-            }
-            if (!dim_reject) {
-                if (tsharp.data_format > 41) {
-                    dim_reject = true;
-                } else {
-                    const auto raw_fmt = static_cast<AmdGpu::DataFormat>(tsharp.data_format);
-                    const u32 bpe = AmdGpu::NumBitsPerElement(raw_fmt);
-                    if (bpe == 0 || bpe > 128) {
-                        dim_reject = true;
-                    } else {
-                        u64 slices = layers;
-                        if (tsharp.GetType() == AmdGpu::ImageType::Color3D) {
-                            slices = static_cast<u64>(tsharp.depth + 1);
-                        }
-                        const u64 texels =
-                            static_cast<u64>(pitch) * static_cast<u64>(h) * slices;
-                        est_bytes = texels * bpe / 8;
-                        est_bytes *= 2; // ceiling for mip chain
-                        est_bytes *= tsharp.GuestNumSamples();
-                        if (est_bytes > 512ull * 1024 * 1024) {
-                            dim_reject = true;
-                        }
-                    }
-                }
-            }
-            if (dim_reject) {
-                static std::mutex reject_mutex;
-                static std::unordered_set<u64> reject_warned;
-                const u64 reject_key =
-                    (stage.pgm_hash * 0x9e3779b97f4a7c15ULL) ^ (u64(w) << 32) ^ (u64(h) << 16) ^
-                    (u64(layers) << 8) ^ u64(levels) ^ u64(tsharp.data_format);
-                bool reject_report = false;
-                {
-                    std::scoped_lock lock{reject_mutex};
-                    reject_report = reject_warned.insert(reject_key).second;
-                }
-                if (reject_report) {
-                    LOG_WARNING(Render_Vulkan,
-                                "Rejecting oversized T# pgm={:#x} {}x{} (pitch {}) layers={} "
-                                "levels={} fmt={} est={}MB",
-                                stage.pgm_hash, w, h, pitch, layers, levels,
-                                u32(tsharp.data_format), est_bytes >> 20);
-                }
-                image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
-                image_binding_entries.push_back(nullptr);
-                binding_proxy_ok.push_back(false);
-                image_descriptor_array_sizes.push_back(1);
-                continue;
-            }
-        }
-
         // A fallback permutation's image of another type (FallbackComputePipeline) reads zeros.
         if (expected_images && image_index < expected_images->size()) {
             Shader::ImageSpecialization spec{};
@@ -2649,81 +2573,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             }
         }
 
-        {
-            const u32 w = tsharp.width + 1;
-            const u32 h = tsharp.height + 1;
-            const u32 pitch = tsharp.Pitch();
-            const u32 levels = tsharp.NumLevels();
-            const u32 layers = tsharp.NumLayers();
-            bool dim_reject = false;
-            u64 est_bytes = 0;
-            if (w > 16384 || h > 16384 || pitch > 16384 || pitch < tsharp.width) {
-                dim_reject = true;
-            } else if (levels > 1) {
-                const u32 maxdim =
-                    tsharp.GetType() == AmdGpu::ImageType::Color3D
-                        ? std::max({w, h, static_cast<u32>(tsharp.depth + 1)})
-                        : std::max({w, h, pitch});
-                if (levels > 31 || (maxdim >> (levels - 1)) == 0) {
-                    dim_reject = true;
-                }
-            }
-            if (!dim_reject && tsharp.IsGuestMsaa() && tsharp.GuestNumSamples() > 8) {
-                dim_reject = true;
-            }
-            if (!dim_reject && tsharp.tiling_index >= 27 && tsharp.tiling_index != 31) {
-                dim_reject = true;
-            }
-            if (!dim_reject) {
-                if (tsharp.data_format > 41) {
-                    dim_reject = true;
-                } else {
-                    const auto raw_fmt = static_cast<AmdGpu::DataFormat>(tsharp.data_format);
-                    const u32 bpe = AmdGpu::NumBitsPerElement(raw_fmt);
-                    if (bpe == 0 || bpe > 128) {
-                        dim_reject = true;
-                    } else {
-                        u64 slices = layers;
-                        if (tsharp.GetType() == AmdGpu::ImageType::Color3D) {
-                            slices = static_cast<u64>(tsharp.depth + 1);
-                        }
-                        const u64 texels =
-                            static_cast<u64>(pitch) * static_cast<u64>(h) * slices;
-                        est_bytes = texels * bpe / 8;
-                        est_bytes *= 2;
-                        est_bytes *= tsharp.GuestNumSamples();
-                        if (est_bytes > 256ull * 1024 * 1024) {
-                            dim_reject = true;
-                        }
-                    }
-                }
-            }
-            if (dim_reject) {
-                static std::mutex reject_mutex;
-                static std::unordered_set<u64> reject_warned;
-                const u64 reject_key =
-                    (stage.pgm_hash * 0x9e3779b97f4a7c15ULL) ^ (u64(w) << 32) ^ (u64(h) << 16) ^
-                    (u64(layers) << 8) ^ u64(levels) ^ u64(tsharp.data_format);
-                bool reject_report = false;
-                {
-                    std::scoped_lock lock{reject_mutex};
-                    reject_report = reject_warned.insert(reject_key).second;
-                }
-                if (reject_report) {
-                    LOG_WARNING(Render_Vulkan,
-                                "Rejecting oversized T# pgm={:#x} {}x{} (pitch {}) layers={} "
-                                "levels={} fmt={} est={}MB",
-                                stage.pgm_hash, w, h, pitch,
-                                layers, levels, static_cast<u32>(tsharp.data_format),
-                                est_bytes / (1024 * 1024));
-                }
-                image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
-                image_binding_entries.push_back(nullptr);
-                binding_proxy_ok.push_back(false);
-                image_descriptor_array_sizes.push_back(1);
-                continue;
-            }
-        }
 
         if (!memory->IsValidGpuMapping(tsharp.Address(), 1) ||
             !IsKnownFormat(data_fmt, num_fmt) ||
@@ -2757,9 +2606,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         auto& desc_entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        if (!memory->IsValidGpuMapping(desc_entry.desc.info.guest_address,
-                                       desc_entry.desc.info.guest_size) ||
-            ImplausibleTexture(desc_entry.desc.info)) {
+        if (ImplausibleTexture(desc_entry.desc.info)) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);

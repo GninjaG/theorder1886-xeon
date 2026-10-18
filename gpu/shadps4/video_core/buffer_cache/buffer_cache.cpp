@@ -163,7 +163,6 @@ void BufferCache::TickFrame() {
 }
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
-    BumpObtainVersion();
     if (RegionManager::ReadWatchActive()) {
         UnwatchCpuWritten(device_addr, size);
     }
@@ -294,7 +293,6 @@ void BufferCache::UnmarkRegionAsGpuModified(VAddr device_addr, u64 size, bool is
 
 void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool async,
                              bool assume_locks) {
-    BumpObtainVersion();
     // The callers of the first writes from each instruction that ask (the faulting thread's
     // stack, for llvm-symbolizer).
     static const bool stats = std::getenv("THEORDER_FRAME_STATS") != nullptr;
@@ -439,7 +437,6 @@ void BufferCache::QueueReadbacks() {
 
 void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size, bool is_write,
                                  bool async) {
-    BumpObtainVersion();
     boost::container::small_vector<vk::BufferCopy, 1> copies;
     u64 total_size_bytes = 0;
     const VAddr arena_base = arena->cpu_addr;
@@ -603,20 +600,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const bool is_written = True(flags & ObtainBufferFlags::IsWritten);
     const bool is_texel_buffer = True(flags & ObtainBufferFlags::IsTexelBuffer);
     const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
-    const bool readback_work =
-        texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
-    if (is_written) {
-        BumpObtainVersion();
-    } else if (!is_texel_buffer && !readback_work) {
-        std::scoped_lock lock{obtain_memo_mutex};
-        const u64 ver = obtain_version.load(std::memory_order_relaxed);
-        const auto it = obtain_memo.find({device_addr, size});
-        if (it != obtain_memo.end() && it->second.version == ver) {
-            PortStats::obtain_hits.fetch_add(1, std::memory_order_relaxed);
-            return {it->second.buffer, it->second.offset};
-        }
-        PortStats::obtain_misses.fetch_add(1, std::memory_order_relaxed);
-    }
+    texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
     // port: a shader reading an HTILE surface sees what the hardware would have written there
     // (TextureCache::HtileReadValue); nothing here writes HTILE while depth is drawn.
     // THEORDER_HTILE_READ=0 leaves the guest bytes (A/B tests).
@@ -714,11 +698,6 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
                         static_cast<unsigned long long>(device_addr), size);
             PortPrintBacktrace("GPU write watch");
         }
-    }
-    if (!is_written && !is_texel_buffer && !readback_work) {
-        std::scoped_lock lock{obtain_memo_mutex};
-        obtain_memo[{device_addr, size}] = {arena, arena->Offset(device_addr),
-                                            obtain_version.load(std::memory_order_relaxed)};
     }
     return {arena, arena->Offset(device_addr)};
 }
@@ -923,7 +902,6 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     }
 
     LOG_WARNING(Render, "Migrating arena");
-    BumpObtainVersion();
 
     const u64 first_addr = first_arena ? first_arena->cpu_addr : (first_page << arena_page_bits);
     const u64 first_size = first_arena ? first_arena->size_bytes : arena_page_size;
@@ -1092,7 +1070,6 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
     if (copies.empty()) {
         return nullptr;
     }
-    BumpObtainVersion();
     // Resolve before launching host copies: a copy-thread fault could deadlock submission.
     for (const auto& copy : copies) {
         texture_cache.ResolveReadbacks(copy.dstOffset, copy.size, true, ReadbackSource::BufferUpload);
@@ -1175,7 +1152,6 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
         if (meta->type == TextureCache::MetaType::HTile) {
             runtime.FillBuffer(arena, arena->Offset(device_addr), size,
                                *texture_cache.HtileReadValue(device_addr));
-            BumpObtainVersion();
             return true;
         } else if (meta->type == TextureCache::MetaType::CMask) {
             const auto expanded_value = CmaskColorExpandedValue(meta->num_samples);
@@ -1188,7 +1164,6 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
                 return false;
             }
             runtime.FillBuffer(arena, arena->Offset(device_addr), size, *expanded_value);
-            BumpObtainVersion();
             return true;
         } else {
             LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}",
@@ -1243,7 +1218,6 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     }
     auto& tile_manager = texture_cache.GetTileManager();
     tile_manager.TileImage(image, buffer_copies, arena, arena_offset);
-    BumpObtainVersion();
     return true;
 }
 
