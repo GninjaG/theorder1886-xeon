@@ -60,6 +60,9 @@ struct Values {
     /// Set by the presenter: the game's image and the window it is shown in, in pixels.
     std::atomic<int> image_width{0}, image_height{0}, window_width{0}, window_height{0};
     std::atomic<int> frames_queued{2};
+    /// Mouse look (F7 toggles it) and its speed in percent.
+    std::atomic<bool> mouse_look{true};
+    std::atomic<int> mouse_sensitivity{100};
     /// Field of view in percent of the game's (tangent of the half angle); live.
     std::atomic<int> fov{100};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".

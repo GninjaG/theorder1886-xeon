@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -9,6 +10,22 @@
 #include "port_overlay.h"
 #include "port_graphics.h"
 #include "port_settings.h"
+#include "../theordergpu.h"
+
+namespace {
+// Mouse input for the pad (theordergpu_mouse_take), gathered while captured. Window thread
+// writes, the pad thread takes.
+std::mutex mouse_mutex;
+TheOrderMouse mouse{};
+bool window_focused = true;
+} // namespace
+
+extern "C" void theordergpu_mouse_take(TheOrderMouse* out) {
+    std::scoped_lock lock{mouse_mutex};
+    *out = mouse;
+    out->sensitivity = PortSettings::Get().mouse_sensitivity / 100.0f;
+    mouse.dx = mouse.dy = 0.0f; // buttons stay down until released
+}
 
 namespace Frontend {
 
@@ -162,7 +179,29 @@ bool WindowSDL::PollEvents() {
         if (PortOverlay::HandleEvent(event)) {
             continue;
         }
+        if (mouse.captured) {
+            std::scoped_lock lock{mouse_mutex};
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                mouse.dx += event.motion.xrel;
+                mouse.dy += event.motion.yrel;
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                mouse.buttons |= SDL_BUTTON_MASK(event.button.button);
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                mouse.buttons &= ~SDL_BUTTON_MASK(event.button.button);
+            }
+        }
         switch (event.type) {
+        case SDL_EVENT_KEY_DOWN:
+            if (event.key.key == SDLK_F7 && !event.key.repeat) {
+                auto& s = PortSettings::Get();
+                s.mouse_look = !s.mouse_look;
+                PortSettings::Save();
+            }
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            window_focused = event.type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+            break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED: {
             int w = 0, h = 0;
@@ -178,6 +217,16 @@ bool WindowSDL::PollEvents() {
         default:
             break;
         }
+    }
+    // Captured (relative mode, cursor hidden) only while the game itself takes the input: a
+    // click that focuses the window or picks a menu entry never reaches the pad.
+    const bool capture = PortSettings::Get().mouse_look && window_focused && !text_active &&
+                         !PortOverlay::CapturesInput();
+    if (capture != bool(mouse.captured)) {
+        SDL_SetWindowRelativeMouseMode(window, capture);
+        std::scoped_lock lock{mouse_mutex};
+        mouse = {};
+        mouse.captured = capture;
     }
     return is_open;
 }

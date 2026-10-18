@@ -101,6 +101,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas_strength = PortGraphics::ParseRcasStrength(value.empty() ? -1 : i);
     } else if (key == "frames_queued") {
         v.frames_queued = PortGraphics::ParseFramesQueued(value.empty() ? -1 : i);
+    } else if (key == "mouse_look") {
+        v.mouse_look = i != 0;
+    } else if (key == "mouse_sensitivity") {
+        v.mouse_sensitivity = std::clamp(i, 10, 400);
     } else if (key == "fov") {
         v.fov = std::clamp(i, 50, 200);
     } else if (key == "aspect_ratio") {
@@ -279,7 +283,8 @@ void Save() {
                  PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, 3)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
-    std::fprintf(file, "fov=%d\n", v.fov.load());
+    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\n", v.fov.load(),
+                 int(v.mouse_look.load()), v.mouse_sensitivity.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

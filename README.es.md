@@ -113,12 +113,15 @@ Los mandos (DualSense, Xbox y otros) funcionan con SDL3, junto con el teclado.
 | I, K, J, L | cruceta |
 | Tab y Retroceso | clic izquierdo y derecho del panel táctil |
 | Insert | el menú del port (R3+L2 en el mando) |
+| Ratón | cámara; botón izquierdo R2 (disparar), derecho L2 (apuntar), central R3, laterales L1/R1 |
+| F7 | activa/desactiva la cámara con el ratón |
 
 El teclado aún no tiene el botón Options. En mandos sin panel táctil, View (Back) es el clic
 derecho del panel. `THEORDER_KEY_MAP` y `THEORDER_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
 
-El menú del port (Insert) tiene las opciones de pantalla, límite de fotogramas y la superposición
-de rendimiento.
+El menú del port (Insert) tiene las opciones de pantalla, campo de visión, ratón, límite de
+fotogramas y la superposición de rendimiento. El campo de visión (50-200%) cambia al momento; por
+encima de 100% muestra más por todos lados.
 
 ## Parches
 

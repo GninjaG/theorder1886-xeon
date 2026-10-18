@@ -110,11 +110,15 @@ Controles (DualSense, Xbox e outros) funcionam pelo SDL3, junto com o teclado.
 | I, K, J, L | direcional |
 | Tab e Backspace | clique esquerdo e direito do touchpad |
 | Insert | menu do port (R3+L2 no controle) |
+| Mouse | câmera; botão esquerdo R2 (atirar), direito L2 (mirar), meio R3, laterais L1/R1 |
+| F7 | liga/desliga a câmera pelo mouse |
 
 O teclado ainda não tem o botão Options. Em controles sem touchpad, View (Back) é o clique
 direito do touchpad. `THEORDER_KEY_MAP` e `THEORDER_PAD_MAP` trocam os botões (`src/runtime_pad.c`).
 
-O menu do port (Insert) tem as opções de tela, limite de quadros e o overlay de desempenho.
+O menu do port (Insert) tem as opções de tela, campo de visão, mouse, limite de quadros e o
+overlay de desempenho. O campo de visão (50-200%) muda na hora; acima de 100% mostra mais em
+todos os lados.
 
 ## Patches
 

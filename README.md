@@ -110,11 +110,14 @@ Controllers (DualSense, Xbox and others) work through SDL3, together with the ke
 | I, K, J, L | d-pad |
 | Tab and Backspace | left and right touchpad click |
 | Insert | the port's menu (R3+L2 on a controller) |
+| Mouse | camera; left button R2 (fire), right L2 (aim), middle R3, side buttons L1/R1 |
+| F7 | mouse look on/off |
 
 The keyboard has no Options button yet. On a controller without a touchpad, View (Back) is the
 right touchpad click. `THEORDER_KEY_MAP` and `THEORDER_PAD_MAP` change the buttons (`src/runtime_pad.c`).
 
-The port's menu (Insert) holds the display, frame limit and performance overlay settings.
+The port's menu (Insert) holds the display, field of view, mouse, frame limit and performance
+overlay settings. The field of view (50-200%) changes live; above 100% shows more on every side.
 
 ## Patches
 
@@ -142,7 +145,9 @@ Every patch is off by default.
   width and shows more above and below (Vert+) instead of being cropped at the sides. The port shows
   only the picture, fitted to the window: a 16:10 or 21:9 screen is filled too. The scene has more
   pixels (1920x1080 instead of 1920x800 at 16:9); at 60 FPS in the prologue (RTX 5060 Laptop) that
-  cost about 1% (57.8 against 58.3 FPS on average).
+  cost about 1% (57.8 against 58.3 FPS on average). The HUD and subtitles keep their original size
+  and layout, centered in the taller picture: the patches give the UI (Iggy) the original 2.40:1
+  height and move its drawing origin down (GDraw tile origin, 0x83a08a).
 - The other patches written during earlier development were removed after testing: Skip Intro
   Logos changed nothing, Auto-Dismiss Title Screen left a black screen, the two Skip Prologue
   patches could not be verified, and the 900p, 720p and letterbox removal patches wrote inside

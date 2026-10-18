@@ -287,6 +287,17 @@ void ImageTab() {
         PortSettings::ApplyFov();
         ImGui::EndTable();
     }
+    ImGui::SeparatorText("Mouse");
+    if (BeginRows("##mouse")) {
+        CheckRow("Mouse look (F7)", s.mouse_look,
+                 "The mouse turns the camera; left button fires (R2), right button aims (L2), "
+                 "middle R3, side buttons L1/R1.");
+        ImGui::BeginDisabled(!s.mouse_look);
+        SliderRow("Mouse sensitivity", s.mouse_sensitivity, 10, 400, "%d%%",
+                  "How fast the camera turns with the mouse.");
+        ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
     const bool downscaling = iw > ww || ih > wh;
     const bool rcas_blocked = s.rcas && !s.rcas_applied;
