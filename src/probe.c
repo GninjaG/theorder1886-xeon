@@ -1094,33 +1094,6 @@ int main(int argc, char **argv) {
             runtime_savedata_configure(id);
         }
     }
-    if (!getenv("THEORDER_FULL_BARRIERS")) {
-        _putenv_s("THEORDER_FULL_BARRIERS", "1");
-    }
-    if (!getenv("THEORDER_DEFERRED_READBACK")) {
-        _putenv_s("THEORDER_DEFERRED_READBACK", "1");
-    }
-    if (!getenv("THEORDER_PARALLEL_WARMUP")) {
-        _putenv_s("THEORDER_PARALLEL_WARMUP", "1");
-    }
-    if (!getenv("THEORDER_BACKGROUND_WARMUP")) {
-        _putenv_s("THEORDER_BACKGROUND_WARMUP", "1");
-    }
-    if (!getenv("THEORDER_PIPELINE_BINARIES")) {
-        _putenv_s("THEORDER_PIPELINE_BINARIES", "1");
-    }
-    if (!getenv("THEORDER_READBACK_LINEAR")) {
-        _putenv_s("THEORDER_READBACK_LINEAR", "1");
-    }
-    if (!getenv("THEORDER_TOGGLE_FILE")) {
-        static const char toggles_path[] = "user/order1886_toggles.txt";
-        FILE* tf = fopen(toggles_path, "wb");
-        if (tf) {
-            fputs("1099511627776", tf); /* Disable PipelinedDispatch (bit 40) - optimal stability/perf */
-            fclose(tf);
-            _putenv_s("THEORDER_TOGGLE_FILE", toggles_path);
-        }
-    }
     theordergpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;

@@ -450,8 +450,6 @@ def main():
         print(f'Language: PS4 id {ps4_lang} -> engine id {engine_lang}', flush=True)
 
         guest_lang_args = []
-        if '-sku' not in args:
-            guest_lang_args.extend(['--guest-arg', '-sku', '--guest-arg', '1'])
         if '-language' not in args:
             guest_lang_args.extend(['--guest-arg', '-language', '--guest-arg', str(engine_lang)])
         if '-enablesubtitles' not in args:
