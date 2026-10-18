@@ -195,6 +195,12 @@ class SignatureTests(unittest.TestCase):
         self.assertEqual(len(sites), 7)
         self.assertEqual({struct.unpack_from('<d', image, s)[0] for s in sites}, {0.5625})
 
+    def test_frame_time_sites_show_the_constant_in_context(self):
+        import patches
+        image = bytes(16) + bytes.fromhex('48 69 c2 35 82 00 00 e9 15 02 00 00') + bytes(8)
+        self.assertEqual(patches.frame_time_sites(image),
+                         ['0x13: 00 00 00 00 00 00 00 00 00 48 69 c2 [35 82 00 00] e9 15 02 00'])
+
     def test_requirements_from_patch_notes(self):
         # Notes ask for extra direct memory (shadPS4 "DMEM") and a VBlank rate.
         notes = self.xml.parent / 'notes.xml'

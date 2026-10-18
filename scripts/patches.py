@@ -340,6 +340,19 @@ def write_patches(out, writes):
     (out/'patches.bin').write_bytes(blob)
 
 
+def frame_time_sites(image, limit=32):
+    """The frame time constant (33333 = 0x8235 as a 32-bit immediate) with 12 bytes before it and
+    4 after, for the log of a build whose frame rate signatures were not found: what is needed to
+    write signatures for it (GitHub issues #8, #12)."""
+    needle=(33333).to_bytes(4,'little')
+    sites,at=[],image.find(needle)
+    while at>=0 and len(sites)<limit:
+        if at>=12:
+            sites.append(f'{at:#x}: {image[at-12:at].hex(" ")} [{needle.hex(" ")}] {image[at+4:at+8].hex(" ")}')
+        at=image.find(needle,at+1)
+    return sites
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--patches-dir',type=Path,help='third-party patch XML files (shadPS4 format)')
@@ -367,6 +380,9 @@ def main():
     writes=compile_patches(xml,names,None,segments,eboot_image(elf),skipped,sha==REFERENCE_SHA256)
     for name,reason in skipped.items():
         print(f'Patches: {name} skipped ({reason} in this eboot.bin)')
+        if name.startswith('Frame Rate Patch'):
+            for line in frame_time_sites(eboot_image(elf)):
+                print(f'Patches: 33333 us at {line}')
     if a.patches_dir and sha==REFERENCE_SHA256:
         # Third-party files use the absolute addresses of the reference build, so they are only
         # applied there. After the built-in ones: an external patch of the same bytes wins.
