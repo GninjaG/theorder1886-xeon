@@ -170,10 +170,9 @@ void Translator::EmitPrologue(IR::Block* first_block) {
     case SwStage::Fragment: {
         dst_vreg =
             IterateBarycentrics(runtime_info, [this](u32 vreg, IR::Attribute attrib, u32 comp) {
-                if (profile.supports_amd_shader_explicit_vertex_parameter ||
-                    profile.supports_fragment_shader_barycentric) {
-                    ir.SetVectorReg(IR::VectorReg(vreg), ir.GetAttribute(attrib, comp));
-                }
+                // port: also without barycentric support (the backend gives the triangle's
+                // center then); before, these registers were left undefined there.
+                ir.SetVectorReg(IR::VectorReg(vreg), ir.GetAttribute(attrib, comp));
             });
         const auto addr_flags = runtime_info.hw.fs.addr_flags;
         const auto en_flags = runtime_info.hw.fs.en_flags;

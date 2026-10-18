@@ -107,6 +107,19 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         ctx.profile.supports_fragment_shader_barycentric) {
         ++comp;
     }
+    // port: neither barycentric extension (GTX 10, Intel HD and Arc): the triangle's center, a
+    // defined value where the registers were undefined (the shader is logged at emit).
+    if ((IR::IsBarycentricCoord(attr) || attr == IR::Attribute::BaryCoordPullModel) &&
+        !ctx.profile.supports_amd_shader_explicit_vertex_parameter &&
+        !ctx.profile.supports_fragment_shader_barycentric) {
+        const Id third{ctx.ConstF32(1.0f / 3.0f)};
+        if (attr != IR::Attribute::BaryCoordPullModel) {
+            return third;
+        }
+        const Id inv_w = ctx.OpLoad(
+            ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.frag_coord, ctx.ConstU32(3U)));
+        return comp == 2 ? inv_w : ctx.OpFMul(ctx.F32[1], third, inv_w);
+    }
     switch (attr) {
     case IR::Attribute::Position0:
         ASSERT(ctx.sw_stage == SwStage::Geometry);
