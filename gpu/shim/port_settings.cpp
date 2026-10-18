@@ -107,6 +107,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mouse_sensitivity = std::clamp(i, 10, 400);
     } else if (key == "fov") {
         v.fov = std::clamp(i, 50, 200);
+    } else if (key == "anisotropy") {
+        v.anisotropy = i >= 16 ? 16 : i >= 8 ? 8 : i >= 4 ? 4 : i >= 2 ? 2 : 0;
     } else if (key == "aspect_ratio") {
         v.aspect = PortGraphics::ParseAspect(value);
     } else if (key == "engine_fps") {
@@ -170,6 +172,7 @@ void Load() {
         {"THEORDER_ASYNC_SHADERS", "async_shaders"},      {"THEORDER_DEFERRED_READBACK", "deferred_readback"},
         {"THEORDER_STALE_READBACK", "stale_readback"},     {"THEORDER_FSR1", "fsr1"},
         {"THEORDER_RCAS", "rcas"},                        {"THEORDER_FRAMES_AHEAD", "frames_queued"},
+        {"THEORDER_ANISOTROPY", "anisotropy"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -188,6 +191,7 @@ void Load() {
                                                  : v.engine_fps.load();
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
+    v.startup_anisotropy = v.anisotropy;
 }
 
 bool GraphicsNeedRestart() {
@@ -283,8 +287,8 @@ void Save() {
                  PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, 3)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
-    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\n", v.fov.load(),
-                 int(v.mouse_look.load()), v.mouse_sensitivity.load());
+    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nanisotropy=%d\n", v.fov.load(),
+                 int(v.mouse_look.load()), v.mouse_sensitivity.load(), v.anisotropy.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

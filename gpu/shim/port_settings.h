@@ -65,6 +65,10 @@ struct Values {
     std::atomic<int> mouse_sensitivity{100};
     /// Field of view in percent of the game's (tangent of the half angle); live.
     std::atomic<int> fov{100};
+    /// Anisotropic filtering forced on mipmapped textures: 0 as the game asks, else 2..16.
+    /// Samplers are created as textures are first used: startup_anisotropy is the one in effect.
+    std::atomic<int> anisotropy{0};
+    int startup_anisotropy = 0;
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> aspect{0}; ///< index into PortGraphics::Aspects
     std::atomic<int> engine_fps{120};

@@ -260,7 +260,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
                 'aspect_ratio': 'original', 'engine_fps': '60',
-                'frames_queued': '1'}
+                'frames_queued': '1', 'anisotropy': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
@@ -758,6 +758,9 @@ ENGINE_FPS_CHOICES = [('60', ('30 (original)',)), ('120', ('60 (experimental)',)
 # The game's 2.40:1 picture, or a game patch that fills a screen of that shape (Vert+).
 ASPECT_CHOICES = [('original', ('Original (2.40:1, black bars)',)), ('16:9', ('16:9',)), ('16:10', ('16:10',)),
                   ('21:9', ('21:9',))]
+# Anisotropic filtering forced on the game's mipmapped textures (port_settings.h anisotropy).
+ANISOTROPY_CHOICES = [('0', ('Game default',)), ('2', ('2x',)), ('4', ('4x',)), ('8', ('8x',)),
+                      ('16', ('16x',))]
 
 
 def window_icon(root, tk, game_icon, own_icon, ico_file):
@@ -1199,6 +1202,9 @@ class Launcher:
         self.check(f, 'vsync', 'ini', _('VSync'), _('Off allows tearing for the lowest latency.'))
         self.row(f, _('Aspect ratio'), self.choice(f, 'aspect_ratio', 'ini', ASPECT_CHOICES),
                  _("The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below."), restart=True)
+        self.row(f, _('Texture filtering'), self.choice(f, 'anisotropy', 'ini', ANISOTROPY_CHOICES),
+                 _('Sharper textures on floors and walls seen at an angle. 16x costs little on current graphics cards.'),
+                 restart=True)
         self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))

@@ -777,6 +777,10 @@ EXTRA = {
         'Engine frame rate': 'Taxa de quadros do motor',
         'The highest frame rate the game itself runs at (a game patch).': 'A maior taxa de quadros em que o próprio jogo roda (um patch do jogo).',
         'Aspect ratio': 'Proporção da imagem',
+        'Texture filtering': 'Filtragem de texturas',
+        'Game default': 'Padrão do jogo',
+        'Sharper textures on floors and walls seen at an angle. 16x costs little on current graphics cards.':
+            'Texturas mais nítidas em pisos e paredes vistos de lado. 16x custa pouco nas placas de vídeo atuais.',
         'Original (2.40:1, black bars)': 'Original (2.40:1, com barras pretas)',
         "The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below.":
             'O formato da imagem do jogo. Escolha o da sua tela para preenchê-la sem barras pretas: a visão mantém a largura original e mostra mais em cima e embaixo.',
@@ -940,6 +944,10 @@ EXTRA = {
         'The highest frame rate the game itself runs at (a game patch).':
             'La mayor velocidad de fotogramas a la que corre el propio juego (un parche del juego).',
         'Aspect ratio': 'Relación de aspecto',
+        'Texture filtering': 'Filtrado de texturas',
+        'Game default': 'Predeterminado del juego',
+        'Sharper textures on floors and walls seen at an angle. 16x costs little on current graphics cards.':
+            'Texturas más nítidas en suelos y paredes vistos en ángulo. 16x cuesta poco en las tarjetas gráficas actuales.',
         'Original (2.40:1, black bars)': 'Original (2.40:1, con barras negras)',
         "The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below.":
             'La forma de la imagen del juego. Elige la de tu pantalla para llenarla sin barras negras: la vista conserva el ancho original y muestra más arriba y abajo.',
