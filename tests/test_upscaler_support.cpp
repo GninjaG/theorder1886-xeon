@@ -4,15 +4,25 @@
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
-#include <unistd.h>
 #include "port_settings.h"
+#ifdef _WIN32
+// An empty value removes a variable on Windows, as unsetenv does.
+static int setenv(const char* name, const char* value, int) { return _putenv_s(name, value); }
+static int unsetenv(const char* name) { return _putenv_s(name, ""); }
+#else
+#include <unistd.h>
+#endif
 
 int main() {
     using namespace PortSettings;
+#ifdef _WIN32
+    char path[] = "port-upscaler-test.ini";
+#else
     char path[] = "/tmp/port-upscaler-test-XXXXXX";
     const int fd = mkstemp(path);
     assert(fd >= 0);
     close(fd);
+#endif
     setenv("THEORDER_CONFIG", path, 1);
     unsetenv("THEORDER_UPSCALER");
     unsetenv("THEORDER_UPSCALE_PRESET");
