@@ -23,9 +23,14 @@ queue and recompiler fixes), illusion0001's patch notes. Shader hashes below are
 4. **Texture streaming through the backing view** — done (2026-10-18, gow3_pc a101edb).
 0c (aim blur) — done (2026-10-18): CPU reads of GPU-written buffers (read watch + deferred buffer
 readbacks); see docs/PROGRESS.md.
-5. **Pool bubbles and GPU particles** — todo. Dynamic GDS offset (cs 0x873b1ade), addr64 MUBUF,
-   inline V# loads (vs 0xc75dd317, 586 permutations in our cache) (TdlifePeng d0cfaf355,
-   b30a794bf, 082d6ae0a). Smoke particles wrong ("like Knack", PR #4798 comments).
+5. **Pool bubbles and GPU particles** — doing. MUBUF addr64 translation implemented (2026-10-18):
+   loads/stores/atomics preserve both VGPRs; address calculation includes both scalar/immediate
+   offsets and their carries. CPU regression test: `buffer-addr64-test`. Visual validation pending.
+   Dynamic GDS offset is already handled by 0.20.1; the regression test now checks DS_APPEND
+   and DS_CONSUME with different M0 values. Inline V# raw loads with base zero use BDA when
+   THEORDER_DIRECT_MEMORY_ACCESS=1 (experimental; off by default). Test: `buffer-inline-test`
+   with DMA on/off. Remaining: visual validation and broader inline formats (vs 0xc75dd317,
+   586 permutations; TdlifePeng d0cfaf355, b30a794bf, 082d6ae0a).
 6. **Upstream recompiler and video core fixes** — doing (2026-10-18): branch `upstream-0.20`
    (ab5c8c2) has shadPS4 0.20.1 (bloodborne_pc's resolution of the same merge) plus #5406, #5384,
    #5365 and #5364; boots and passes the tests, frame rate A/B still to do (another game held the
@@ -42,9 +47,10 @@ readbacks); see docs/PROGRESS.md.
 9. **Black characters without fragment barycentrics** (#1 Intel Arc, #10 Intel HD 630, #15 GTX
    1070 Ti; RTX and AMD fine) — doing. Neither VK_AMD_shader_explicit_vertex_parameter nor
    VK_KHR_fragment_shader_barycentric: a pixel shader that reads its barycentric registers itself
-   (not through v_interp) gets no source for them (bary_coord is never defined). The log now names
-   such shaders; THEORDER_NO_BARYCENTRIC=1 runs that path on any GPU. Next: reproduce here, then
-   give those shaders barycentrics (e.g. from a pass-through geometry shader).
+   (not through v_interp) needs barycentric registers. Commits 69ba4f9/ec8c131 now provide
+   defined registers and a per-vertex geometry shader fallback. THEORDER_NO_BARYCENTRIC=1
+   exercises that path on any GPU. Remaining: confirmation on Intel/Pascal; unsupported
+   topology/interpolation combinations still use the constant fallback.
 
 ### R2. Stability and progression
 1. **60 FPS mode in QTEs** — todo. illusion0001's 60 FPS patch notes softlocks in chapters 6 and 9
@@ -101,8 +107,10 @@ HiDPI and GUI scale (#584), window fitted to the screen (#470), screenshots/vibr
    run per chapter needs more saves (community saves are encrypted; chapter select after a save).
 2. Remove what nothing uses (tools, env vars, docs of finished plans); check each launcher option
    reaches the game. tools/soak.sh, restart.sh, press.sh use pgrep and out/session.log (Linux era).
-3. tools/run_tests.sh runs every unit test; scene-resolution, taa-shader and camera-motion crash on
-   Windows (null Vulkan-Hpp dispatch: they expect the Linux .so's own dispatcher) — todo.
+3. **Windows Vulkan tests** — done (2026-10-18): scene-resolution, taa-shader and camera-motion
+   compile Vulkan-Hpp with the renderer's NDEBUG ABI, then enable their own assertions. The
+   scene-resolution fixture uses the 0.20.1 SlotVector API. All three run in tools/run_tests.sh
+   on Windows (11 scene, 29 TAA and 6 camera checks passed on RTX 5060 Laptop).
 
 ## GitHub issues (2026-10-17)
 - #3 (01.00 eboot crashed at start): fixed in 0.3.3 (01.02-only hooks and patch sites); asked

@@ -491,6 +491,7 @@ private:
     boost::container::static_vector<ImageDescCacheEntry*, Shader::NUM_IMAGES> image_binding_entries;
     bool attachment_feedback_loop{};
     bool needs_barrier{};
+    bool bound_dma_buffers{};
     // port: two-stage draw pipeline (stage B state; the thread is the last member so it
     // stops first).
     static inline thread_local const AmdGpu::Regs* stage_regs = nullptr;

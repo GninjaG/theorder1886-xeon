@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <fstream>
@@ -16,7 +17,14 @@
 #include "video_core/host_shaders/taa_sharpen_comp.h"
 #include <vk_mem_alloc.h>
 
+// Match the renderer's Vulkan-Hpp dispatcher ABI before enabling test assertions.
+#undef NDEBUG
+#include <cassert>
+
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    _set_error_mode(_OUT_TO_STDERR);
+#endif
     using namespace Vulkan;
     Instance instance(0, false);
     static vk::detail::DynamicLoader loader;

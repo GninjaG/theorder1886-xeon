@@ -1720,7 +1720,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         }
     }
 
-    bool uses_dma = false;
+    bound_dma_buffers = false;
 
     static const bool stats = std::getenv("THEORDER_FRAME_STATS") != nullptr;
     if (stats && ((helper_full + helper_partial + helper_serial) & 1023) == 0) {
@@ -1756,7 +1756,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             const PreparedStage* prepared = FindPreparedStage(*stage);
             BindBuffers(*stage, prepared, binding, push_data, set_write_index);
             BindTextures(*stage, prepared, binding, set_write_index, needs_barrier);
-            uses_dma |= stage->uses_dma;
+            bound_dma_buffers |= stage->uses_dma;
         }
     } else {
         // port: textures on the helper, buffers here. Without mip arrays every stage's
@@ -1793,7 +1793,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             binding.buffer += num_buffers;
             binding.unified += num_descriptors;
             set_write_index += num_descriptors;
-            uses_dma |= stage->uses_dma;
+            bound_dma_buffers |= stage->uses_dma;
         }
         bind_helper.Fork(&RunTextureTask, this);
         for (u32 i = 0; i < task.count; ++i) {
@@ -1819,8 +1819,8 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         }
     }
 
-    if (uses_dma) {
-        buffer_cache.SynchronizeDmaBuffers();
+    if (bound_dma_buffers) {
+        needs_barrier |= buffer_cache.SynchronizeDmaBuffers();
     }
 
     return true;
@@ -2061,13 +2061,17 @@ void Rasterizer::ResolveIndexBuffer(u32 index_offset, bool is_indirect) {
 }
 
 void Rasterizer::ResetBindings(bool is_compute) {
+    const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
+                                      : vk::PipelineStageFlagBits2::eAllGraphics;
     for (auto& image_id : bound_images) {
         texture_cache.GetImage(image_id).binding = {};
     }
     for (const auto [buffer, offset, size, src_access] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
         runtime.AccessBuffer(buffer, offset, size, dst_stage, src_access);
+    }
+    if (bound_dma_buffers) {
+        buffer_cache.MarkDmaBuffersAccessed(dst_stage);
+        bound_dma_buffers = false;
     }
     bound_images.clear();
     bound_buffers.clear();
@@ -2297,9 +2301,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
             } else if (desc.buffer_type == Shader::BufferType::BdaPagetable) {
                 const auto* bda_buffer = buffer_cache.GetBdaPageTableBuffer();
                 buffer_infos.emplace_back(bda_buffer->Handle(), 0, bda_buffer->SizeBytes());
+                needs_barrier |= runtime.IsBufferAccessed(bda_buffer, 0, bda_buffer->SizeBytes());
+                bound_buffers.emplace_back(bda_buffer, 0, bda_buffer->SizeBytes(),
+                                            vk::AccessFlagBits2::eShaderRead);
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+                needs_barrier |= runtime.IsBufferAccessed(fault_buffer, 0, fault_buffer->SizeBytes(),
+                                                          true);
+                bound_buffers.emplace_back(fault_buffer, 0, fault_buffer->SizeBytes(), src_access);
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
                 auto& lds_buffer = buffer_cache.GetStreamBuffer();
                 const auto& cs_program = CsRegs();

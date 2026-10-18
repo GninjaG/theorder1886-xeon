@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.6.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.6.1
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -19,6 +19,16 @@ cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 Para rodar a partir do código-fonte: `bash build.sh` e `python run.py`.
 
 ## Situação (18/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.6.1:
+
+- **Endereços de shaders de 64 bits**: loads, stores e atomics MUBUF preservam o par de
+  registradores de endereço e o carry dos offsets. A próxima execução recompila os shaders.
+- **Testes Vulkan no Windows**: os testes de resolução, TAA e movimento da câmera agora
+  executam com a mesma ABI do renderer, permitindo detectar regressões nesses caminhos.
+- **Presets de mods preservados** ao atualizar a cópia jogável em `dist`.
+- Leitura de V# inline via BDA disponível para testes com `THEORDER_DIRECT_MEMORY_ACCESS=1`;
+  permanece experimental e desligada por padrão.
 
 Novidades da 0.6.0:
 

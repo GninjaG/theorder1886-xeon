@@ -85,7 +85,7 @@ else
     mkdir -p "$play"
     # gow3.ini: the settings of releases up to 0.2.0, moved to theorder.ini at the next start.
     find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name theorder.ini ! -name gow3.ini \
-        ! -name mods.json ! -name patches.json -exec rm -rf {} +
+        ! -name mods.json ! -name mods_presets.json ! -name patches.json -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
 du -sh "$dest" dist/theorder1886-windows.zip

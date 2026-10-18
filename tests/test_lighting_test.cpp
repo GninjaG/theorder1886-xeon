@@ -37,12 +37,14 @@ int main() {
     assert((LightingTest::Marker(Flags{.dref = true}) == "GPU: lighting test on: dref"));
     assert(LightingTest::Marker(none).empty());
 
-    // Only `dref` changes the recompiled SPIR-V: the shader binary cache version carries it
-    // (with the AMD codegen knob of vk_amd_paths.h) so stale shaders are never reused.
-    assert(LightingTest::ShaderBinarySalt(false, false) == 0u);
-    assert(LightingTest::ShaderBinarySalt(true, false) == 1u);
-    assert(LightingTest::ShaderBinarySalt(false, true) == 2u);
-    assert(LightingTest::ShaderBinarySalt(true, true) == 3u);
+    // Every combination of codegen settings gets a separate shader binary cache version.
+    assert(LightingTest::ShaderBinarySalt(false, false, false) == 0u);
+    assert(LightingTest::ShaderBinarySalt(true, false, false) == 1u);
+    assert(LightingTest::ShaderBinarySalt(false, true, false) == 2u);
+    assert(LightingTest::ShaderBinarySalt(true, true, false) == 3u);
+    for (unsigned salt = 0; salt < 8; ++salt) {
+        assert(LightingTest::ShaderBinarySalt(salt & 1, salt & 2, salt & 4) == salt);
+    }
     assert(LightingTest::ShaderBinaryVersion(7u, 0u) == 7u);
     assert(LightingTest::ShaderBinaryVersion(7u, 3u) == 7u + 16u * 3u);
 

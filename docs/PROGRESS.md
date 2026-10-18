@@ -2,6 +2,47 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18: 0.6.1 stabilization checkpoint
+
+Resume instructions, validation evidence and remaining work:
+[CONTINUE-2026-10-18.md](CONTINUE-2026-10-18.md).
+MUBUF addr64, gated inline V# BDA, DMA read/upload barriers, shader cache version 14 and
+separate DMA cache salt are implemented. Windows Vulkan tests use the renderer ABI;
+scene-resolution's uninitialized ImageInfo fixture was fixed and passed 100 repetitions.
+Final integrated checks passed: 41 C/C++ targets, the extra DMA-off invocation and 266 Python
+tests (37 platform skips). All checks returned exit 0.
+Packaging now preserves mod presets. The 0.6.1 package is in dist; saves were checked unchanged.
+Gameplay/performance comparisons and confirmation on affected AMD/Intel/Pascal hardware remain.
+
+## 2026-10-18: MUBUF addr64 continuation and REA setup
+
+MUBUF addr64 was decoded but dropped by BUFFER_LOAD/STORE/ATOMIC and ignored by
+CalculateBufferAddress. The regression harness reproduced `lo=0xc, inst_offset=0xc` producing
+`0xc` instead of `0x18`. Translation now preserves VGPR[n:n+1] and the shared address calculation
+adds soffset and inst_offset separately with carry, then converts bytes to element indices.
+Bit 25 carries addr64 (24 is already sharp_source). No new IR opcode or native int64 dependency.
+Shader binary version 13 invalidates old translations; the next game session recompiles shaders.
+`buffer-addr64-test` covers the actual frontend and address calculation; it is included in
+tools/run_tests.sh. This is the addr64 prerequisite, not a visual fix claim for particles:
+inline V# loads via BDA and dynamic GDS offsets remain pending.
+
+Validation: rebuilt buffer-addr64-test and theorder-probe successfully with MSYS2 CLANG64;
+the test passed 6 frontend cases and 108 address/carry/element-width cases. The original
+failure above was observed before the fix. No game run or full unit suite was performed.
+
+ISA reference: [AMD Sea Islands, table 8.2 / section 8.1.3](https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/sea-islands-instruction-set-architecture_0.pdf).
+
+Read-only checks: Runtime::CopyBuffer calls FlushBarriers before copyBuffer when source writes
+or destination accesses overlap. The stale-T# check is broader than the rasterizer snippet:
+ImageResource::GetSharp already checks address range/mapping, mip range and plausible dimensions.
+No new T# filtering or synchronization change was made; a7b66f58/efaaab2b execution is unverified.
+
+REA MCP binary_session was queried before and after initializing the five submodules in
+C:/projetos/fork/rea. They are at their pinned commits. unblob uses sparse checkout excluding
+tests/integration because its fixtures contain Windows-invalid names. Native analysis remains
+unavailable: the MCP uses C:/projetos/fork/rea-rea-agents-6.5.0, lacks its native Windows build
+manifest, and has no GHIDRA_INSTALL_DIR configured. Submodules alone do not resolve these.
+
 ## 2026-10-18 (morning): aim blur, VSM shadows, readbacks, deep backlog
 
 **Aim blur (the player's report):** aiming blurred the whole picture. The aim depth of field

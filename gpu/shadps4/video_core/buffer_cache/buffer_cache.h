@@ -135,8 +135,9 @@ public:
     /// Mark region as modified from the GPU
     void MarkRegionAsGpuModified(VAddr addr, size_t size);
 
-    /// Synchronizes all buffers needed for DMA.
-    void SynchronizeDmaBuffers();
+    /// Synchronizes DMA buffers and returns whether their shader reads need a barrier.
+    [[nodiscard]] bool SynchronizeDmaBuffers();
+    void MarkDmaBuffersAccessed(vk::PipelineStageFlags2 stage);
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);

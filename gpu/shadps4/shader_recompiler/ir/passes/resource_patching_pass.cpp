@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <limits>
+#include "core/emulator_settings.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -591,6 +593,24 @@ IR::U32 CalculateBufferAddress(IR::IREmitter& ir, const IR::Inst& inst, const In
     const u32 mask = (1 << shift) - 1;
     const IR::U32 soffset = IR::GetBufferSOffsetArg(&inst);
 
+    if (inst_info.addr64) {
+        const IR::U32 lo = IR::GetBufferIndexArg(&inst);
+        const IR::U32 hi = IR::GetBufferVOffsetArg(&inst);
+        const IR::U32 with_soffset = ir.IAdd(lo, soffset);
+        const IR::U32 byte_lo = ir.IAdd(with_soffset, ir.Imm32(inst_offset));
+        if (shift == 0) {
+            return byte_lo;
+        }
+        // Add separately: soffset + inst_offset can itself overflow before reaching the VGPRs.
+        const IR::U32 carry0{ir.Select(ir.ILessThan(with_soffset, lo, false), ir.Imm32(1),
+                                      ir.Imm32(0))};
+        const IR::U32 carry1{ir.Select(ir.ILessThan(byte_lo, with_soffset, false), ir.Imm32(1),
+                                      ir.Imm32(0))};
+        const IR::U32 byte_hi = ir.IAdd(ir.IAdd(hi, carry0), carry1);
+        return ir.BitwiseOr(ir.ShiftRightLogical(byte_lo, ir.Imm32(shift)),
+                            ir.ShiftLeftLogical(byte_hi, ir.Imm32(32 - shift)));
+    }
+
     // If address calculation is of the form "index * const_stride + offset" with offset constant
     // and both const_stride and offset are divisible with the element size, apply shift directly.
     if (inst_info.index_enable && !inst_info.voffset_enable && soffset.IsImmediate() &&
@@ -655,6 +675,67 @@ IR::U32 CalculateBufferAddress(IR::IREmitter& ir, const IR::Inst& inst, const In
     return buffer_offset;
 }
 
+bool PatchInlineBufferLoad(IR::Inst& inst, const BufferResource& resource,
+                           const AmdGpu::Buffer& buffer) {
+    const auto flags = inst.Flags<IR::BufferInstInfo>();
+    // A zero-base literal V# has no cache backing; addr64 VGPRs contain the guest pointer.
+    if (!flags.addr64 || resource.sharp_fetch.load_mask != 0 ||
+        resource.sharp_fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid ||
+        resource.post_op != SharpFetchPostOp::None || buffer.base_address != 0 ||
+        buffer.num_records == 0 || !EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+        return false;
+    }
+    // shortcut: typed/swizzled loads retain buffer bindings; extend with a reproducing shader.
+    if (flags.typed || buffer.swizzle_enable || buffer.add_tid_enable) {
+        return false;
+    }
+    u32 count{};
+    switch (inst.GetOpcode()) {
+    case IR::Opcode::LoadBufferU32:
+    case IR::Opcode::LoadBufferF32:
+        count = 1;
+        break;
+    case IR::Opcode::LoadBufferU32x2:
+    case IR::Opcode::LoadBufferF32x2:
+        count = 2;
+        break;
+    case IR::Opcode::LoadBufferU32x3:
+    case IR::Opcode::LoadBufferF32x3:
+        count = 3;
+        break;
+    case IR::Opcode::LoadBufferU32x4:
+    case IR::Opcode::LoadBufferF32x4:
+        count = 4;
+        break;
+    default:
+        return false;
+    }
+
+    IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+    IR::U32 lo = IR::GetBufferIndexArg(&inst);
+    IR::U32 hi = IR::GetBufferVOffsetArg(&inst);
+    // Separate additions preserve a carry from soffset + inst_offset as well as the VGPR carry.
+    for (const auto addend :
+         {IR::GetBufferSOffsetArg(&inst), ir.Imm32(u32(flags.inst_offset.Value()))}) {
+        const IR::U32 sum = ir.IAdd(lo, addend);
+        const IR::U32 carry{ir.Select(ir.ILessThan(sum, lo, false), ir.Imm32(1), ir.Imm32(0))};
+        hi = ir.IAdd(hi, carry);
+        lo = sum;
+    }
+    // Raw DWORD loads ignore the final address's low bits, as the bound-buffer path does.
+    const auto address = ir.CompositeConstruct(ir.BitwiseAnd(lo, ir.Imm32(~3u)), hi);
+    const bool floating = True(inst.Type() &
+                               (IR::Type::F32 | IR::Type::F32x2 | IR::Type::F32x3 | IR::Type::F32x4));
+    std::array<IR::Value, 4> values;
+    for (u32 i = 0; i < count; ++i) {
+        const auto value = ir.ReadConst(address, ir.Imm32(i));
+        values[i] = floating ? IR::Value{ir.BitCast<IR::F32>(value)} : IR::Value{value};
+    }
+    inst.ReplaceUsesWith(count == 1 ? values[0]
+                                   : ir.CompositeConstruct(std::span{values}.first(count)));
+    return true;
+}
+
 void PatchBufferArgs(IR::Inst& inst, Info& info) {
     const auto handle = inst.Arg(0);
     const auto buffer_res = info.buffers[handle.U32()];
@@ -662,6 +743,9 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
 
     // Address of constant buffer reads can be calculated at IR emission time.
     if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer) {
+        return;
+    }
+    if (PatchInlineBufferLoad(inst, buffer_res, buffer)) {
         return;
     }
 

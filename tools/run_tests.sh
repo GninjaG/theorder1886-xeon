@@ -6,13 +6,11 @@ set -uo pipefail
 cd -- "$(dirname -- "$0")/.."
 [[ -f msys2-env.sh && $(uname -s) == MINGW* || $(uname -s) == MSYS* ]] && source ./msys2-env.sh
 tests=(mp3 videodec services pad-map audio-downmix cpu-check isa-emulate isa-stub tsc-clock
-       pipeline-binary-cache pipeline-binary-initialization motion-history motion-shader png-decode
+       pipeline-binary-cache pipeline-binary-initialization motion-history motion-shader buffer-addr64 buffer-inline png-decode
        aliasing blend-rewrite depth-stencil-state async-compiler warmup-inbox wave-stats pass-census
        frame-capture lighting-test-knob amd-paths no-msaa async-pipeline-cache async-fetch-snapshot
        ui-composition upscaler-support perf-overlay readback-queue wait-diagnostics
-       graphics-settings readback-sources page-state)
-# Need a Vulkan device and the Linux .so's own Vulkan-Hpp dispatcher (crash on Windows).
-case $(uname -s) in MINGW*|MSYS*) ;; *) tests+=(scene-resolution taa-shader camera-motion) ;; esac
+       graphics-settings readback-sources page-state scene-resolution taa-shader camera-motion dma-barriers)
 declare -A args=([isa-stub]=tests/data/isa_fixture.bin)
 if ! ninja -C out/gpu "${tests[@]/%/-test}" > out/tests-build.log 2>&1; then
     grep -E 'error:|FAILED' out/tests-build.log | head -20; echo 'test build failed (out/tests-build.log)'; exit 1
@@ -23,6 +21,9 @@ for t in "${tests[@]}"; do
         failed+=("$t"); tail -3 "out/test-$t.log"
     fi
 done
+if ! timeout 300 out/gpu/buffer-inline-test disabled > out/test-buffer-inline-off.log 2>&1; then
+    failed+=(buffer-inline-off); tail -3 out/test-buffer-inline-off.log
+fi
 # Runtime (C) tests that build on their own.
 if ! { clang -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_content.c \
          src/runtime_content.c -o out/content-test && out/content-test && out/content-test --addons; } \

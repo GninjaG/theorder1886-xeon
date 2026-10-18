@@ -4,13 +4,21 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/host_shaders/camera_motion_comp.h"
 #include <vk_mem_alloc.h>
 
+// Match the renderer's Vulkan-Hpp dispatcher ABI before enabling test assertions.
+#undef NDEBUG
+#include <cassert>
+
 int main() {
+#ifdef _WIN32
+    _set_error_mode(_OUT_TO_STDERR);
+#endif
     Vulkan::Instance instance(0, false);
     static vk::detail::DynamicLoader loader;
     vk::detail::DispatchLoaderDynamic d;

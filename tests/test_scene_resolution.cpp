@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "common/slot_vector.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -12,7 +13,14 @@
 #include "video_core/texture_cache/blit_helper.h"
 #include <vk_mem_alloc.h>
 
+// Match the renderer's Vulkan-Hpp dispatcher ABI before enabling test assertions.
+#undef NDEBUG
+#include <cassert>
+
 int main() {
+#ifdef _WIN32
+    _set_error_mode(_OUT_TO_STDERR);
+#endif
     using namespace Vulkan;
     Instance instance(0, false);
     // Calls emitted by this executable use a local dispatcher. libtheordergpu.so initializes
@@ -25,21 +33,21 @@ int main() {
     dispatch.init(instance.GetDevice());
     Scheduler scheduler(instance);
     Runtime runtime(instance, scheduler);
-    Common::SlotVector<VideoCore::ImageView> views;
-    Common::SlotVector<VideoCore::Image> images;
-    VideoCore::ImageInfo ci;
+    Common::SlotVector<VideoCore::ImageView> views{3};
+    Common::SlotVector<VideoCore::Image> images{3};
+    VideoCore::ImageInfo ci{};
     ci.size = {1920,1080,1};
     ci.resources = {1,1};
     ci.type = AmdGpu::ImageType::Color2D;
     ci.pixel_format = vk::Format::eR8G8B8A8Unorm;
     ci.num_bits = 32;
-    const auto color_id = images.insert(instance, runtime, views, ci);
+    const auto color_id = images.Insert(instance, runtime, views, ci);
     auto di = ci;
     di.pixel_format = vk::Format::eD32SfloatS8Uint;
     di.props.is_depth = di.props.has_stencil = true;
-    const auto depth_id = images.insert(instance, runtime, views, di);
+    const auto depth_id = images.Insert(instance, runtime, views, di);
     SceneTargets targets(instance, scheduler, runtime, [&](VideoCore::ImageId id, u64 uid) {
-        if (!images.is_allocated(id)) return static_cast<VideoCore::Image*>(nullptr);
+        if (!images.IsAllocated(id)) return static_cast<VideoCore::Image*>(nullptr);
         return !uid || images[id].image_uid == uid ? &images[id] : nullptr;
     });
     const bool color_eligible = targets.Eligible(images[color_id]);
@@ -112,7 +120,12 @@ int main() {
         assert(SceneResolution::Unpack(SceneResolution::Pack(size)) == size);
         clear_native(0xffff0000, copied_stencil); // blue
         auto c = targets.Read(color_id,cv);
-        assert(pixel(c.image,vk::ImageAspectFlagBits::eColor,c.layout,size.width,size.height)==0xffff0000);
+        const u32 copied_color = pixel(c.image,vk::ImageAspectFlagBits::eColor,c.layout,size.width,size.height);
+        if (copied_color != 0xffff0000) {
+            std::fprintf(stderr, "Scene targets: %ux%u copy expected=ffff0000 actual=%08x\n",
+                         size.width, size.height, copied_color);
+        }
+        assert(copied_color == 0xffff0000);
         auto d = targets.Read(depth_id,dv);
         const u32 depth_bits = pixel(d.image,vk::ImageAspectFlagBits::eDepth,d.layout,size.width,size.height);
         assert(std::bit_cast<float>(depth_bits)==0.25f);
@@ -154,7 +167,7 @@ int main() {
     auto hi = ci;
     hi.size = {960, 540, 1};
     hi.resources = {4, 1};
-    const auto half_id = images.insert(instance, runtime, views, hi);
+    const auto half_id = images.Insert(instance, runtime, views, hi);
     const auto scene = SceneResolution::ForPreset(4); // 640x360 (x3 of 1080p)
     targets.SetSize(scene);
     auto& half = images[half_id];

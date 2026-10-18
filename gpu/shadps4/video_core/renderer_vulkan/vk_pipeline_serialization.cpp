@@ -43,7 +43,7 @@ namespace Serialization {
 // port: past both histories (port 9/8/5, upstream 9/6/3 and #5365's binary 10): caches of
 // either are rebuilt. The meta layout lost the fetch shader (StageSpecialization carries it) and
 // keeps fs_interpolation; pipelines keep the per-vertex geometry shader (binary 12, meta 10, key 7).
-static constexpr u32 ShaderBinaryVersion = 12u;
+static constexpr u32 ShaderBinaryVersion = 14u; // MUBUF addr64 and inline V# BDA loads.
 static constexpr u32 ShaderMetaVersion = 10u;
 static constexpr u32 PipelineKeyVersion = 7u;
 } // namespace Serialization
@@ -54,12 +54,13 @@ extern std::atomic<u64> g_port_pipeline_driver_ns;
 
 namespace {
 // port: the test knobs that change recompiled SPIR-V (THEORDER_LIGHTING_TEST=dref,
-// THEORDER_AMD_PATHS_OFF=shaderext) get their own shader binary cache version.
+// THEORDER_AMD_PATHS_OFF=shaderext, THEORDER_DIRECT_MEMORY_ACCESS) get separate cache versions.
 u32 CurrentShaderBinaryVersion() {
     return LightingTest::ShaderBinaryVersion(
         Serialization::ShaderBinaryVersion,
         LightingTest::ShaderBinarySalt(LightingTest::Current().dref,
-                                       AmdPathsOff::Current().shaderext));
+                                       AmdPathsOff::Current().shaderext,
+                                       EmulatorSettings.IsDirectMemoryAccessEnabled()));
 }
 
 // port: a translation fix that only some shaders meet raises their version alone, so only they

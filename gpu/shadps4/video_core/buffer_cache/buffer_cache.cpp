@@ -835,13 +835,29 @@ void BufferCache::ReadEdgeImagePages(const Image& image) {
         });
 }
 
-void BufferCache::SynchronizeDmaBuffers() {
+bool BufferCache::SynchronizeDmaBuffers() {
     fault_process_pending = true;
+    bool needs_barrier{};
     for (const auto& range : resident_ranges) {
         const u64 page = range.start >> (arena_page_bits - block_shift);
         const VAddr device_addr = range.start << block_shift;
         const u64 size = (range.end - range.start) << block_shift;
-        SynchronizeMemory(address_space[page], device_addr, size, false, false);
+        const auto* arena = address_space[page];
+        SynchronizeMemory(arena, device_addr, size, false, false);
+        needs_barrier |= runtime.IsBufferAccessed(arena, arena->Offset(device_addr), size);
+    }
+    return needs_barrier;
+}
+
+void BufferCache::MarkDmaBuffersAccessed(vk::PipelineStageFlags2 stage) {
+    // BDA reads bypass descriptors, but later uploads must still wait for those shader reads.
+    for (const auto& range : resident_ranges) {
+        const u64 page = range.start >> (arena_page_bits - block_shift);
+        const VAddr device_addr = range.start << block_shift;
+        const u64 size = (range.end - range.start) << block_shift;
+        const auto* arena = address_space[page];
+        runtime.AccessBuffer(arena, arena->Offset(device_addr), size, stage,
+                             vk::AccessFlagBits2::eShaderRead);
     }
 }
 
