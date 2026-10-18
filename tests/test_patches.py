@@ -185,6 +185,16 @@ class SignatureTests(unittest.TestCase):
             self.assertEqual(skipped, {}, name)
             self.assertEqual(sorted(found), sorted(compile_patches(ORDER, [name], '01.02', segments)), name)
 
+    @unittest.skipUnless((ROOT / 'out/eboot.elf').exists(), 'needs the prepared 01.02 eboot (out/eboot.elf)')
+    def test_fov_sites_hold_the_original_constant(self):
+        # The in-game field of view scales these: the game's own value is 1.35 / 2.4.
+        import struct
+        import patches
+        image = patches.eboot_image((ROOT / 'out/eboot.elf').read_bytes())
+        sites = patches.fov_sites(ORDER, '01.02', image, reference=False)
+        self.assertEqual(len(sites), 7)
+        self.assertEqual({struct.unpack_from('<d', image, s)[0] for s in sites}, {0.5625})
+
     def test_requirements_from_patch_notes(self):
         # Notes ask for extra direct memory (shadPS4 "DMEM") and a VBlank rate.
         notes = self.xml.parent / 'notes.xml'

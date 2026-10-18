@@ -60,6 +60,8 @@ struct Values {
     /// Set by the presenter: the game's image and the window it is shown in, in pixels.
     std::atomic<int> image_width{0}, image_height{0}, window_width{0}, window_height{0};
     std::atomic<int> frames_queued{2};
+    /// Field of view in percent of the game's (tangent of the half angle); live.
+    std::atomic<int> fov{100};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> aspect{0}; ///< index into PortGraphics::Aspects
     std::atomic<int> engine_fps{120};
@@ -112,6 +114,11 @@ bool ResolutionNeedsRestart();
 bool GraphicsNeedRestart();
 /// Writes the file (menu changes).
 void Save();
+/// The game's field of view constants (patches.py fov targets, in the loaded image): their
+/// values now are 100%. Applies the setting.
+void SetFovSites(double* const* sites, int count);
+/// Writes the fov setting into the game's constants (no-op without sites).
+void ApplyFov();
 
 /// Render resolution divisor of a preset (1.0 native, 1.5 quality, ...).
 float PresetScale(int preset);

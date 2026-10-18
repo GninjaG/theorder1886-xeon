@@ -35,6 +35,8 @@ int theordergpu_choice_begin(const char *title, const char *const *items, const 
 int theordergpu_choice_poll(void);
 /* 1 while the in-game settings menu is open: the game's pad input is held neutral. */
 int theordergpu_overlay_captures_input(void);
+/* The game's field of view constants in the loaded image (writable): the in-game menu scales them. */
+void theordergpu_set_fov_sites(double *const *sites, int count);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned theordergpu_symbol_count(void);
 #ifdef __cplusplus

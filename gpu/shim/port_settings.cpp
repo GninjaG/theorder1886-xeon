@@ -3,6 +3,7 @@
 #include "port_graphics.h"
 
 #include <algorithm>
+#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -100,6 +101,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas_strength = PortGraphics::ParseRcasStrength(value.empty() ? -1 : i);
     } else if (key == "frames_queued") {
         v.frames_queued = PortGraphics::ParseFramesQueued(value.empty() ? -1 : i);
+    } else if (key == "fov") {
+        v.fov = std::clamp(i, 50, 200);
     } else if (key == "aspect_ratio") {
         v.aspect = PortGraphics::ParseAspect(value);
     } else if (key == "engine_fps") {
@@ -276,10 +279,29 @@ void Save() {
                  PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, 3)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
+    std::fprintf(file, "fov=%d\n", v.fov.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
     std::fclose(file);
+}
+
+namespace {
+std::vector<std::pair<double*, double>> fov_sites;
+}
+
+void SetFovSites(double* const* sites, int count) {
+    for (int i = 0; i < count; ++i) {
+        fov_sites.emplace_back(sites[i], *sites[i]);
+    }
+    ApplyFov();
+}
+
+void ApplyFov() {
+    const double scale = Get().fov.load() / 100.0;
+    for (const auto& [site, base] : fov_sites) {
+        *site = base * scale; // the game reads it every frame; an aligned double store is atomic
+    }
 }
 
 float PresetScale(int preset) {

@@ -290,7 +290,10 @@ def main():
         if profile:
             # Only the patches found in this eboot.bin count: a frame rate patch that was skipped
             # leaves the engine at 60 FPS, and the notes' memory and VBlank needs follow the same list.
-            applied = (patch_status(out) or {}).get('applied', [])
+            status = patch_status(out) or {}
+            applied = status.get('applied', [])
+            # The in-game menu's field of view writes these constants (probe.c set_fov_sites).
+            env['THEORDER_FOV_SITES'] = ' '.join(hex(site) for site in status.get('fov_sites', []))
             engine_fps = graphics_options.applied_engine_fps(applied)
             fps_patched = any(n.startswith(f'{graphics_options.FPS_PREFIX} - ') for n in applied)
             dmem, vblank = patch_requirements(profile[1], applied, profile[2])

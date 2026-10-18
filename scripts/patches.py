@@ -166,6 +166,20 @@ def compile_patches(xml, names, app_version, segments, image=None, skipped=None,
     return writes
 
 
+def fov_sites(xml, app_version, image, reference=True):
+    """Image offsets of the field of view constants (the aspect ratio patches' fov* Targets),
+    for the in-game menu's live setting; [] when this build's are not found."""
+    for meta in ET.parse(xml).getroot().iter('Metadata'):
+        names=[t.get('Name') for t in meta.iter('Target') if t.get('Name','').startswith('fov')]
+        if meta.get('AppVer')==app_version and names:
+            try:
+                targets=resolve_targets(image,meta,[],reference)
+            except LookupError:
+                return []
+            return sorted(targets[n] for n in names)
+    return []
+
+
 PATCHES_DIR=Path(__file__).resolve().parent.parent/'patches'
 # Built-in patch file per game: its title IDs, the AppVer its metadata is tagged with and the
 # title that also recognizes a release under an ID not listed. The signatures find the sites in
@@ -360,7 +374,9 @@ def main():
                                                     a.patches_config),segments)
     write_patches(a.out,writes)
     applied=[n for n in names if n not in skipped]
-    (a.out/'patch_status.json').write_text(json.dumps({'sha256':sha,'applied':applied,'skipped':skipped}))
+    fov=fov_sites(xml,tag,eboot_image(elf),sha==REFERENCE_SHA256)
+    (a.out/'patch_status.json').write_text(json.dumps({'sha256':sha,'applied':applied,'skipped':skipped,
+                                                       'fov_sites':fov}))
     print(f'Patches: {title}; {len(writes)} writes from {applied or "none"}')
 
 if __name__=='__main__':

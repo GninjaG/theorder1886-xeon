@@ -386,6 +386,10 @@ u32 ConsumeWithOverlaysScreenshotRequests() { return 0; }
 ScreenshotRequests ConsumeScreenshotRequests() { return {}; }
 } // namespace VideoCore
 
+extern "C" void theordergpu_set_fov_sites(double *const *sites, int count) {
+  PortSettings::SetFovSites(sites, count);
+}
+
 extern "C" int theordergpu_overlay_captures_input(void) {
   return PortOverlay::CapturesInput() ? 1 : 0;
 }

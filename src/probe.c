@@ -589,6 +589,27 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
     fclose(f);
     printf("Patches: %" PRIu64 " writes, %" PRIu64 " bytes applied, %" PRIu64 " pointers rebased\n",count,bytes,rebased);
 }
+/* THEORDER_FOV_SITES (run.py, from patches.py): image offsets of the game's field of view
+ * constants (doubles in read-only data). Their pages become writable for the in-game menu. */
+static void set_fov_sites(Segment *segments, uint64_t ns) {
+    const char *text = getenv("THEORDER_FOV_SITES");
+    double *sites[16];
+    int count = 0;
+    for (char *end; text && *text && count < 16; text = end) {
+        uint64_t offset = strtoull(text, &end, 0);
+        if (end == text) break;
+        for (uint64_t i = 0; i < ns; ++i) {
+            if (!(offset % 8) && offset >= segments[i].address && offset + 8 <= segments[i].address + segments[i].size) {
+                uint64_t page = offset & ~(uint64_t)(page_size - 1);
+                protect(image + page, page_size, (unsigned)segments[i].flags | 2);
+                sites[count++] = (double *)(image + offset);
+                break;
+            }
+        }
+    }
+    if (count) theordergpu_set_fov_sites(sites, count);
+    printf("FOV: %d sites\n", count);
+}
 /* Restarts the game through run.sh (the settings menu: a new render resolution is a patch
  * applied at start). Descriptors are closed first so the old GPU device and its memory are
  * released before the new process opens its own. */
@@ -1308,6 +1329,7 @@ int main(int argc, char **argv) {
             executable_entry = 1;
     }
     if (!executable_entry) fail("entry is not executable");
+    if (gpu_enabled) set_fov_sites(segments, ns);
     printf("Mapped %" PRIu64 " bytes at %p, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, (void *)image, ns, nr);
     if (native_libc) {
         for (uint64_t m=0;m<module_count;++m) {

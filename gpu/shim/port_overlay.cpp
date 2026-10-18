@@ -282,6 +282,9 @@ void ImageTab() {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
+        SliderRow("Field of view", s.fov, 50, 200, "%d%%",
+                  "How much of the scene the camera shows. Above 100% shows more on every side.");
+        PortSettings::ApplyFov();
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
