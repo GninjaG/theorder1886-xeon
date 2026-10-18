@@ -1,4 +1,4 @@
-# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.5.0
+# The Order: 1886 — Port nativo para PC (Vulkan): notas da versão 0.6.0
 
 Port em desenvolvimento de **The Order: 1886 (PS4, CUSA00035 versão 01.02)** para Windows. A
 documentação completa está em [README.pt-BR.md](README.pt-BR.md) e o registro técnico em
@@ -16,9 +16,28 @@ própria cópia.
 `Play The Order 1886.exe` inicia o jogo direto com as últimas configurações (útil na Steam). Saves,
 cache de shaders e logs ficam na pasta `user\` ao lado do launcher.
 
-Para rodar a partir do código-fonte: `bash build.sh` e `python run.py` (ou os `.bat` da pasta).
+Para rodar a partir do código-fonte: `bash build.sh` e `python run.py`.
 
-## Situação (17/10/2026, RTX 5060 Laptop, Windows 11)
+## Situação (18/10/2026, RTX 5060 Laptop, Windows 11)
+
+Novidades da 0.6.0:
+
+- **Mirar não borra mais a tela inteira**: o desfoque de profundidade da mira recebia distâncias
+  de foco perto de zero, então tudo ficava fora de foco. O jogo calcula o foco lendo, na CPU, um
+  buffer que a GPU escreve a cada frame com a profundidade da cena; esse buffer nunca era copiado
+  de volta. Agora o port detecta sozinho os buffers que a CPU lê e os copia a cada frame, sem
+  esperar a GPU. O alvo sob a mira fica nítido e o fundo desfoca, como no PS4. O mesmo buffer
+  ajusta as cascatas de sombra.
+- **Sombras que sumiam voltam**: a conversão dos mapas de sombra lê o HTILE (metadado da
+  profundidade) para pular blocos vazios. Ninguém atualizava o HTILE, então blocos com objetos
+  pareciam vazios e as sombras deles desapareciam.
+- **Placas NVIDIA e Intel**: atomic min/max de float em shaders executava as duas operações em vez
+  de uma (reduções de profundidade erradas). Só os shaders afetados são retraduzidos.
+- Texturas carregadas por cópias da GPU deixam de ficar com o conteúdo antigo.
+- **Filtragem de texturas** (Gráficos > Filtragem de texturas): 2x a 16x, pisos e paredes vistos
+  de lado mais nítidos.
+- Testes: `tools/run_tests.sh` roda os 35 testes C/C++ e a suíte Python; arquivos sem uso
+  removidos (scripts antigos e os `.bat` com atalhos de nível que o jogo ignora).
 
 Novidades da 0.5.0:
 
