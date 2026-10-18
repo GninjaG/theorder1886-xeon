@@ -307,6 +307,10 @@ void Scheduler::KickRecording(bool force) {
     }
     // Callers kick where nobody holds the raw command buffer: deferral resumes.
     direct_mode = false;
+    std::scoped_lock rlk{record_mutex};
+    if (!record_chunk) {
+        record_chunk = AcquireChunk();
+    }
     // Batches of tens of KiB keep the queue handoff cheap relative to the work it carries.
     if (!force && full_chunks.empty() && record_chunk->Size() < 32 * 1024) {
         return;

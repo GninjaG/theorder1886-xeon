@@ -265,6 +265,8 @@ public:
 
     /// Reuploads image contents.
     void RefreshImage(Image& image);
+    /// The Order 1886: serve deferred uploads without needing rebind (one-shot).
+    void DrainDeferredUploads();
 
     /// Retrieves the sampler that matches the provided S# descriptor.
     /// extra_lod_bias: port, added to the S#'s bias (reduced scene rendering).
@@ -609,6 +611,9 @@ private:
     std::mutex backing_writes_mutex;
     std::vector<std::pair<VAddr, u64>> backing_writes;
     std::atomic<bool> has_backing_writes{false};
+    /// The Order 1886: deferred upload queue (id, uid)
+    std::deque<std::pair<ImageId, u64>> deferred_uploads;
+    bool draining_uploads = false;
     /// port: images with the same guest address (guarded by `mutex`). `backing` holds the
     /// complete contents; `writer` is a newer write not yet copied into it.
     struct AliasState {

@@ -130,8 +130,9 @@ HiDPI and GUI scale (#584), window fitted to the screen (#470), screenshots/vibr
   #15 is a GTX 1070 Ti with black characters (video): the barycentric path of #1/#10 (R1.9). #11's
   new log: vkEndCommandBuffer out of host memory on AMD (R2.2). #8 (RTX 3080, 0.6.0): log, video
   and a save (savedata/1/CUSA00035, rooftop); stretched polygons fixed by the merge's index buffer
-  binding. #16 (Armoury outfits, DLC folders as add-ons), #17 (other regions), #18 (RX 9070
-  flicker in chapter 2, no log) to answer.
+  binding. #16 (Armoury outfits, DLC folders as add-ons) and #17 (language selection & other regions)
+  resolved (2026-10-18 late night: SKU regional restriction bypass patch + Armoury menu unlock patch + CLI & INI language forwarding);
+  #18 (RX 9070 flicker in chapter 2) resolved via U16 vertex stream alignment.
 
 ## 0c. Everything blurred while aiming — done (2026-10-18)
 The CPU computes the focus from a GPU-written buffer that relaxed readbacks never brought back

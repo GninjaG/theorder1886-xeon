@@ -120,6 +120,89 @@ def find_executable(name):
     return None
 
 
+PS4_TO_ENGINE_LANG = {
+    0: 18, 1: 0, 2: 2, 3: 5, 4: 4, 5: 3, 6: 6, 7: 7, 8: 8,
+    9: 19, 10: 21, 11: 20, 12: 12, 13: 10, 14: 13, 15: 11,
+    16: 9, 17: 17, 18: 1, 19: 15, 20: 16
+}
+
+LANG_CODE_TO_PS4 = {
+    'ja': 0, 'japanese': 0,
+    'en': 1, 'en-us': 1, 'us': 1, 'english': 1,
+    'fr': 2, 'french': 2,
+    'es': 3, 'es-es': 3, 'spanish': 3,
+    'de': 4, 'german': 4,
+    'it': 5, 'italian': 5,
+    'nl': 6, 'dutch': 6,
+    'pt-pt': 7,
+    'ru': 8, 'russian': 8,
+    'ko': 9, 'korean': 9,
+    'zh-hant': 10, 'zh-hans': 11,
+    'fi': 12, 'finnish': 12,
+    'sv': 13, 'swedish': 13,
+    'da': 14, 'danish': 14,
+    'no': 15, 'norwegian': 15,
+    'pl': 16, 'polish': 16,
+    'pt': 17, 'pt-br': 17, 'br': 17, 'portuguese': 17,
+    'en-gb': 18, 'uk': 18,
+    'tr': 19, 'turkish': 19,
+    'es-419': 20, 'es-la': 20, 'la': 20,
+    'ar': 21, 'arabic': 21
+}
+
+
+def resolve_language(cli_lang, env, ini_path, graphics_options=None):
+    for candidate in (cli_lang, get_env(env, 'LANGUAGE')):
+        if candidate is not None:
+            val = str(candidate).strip().lower()
+            if val in LANG_CODE_TO_PS4:
+                return LANG_CODE_TO_PS4[val]
+            if val.isdigit():
+                return int(val)
+    if graphics_options:
+        ini_vals = graphics_options.read_ini(ini_path)
+        if 'language' in ini_vals:
+            val = str(ini_vals['language']).strip().lower()
+            if val in LANG_CODE_TO_PS4:
+                return LANG_CODE_TO_PS4[val]
+            if val.isdigit():
+                return int(val)
+    try:
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            s_file = Path(appdata) / 'theorder1886-launcher' / 'settings.json'
+            if s_file.is_file():
+                s_data = json.loads(s_file.read_text(encoding='utf-8'))
+                if 'language' in s_data:
+                    val = str(s_data['language']).strip().lower()
+                    if val in LANG_CODE_TO_PS4:
+                        return LANG_CODE_TO_PS4[val]
+                    if val.isdigit():
+                        return int(val)
+    except Exception:
+        pass
+    try:
+        import locale
+        loc = (locale.getdefaultlocale()[0] or '').lower()
+        if any(p in loc for p in ('pt', 'brazil', 'portuguese')):
+            return 17
+        if any(p in loc for p in ('es', 'spanish')):
+            return 20
+        if any(p in loc for p in ('fr', 'french')):
+            return 2
+        if any(p in loc for p in ('de', 'german')):
+            return 4
+        if any(p in loc for p in ('it', 'italian')):
+            return 5
+        if any(p in loc for p in ('ru', 'russian')):
+            return 8
+        if any(p in loc for p in ('pl', 'polish')):
+            return 16
+    except Exception:
+        pass
+    return 1
+
+
 def find_probe_executable():
     """Finds the probe executable (theorder-probe)."""
     return find_executable('theorder-probe' + EXE_SUFFIX)
@@ -130,6 +213,8 @@ def main():
     if len(args) >= 2 and args[0] == '--after':
         wait_for(int(args[1]))
         args = args[2:]
+    cli_lang = None
+    cli_costume = None
     translated_args = []
     i = 0
     while i < len(args):
@@ -157,6 +242,12 @@ def main():
         elif args[i] == '--perf':
             translated_args.extend(['--guest-arg', '-disablecloth', '--guest-arg', '-nocamsprings', '--guest-arg', '-nocamadditive', '--guest-arg', '-msaa', '--guest-arg', '1'])
             i += 1
+        elif args[i] in ('--language', '--lang', '-l') and i + 1 < len(args):
+            cli_lang = args[i + 1]
+            i += 2
+        elif args[i] in ('--costume', '--dlc-costume') and i + 1 < len(args):
+            cli_costume = args[i + 1]
+            i += 2
         else:
             translated_args.append(args[i])
             i += 1
@@ -280,6 +371,10 @@ def main():
         if profile:
             names = selected_patches(profile[1], profile[2], patches_val, patches_only)
             names = graphics_options.patch_names(names, graphics)
+            if profile[3] == 'The Order 1886':
+                for auto_patch in ('Unlock All Languages', 'Unlock The Armoury Menu'):
+                    if auto_patch not in names:
+                        names.append(auto_patch)
             names = graphics_options.restrict_to_available(names, patches.available_patches(profile[1], profile[2]))
             env['THEORDER_PATCHES'] = ';'.join(names)
             env['THEORDER_PATCHES_ONLY'] = '1'
@@ -348,11 +443,25 @@ def main():
         restart = [sys.executable, *this, *after, *args]
         restart_cmd = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
         env['THEORDER_RESTART_COMMAND'] = restart_cmd
+        # Resolve language & pass guest arguments
+        ps4_lang = resolve_language(cli_lang, env, env['THEORDER_CONFIG'], graphics_options)
+        engine_lang = PS4_TO_ENGINE_LANG.get(ps4_lang, ps4_lang)
+        env['THEORDER_LANGUAGE'] = str(ps4_lang)
+        print(f'Language: PS4 id {ps4_lang} -> engine id {engine_lang}', flush=True)
+
+        guest_lang_args = []
+        if '-sku' not in args:
+            guest_lang_args.extend(['--guest-arg', '-sku', '--guest-arg', '1'])
+        if '-language' not in args:
+            guest_lang_args.extend(['--guest-arg', '-language', '--guest-arg', str(engine_lang)])
+        if '-enablesubtitles' not in args:
+            guest_lang_args.extend(['--guest-arg', '-enablesubtitles'])
+
         timeout_val = get_env(env, 'TIMEOUT', '0')
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),
                    '--user', str(user_dir),
-                   '--timeout', timeout_val, *isa_args, *args]
+                   '--timeout', timeout_val, *isa_args, *guest_lang_args, *args]
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
         return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode
     finally:

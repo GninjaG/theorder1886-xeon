@@ -754,6 +754,7 @@ public:
             func(current_cmdbuf);
             return;
         }
+        std::scoped_lock lk{record_mutex};
         if (!record_chunk) {
             record_chunk = AcquireChunk();
         }
@@ -778,10 +779,12 @@ public:
             return;
         }
         if (bytes + 1024 > RecordChunk::Capacity) {
-            LOG_CRITICAL(Render_Vulkan, "ReserveRecordData: requested {} bytes (+1024) exceeds Capacity {}",
-                         bytes, RecordChunk::Capacity);
+            // Oversized write set: cannot be deferred into a single chunk, record directly.
+            SyncRecording();
+            direct_mode = true;
+            return;
         }
-        ASSERT(bytes + 1024 <= RecordChunk::Capacity);
+        std::scoped_lock lk{record_mutex};
         if (!record_chunk) {
             record_chunk = AcquireChunk();
         }
@@ -798,10 +801,18 @@ public:
         if (!IsRecordingDeferred() || data.empty()) {
             return data;
         }
-        // Room for the data and the command that follows it, so both stay in one chunk.
         const size_t bytes = data.size_bytes();
-        ReserveRecordData(bytes + alignof(T));
+        if (bytes + alignof(T) + 1024 > RecordChunk::Capacity) {
+            SyncRecording();
+            direct_mode = true;
+            return data;
+        }
+        std::scoped_lock lk{record_mutex};
         if (!record_chunk) {
+            record_chunk = AcquireChunk();
+        }
+        if (RecordChunk::Capacity - record_chunk->Size() < bytes + alignof(T) + 1024) {
+            full_chunks.push_back(std::move(record_chunk));
             record_chunk = AcquireChunk();
         }
         auto* dst = static_cast<T*>(record_chunk->Allocate(bytes, alignof(T)));
@@ -938,6 +949,9 @@ private:
     // port: threaded recording
     std::unique_ptr<RecordChunk> record_chunk;
     std::vector<std::unique_ptr<RecordChunk>> full_chunks;
+    /// Guards record_chunk and full_chunks while draw pipe's stage B records on its own
+    /// thread at the same time as stage A (lock order: record_mutex before recorder_mutex, as in KickRecording).
+    std::mutex record_mutex;
     std::mutex recorder_mutex;
     std::condition_variable_any recorder_cv;
     std::condition_variable_any recorder_idle_cv;

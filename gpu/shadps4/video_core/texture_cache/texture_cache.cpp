@@ -13,6 +13,7 @@
 #include "common/debug.h"
 #include "common/div_ceil.h"
 #include "common/hash.h"
+#include "common/scope_exit.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -1416,11 +1417,79 @@ void TextureCache::AssociateStencil(ImageId depth_id, const ImageInfo& depth_inf
 }
 
 void TextureCache::RefreshImage(Image& image) {
-    if (False(image.flags & ImageFlagBits::Dirty) || image.info.guest_samples > 1) {
+    // The Order: 1886: safety net against untracked memory writes (labels/atlases).
+    // Small textures (<= 8MB) have RAM contents verified periodically every 30 frames.
+    // Sparse gaps fail direct hash: ClampRangeSize inequality forces re-upload.
+    bool verify_upload = false;
+    static const bool verify_on = [] {
+        const char* env = std::getenv("THEORDER_VERIFY_UPLOADS");
+        return !env || env[0] != '0';
+    }();
+    if (verify_on && image.info.guest_size <= 8_MB && image.info.guest_address != 0 &&
+        False(image.flags & ImageFlagBits::GpuModified) && image.info.guest_samples <= 1) {
+        const u64 fr = PortStats::gpu_frames.load(std::memory_order_relaxed);
+        if (fr - image.verify_frame >= 30) {
+            image.verify_frame = static_cast<u32>(fr);
+            const auto addr = std::bit_cast<u8*>(image.info.guest_address);
+            const u64 size = image.info.guest_size;
+            if (Core::Memory::Instance()->ClampRangeSize(image.info.guest_address, size) != size) {
+                verify_upload = true;
+            } else {
+                const u64 h = XXH3_64bits(addr, size);
+                if (image.cpu_hash == 0) {
+                    image.cpu_hash = h;
+                } else if (image.cpu_hash != h) {
+                    image.cpu_hash = h;
+                    verify_upload = true;
+                }
+            }
+        }
+    }
+    if (!verify_upload && (False(image.flags & ImageFlagBits::Dirty) || image.info.guest_samples > 1)) {
         return;
     }
     ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                      ReadbackSource::ImageRefresh);
+
+    // The Order: 1886: per-frame upload budget to eliminate streaming burst stalls (67-113ms spikes)
+    const auto image_id = slot_images.GetSlotId(image);
+    {
+        static u64 upload_budget_frame = ~0ull;
+        static u64 upload_budget_bytes = 0;
+        static u64 upload_budget_count = 0;
+        static const u64 max_uploads = [] {
+            const char* env = std::getenv("THEORDER_MAX_UPLOADS_PER_FRAME");
+            const u64 parsed = env ? std::strtoull(env, nullptr, 10) : 64;
+            return parsed ? parsed : 64;
+        }();
+        static constexpr u64 MaxDeferredFrames = 5;
+        const u64 frame = PortStats::gpu_frames.load(std::memory_order_relaxed);
+        if (upload_budget_frame != frame) {
+            upload_budget_frame = frame;
+            upload_budget_bytes = 0;
+            upload_budget_count = 0;
+        }
+        constexpr u64 BudgetPerFrame = 64_MB;
+        constexpr u64 MinDeferredSize = 4_MB;
+        constexpr u64 MinCountedSize = 256_KB;
+        const bool counted = image.info.guest_size >= MinCountedSize;
+        const bool over_budget =
+            (counted && upload_budget_count >= max_uploads) ||
+            (image.info.guest_size >= MinDeferredSize &&
+             upload_budget_bytes + image.info.guest_size > BudgetPerFrame);
+        if (over_budget && image.upload_deferred_frames < MaxDeferredFrames) {
+            if (counted && ++image.upload_deferred_frames == 1) {
+                deferred_uploads.emplace_back(image_id, image.image_uid);
+            }
+            return;
+        }
+        if (counted) {
+            ++upload_budget_count;
+        }
+        upload_budget_bytes += image.info.guest_size;
+        image.upload_deferred_frames = 0;
+    }
+
     PortStats::Timer timer{PortStats::t_refresh};
 
     RENDERER_TRACE;
@@ -1428,12 +1497,28 @@ void TextureCache::RefreshImage(Image& image) {
 
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
-        const u64 hash = MaybeDirtyHash(image);
-        if (image.cpu_hash == hash) {
+        static const bool full_hash = [] {
+            const char* env = std::getenv("THEORDER_FULL_HASH");
+            return !env || env[0] != '0';
+        }();
+        const auto addr = std::bit_cast<u8*>(image.info.guest_address);
+        const u32 w8 = std::min(image.info.size.width, u32(8));
+        const u32 h8 = std::min(image.info.size.height, u32(8));
+        const u32 s_w8 = image.info.props.is_block ? Common::DivCeil(w8, 4u) : w8;
+        const u32 s_h8 = image.info.props.is_block ? Common::DivCeil(h8, 4u) : h8;
+        const u64 size = full_hash ? std::min<u64>(image.info.guest_size, 8_MB)
+                                   : u64(s_w8) * u64(s_h8) * (image.info.num_bits / 8);
+        if (Core::Memory::Instance()->ClampRangeSize(image.info.guest_address, size) != size) {
+            image.cpu_hash = 0;
             image.flags &= ~ImageFlagBits::MaybeCpuDirty;
-            return;
+        } else {
+            const u64 hash = XXH3_64bits(addr, size);
+            if (!verify_upload && image.cpu_hash == hash) {
+                image.flags &= ~ImageFlagBits::MaybeCpuDirty;
+                return;
+            }
+            image.cpu_hash = hash;
         }
-        image.cpu_hash = hash;
     }
 
     const u32 num_layers = image.info.resources.layers;
@@ -1565,6 +1650,31 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     runtime.UploadImage(&image, buffer, image_copies);
+    DrainDeferredUploads();
+}
+
+void TextureCache::DrainDeferredUploads() {
+    if (draining_uploads) {
+        return;
+    }
+    draining_uploads = true;
+    SCOPE_EXIT {
+        draining_uploads = false;
+    };
+    for (u32 n = 0; n < 4 && !deferred_uploads.empty(); ++n) {
+        const auto [id, uid] = deferred_uploads.front();
+        if (!slot_images.IsAllocated(id) || slot_images[id].image_uid != uid ||
+            False(slot_images[id].flags & ImageFlagBits::Dirty)) {
+            deferred_uploads.pop_front();
+            continue;
+        }
+        RefreshImage(slot_images[id]);
+        if (False(slot_images[id].flags & ImageFlagBits::Dirty)) {
+            deferred_uploads.pop_front();
+        } else {
+            break;
+        }
+    }
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
@@ -1999,6 +2109,7 @@ void TextureCache::RunGarbageCollector() {
     {
         std::scoped_lock lock{mutex};
         ApplyBackingWrites();
+        DrainDeferredUploads();
     }
     GarbageCollectImages();
     GarbageCollectSamplers();

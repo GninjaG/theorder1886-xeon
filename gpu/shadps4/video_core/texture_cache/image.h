@@ -178,6 +178,8 @@ public:
     u64 tick_accessed_last{};
     ImageId depth_id{};
     u64 depth_uid{};
+    u32 upload_deferred_frames = 0;
+    u32 verify_frame = 0;
     u64 image_uid{};
     /// port: order of the last GPU write, to sync images sharing memory (texture_cache.h).
     u64 alias_generation{};

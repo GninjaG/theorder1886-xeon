@@ -2546,6 +2546,82 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             continue;
         }
 
+        // The Order: 1886: reject impossible/oversized T# descriptors before they hit the texture cache
+        {
+            const u32 w = tsharp.width + 1;
+            const u32 h = tsharp.height + 1;
+            const u32 pitch = tsharp.Pitch();
+            const u32 levels = tsharp.NumLevels();
+            const u32 layers = tsharp.NumLayers();
+            bool dim_reject = false;
+            u64 est_bytes = 0;
+            if (w > 16384 || h > 16384 || pitch > 16384) {
+                dim_reject = true;
+            } else if (levels > 1) {
+                const u32 maxdim =
+                    tsharp.GetType() == AmdGpu::ImageType::Color3D
+                        ? std::max({w, h, static_cast<u32>(tsharp.depth + 1)})
+                        : std::max({w, h, pitch});
+                if (levels > 31 || (maxdim >> (levels - 1)) == 0) {
+                    dim_reject = true;
+                }
+            }
+            if (!dim_reject && tsharp.IsGuestMsaa() && tsharp.GuestNumSamples() > 8) {
+                dim_reject = true;
+            }
+            if (!dim_reject && tsharp.tiling_index >= 27 && tsharp.tiling_index != 31) {
+                dim_reject = true;
+            }
+            if (!dim_reject) {
+                if (tsharp.data_format > 41) {
+                    dim_reject = true;
+                } else {
+                    const auto raw_fmt = static_cast<AmdGpu::DataFormat>(tsharp.data_format);
+                    const u32 bpe = AmdGpu::NumBitsPerElement(raw_fmt);
+                    if (bpe == 0 || bpe > 128) {
+                        dim_reject = true;
+                    } else {
+                        u64 slices = layers;
+                        if (tsharp.GetType() == AmdGpu::ImageType::Color3D) {
+                            slices = static_cast<u64>(tsharp.depth + 1);
+                        }
+                        const u64 texels =
+                            static_cast<u64>(pitch) * static_cast<u64>(h) * slices;
+                        est_bytes = texels * bpe / 8;
+                        est_bytes *= 2; // ceiling for mip chain
+                        est_bytes *= tsharp.GuestNumSamples();
+                        if (est_bytes > 512ull * 1024 * 1024) {
+                            dim_reject = true;
+                        }
+                    }
+                }
+            }
+            if (dim_reject) {
+                static std::mutex reject_mutex;
+                static std::unordered_set<u64> reject_warned;
+                const u64 reject_key =
+                    (stage.pgm_hash * 0x9e3779b97f4a7c15ULL) ^ (u64(w) << 32) ^ (u64(h) << 16) ^
+                    (u64(layers) << 8) ^ u64(levels) ^ u64(tsharp.data_format);
+                bool reject_report = false;
+                {
+                    std::scoped_lock lock{reject_mutex};
+                    reject_report = reject_warned.insert(reject_key).second;
+                }
+                if (reject_report) {
+                    LOG_WARNING(Render_Vulkan,
+                                "Rejecting oversized T# pgm={:#x} {}x{} (pitch {}) layers={} "
+                                "levels={} fmt={} est={}MB",
+                                stage.pgm_hash, w, h, pitch, layers, levels,
+                                u32(tsharp.data_format), est_bytes >> 20);
+                }
+                image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
+                image_binding_entries.push_back(nullptr);
+                binding_proxy_ok.push_back(false);
+                image_descriptor_array_sizes.push_back(1);
+                continue;
+            }
+        }
+
         // A fallback permutation's image of another type (FallbackComputePipeline) reads zeros.
         if (expected_images && image_index < expected_images->size()) {
             Shader::ImageSpecialization spec{};
@@ -3209,7 +3285,78 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         const auto mip = image_view.info.range.base.level;
 
         const auto& col_buf = regs.color_buffers[cb];
-        const bool is_clear = texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice);
+        // The Order: 1886: clears volumetric RT chain (small float RTs) and blood RT
+        // via mechanisms the emulator didn't detect — RTs accumulated (fog haze, blood spots).
+        // 1) chain heuristic: float RT <= 960x400 -> BLACK clear 1x/frame (game's default clear reg for these RTs is white, causing flickers)
+        // 2) persistent 1x1 luminance RT must NOT be cleared (game never clears it, wiping it causes gradual screen darkening)
+        // 3) additive accumulation = One/One or SrcAlpha/One with Add func (blood)
+        // 4) Light RT (1055100000) is cleared via CMask rarely, blood RT (1056b40000) never.
+        const u64 frame = PortStats::gpu_frames.load(std::memory_order_relaxed);
+        static std::array<std::pair<u64, u64>, 64> forced_clear{};
+        static std::array<std::tuple<u64, u64, u32>, 64> rt_use{}; // addr, last_frame, consec
+        static std::array<u64, 32> cmask_rts{}; // RTs game clears via CMask (light)
+        const bool is_volumetric_rt = col_buf.GetNumberFmt() == AmdGpu::NumberFormat::Float &&
+                                      image->info.size.width <= 960 &&
+                                      image->info.size.height <= 400 &&
+                                      !(image->info.size.width == 1 &&
+                                        image->info.size.height == 1);
+        const bool is_add_blend =
+            regs.blend_control[0].enable &&
+            regs.blend_control[0].color_dst_factor == AmdGpu::BlendControl::BlendFactor::One &&
+            (regs.blend_control[0].color_src_factor == AmdGpu::BlendControl::BlendFactor::One ||
+             (regs.blend_control[0].color_src_factor ==
+                  AmdGpu::BlendControl::BlendFactor::SrcAlpha &&
+              regs.blend_control[0].color_func == AmdGpu::BlendControl::BlendFunc::Add));
+        const bool is_add_1920 = is_add_blend && image->info.size.width == 1920 &&
+                                 col_buf.GetNumberFmt() == AmdGpu::NumberFormat::Float;
+        if (texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice)) {
+            for (auto& e : cmask_rts) {
+                if (e == 0 || e == col_buf.Address()) {
+                    e = col_buf.Address();
+                    break;
+                }
+            }
+        }
+        const bool is_cmask_rt = [&] {
+            for (const auto e : cmask_rts) {
+                if (e == col_buf.Address()) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+        bool blood_rt = false;
+        if (is_add_1920 && !is_cmask_rt) {
+            for (auto& e : rt_use) {
+                if (std::get<0>(e) == 0 || std::get<0>(e) == col_buf.Address()) {
+                    if (std::get<0>(e) == 0) {
+                        std::get<0>(e) = col_buf.Address();
+                        std::get<1>(e) = ~0ull;
+                    }
+                    const bool consecutive = std::get<1>(e) == frame - 1;
+                    std::get<2>(e) = consecutive ? std::get<2>(e) + 1 : 1;
+                    std::get<1>(e) = frame;
+                    blood_rt = std::get<2>(e) >= 2;
+                    break;
+                }
+            }
+        }
+        bool force_clear = false;
+        if (is_volumetric_rt || blood_rt) {
+            for (auto& e : forced_clear) {
+                if (e.first == 0 || e.first == col_buf.Address()) {
+                    if (e.first == 0) {
+                        e.first = col_buf.Address();
+                        e.second = ~0ull;
+                    }
+                    force_clear = e.second != frame;
+                    e.second = frame;
+                    break;
+                }
+            }
+        }
+        const bool is_clear =
+            force_clear || texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice);
         texture_cache.TouchMeta(col_buf.CmaskAddress(), slice, false);
 
         if (reduced) {
@@ -3239,8 +3386,12 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         state.height = std::min<u32>(state.height, std::max(image->info.size.height >> mip, 1u));
         state.num_layers = std::min<u32>(state.num_layers, image_view.info.range.extent.layers);
 
-        const auto clear_value =
-            is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{};
+        const auto clear_value = [&]() {
+            if (force_clear) {
+                return vk::ClearValue{};
+            }
+            return is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{};
+        }();
         auto& attachment = state.color_attachments[cb];
         attachment.image_view = *image_view.image_view;
         attachment.image_layout = runtime.GetBackingLayout(image);
@@ -3513,6 +3664,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
+            // The Order 1886: CPU fill modified guest RAM — invalidate images in this region
+            // for re-upload (volumetric fog chain DMA clear wasn't reaching VRAM and fog was accumulating).
+            texture_cache.InvalidateMemory(address, num_bytes);
             return;
         }
     }
@@ -3608,6 +3762,7 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
 void Rasterizer::OnFence() {
     DrainDrawPipe();
     buffer_cache.QueueReadbacks();
+    texture_cache.DrainDeferredUploads();
     texture_cache.ProcessDownloadImages();
 }
 

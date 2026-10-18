@@ -2,6 +2,14 @@
 
 **English** | [Português (Brasil)](README.pt-BR.md) | [Español](README.es.md)
 
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20Me%20a%20Coffee-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/mateusmeneses)
+
+> [!TIP]
+> ### ☕ Support the Development / Apoie o Projeto
+> If you enjoy this project and want to support the ongoing development, reverse engineering, and optimization of **The Order: 1886 PC Native Port**, consider buying me a coffee! Every contribution motivates and directly helps keep the project active with frequent updates.
+>
+> 👉 **[Click here to donate on Ko-fi: https://ko-fi.com/mateusmeneses](https://ko-fi.com/mateusmeneses)** ☕❤️
+
 A work-in-progress PC port of **The Order: 1886** (PlayStation 4) for Windows 10 and 11.
 
 The CPU side is native: the game's original executable runs directly on the PC's processor (the

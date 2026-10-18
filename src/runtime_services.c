@@ -523,6 +523,76 @@ static ABI int32_t playgo_close(int32_t handle) {
     playgo_handle=0; return 0;
 }
 static ABI int32_t playgo_terminate(void) { playgo_handle=0; return 0; }
+static ABI int32_t playgo_eta(int32_t handle,const uint16_t *ids,uint32_t count,uint64_t *eta) {
+    if (handle!=playgo_handle || !handle) return PLAYGO_BAD_HANDLE;
+    if (!ids || !eta) return PLAYGO_BAD_POINTER;
+    if (!count) return PLAYGO_BAD_SIZE;
+    for (uint32_t i=0;i<count;++i) if (ids[i]>=playgo_chunks) return PLAYGO_BAD_CHUNK;
+    *eta=0; return 0; /* everything installed: no wait */
+}
+static ABI int32_t playgo_prefetch(int32_t handle,const uint16_t *ids,uint32_t count,int32_t locus) {
+    (void)locus;
+    if (handle!=playgo_handle || !handle) return PLAYGO_BAD_HANDLE;
+    if (!ids) return PLAYGO_BAD_POINTER;
+    if (!count) return PLAYGO_BAD_SIZE;
+    return 0;
+}
+
+/* ---- ScreenShot / VideoRecording: sharing services do not exist offline ---- */
+static ABI int32_t screenshot_enable(void) { return 0; }
+static ABI int32_t screenshot_disable(void) { return 0; }
+static ABI int32_t videorecording_setinfo(int32_t what,const void *info,uint64_t size) {
+    (void)what; (void)info; (void)size; return 0;
+}
+
+/* ---- MsgDialog progress text (Order 1886) ---- */
+static ABI int32_t msg_progress_msg(uint32_t target,const char *msg) {
+    (void)msg; return dialog_progress(1,target);
+}
+
+/* ---- ImeKeyboard: no on-screen keyboard; open tracks state, update is quiet ---- */
+#define IME_NOT_OPENED ((int32_t)0x80BC0002)
+#define IME_CONNECTION_FAILED ((int32_t)0x80BC0004)
+#define IME_INVALID_HANDLER ((int32_t)0x80BC0022)
+#define IME_INVALID_ADDRESS ((int32_t)0x80BC0031)
+static int ime_keyboard_open;
+static ABI int32_t ime_keyboard_open_fn(int32_t user,const void *param) {
+    (void)user;
+    if (!param) return IME_INVALID_ADDRESS;
+    uint64_t handler; memcpy(&handler,(const char *)param+16,8);
+    if (!handler) return IME_INVALID_HANDLER;
+    ime_keyboard_open=1;
+    return 0;
+}
+static ABI int32_t ime_keyboard_close_fn(int32_t user) {
+    (void)user; ime_keyboard_open=0;
+    return 0;
+}
+static ABI int32_t ime_keyboard_resource(int32_t user,void *array) {
+    if (!array) return IME_INVALID_ADDRESS;
+    uint32_t *out=array;
+    out[0]=(uint32_t)user; out[1]=out[2]=out[3]=out[4]=out[5]=0;
+    return ime_keyboard_open ? IME_CONNECTION_FAILED : IME_NOT_OPENED;
+}
+static ABI int32_t ime_keyboard_update(void *handler) {
+    (void)handler;
+    return ime_keyboard_open ? 0 : IME_NOT_OPENED;
+}
+
+/* ---- AppContent add-on content: this port ships no DLC ---- */
+#define APPCONTENT_PARAMETER ((int32_t)0x80D90002)
+#define APPCONTENT_NOT_FOUND ((int32_t)0x80D90005)
+static ABI int32_t appcontent_mount(uint32_t label,const void *entitlement,void *mount) {
+    (void)label; (void)entitlement; (void)mount;
+    return APPCONTENT_NOT_FOUND;
+}
+static ABI int32_t appcontent_unmount(void) {
+    return 0;
+}
+static ABI int32_t appcontent_entitlement(uint32_t label,const void *entitlement,void *key) {
+    if (!entitlement || !key) return APPCONTENT_PARAMETER;
+    (void)label; return APPCONTENT_NOT_FOUND;
+}
 
 /* ---- DiscMap: the game is fully installed, no disc bitmap exists ---- */
 #define DISC_MAP_NO_BITMAP ((int32_t)0x81100004)
@@ -669,12 +739,14 @@ static const RuntimeExport exports[]={
     {"sceAudioInOpen",audio_in_open},
     {"sceDiscMapIsRequestOnHDD",discmap_on_hdd}, {"sceDiscMap_8A828CAEE7EDD5E9",discmap_8a82},
     {"sceVoiceInit",ok_void}, {"sceVoiceEnd",ok_void},
-    {"sceVideoRecordingSetInfo",ok_void},
-    {"sceScreenShotDisable",ok_void}, {"sceScreenShotEnable",ok_void},
-    {"sceMsgDialogProgressBarSetMsg",ok_void},
-    {"scePlayGoGetEta",ok_void}, {"scePlayGoPrefetch",ok_void},
-    {"sceImeUpdate",ok_void}, {"sceImeKeyboardOpen",ok_void},
-    {"sceImeKeyboardGetResourceId",ok_void}, {"sceImeKeyboardClose",ok_void},
+    {"sceVideoRecordingSetInfo",videorecording_setinfo},
+    {"sceScreenShotDisable",screenshot_disable}, {"sceScreenShotEnable",screenshot_enable},
+    {"sceMsgDialogProgressBarSetMsg",msg_progress_msg},
+    {"scePlayGoGetEta",playgo_eta}, {"scePlayGoPrefetch",playgo_prefetch},
+    {"sceImeUpdate",ime_keyboard_update}, {"sceImeKeyboardOpen",ime_keyboard_open_fn},
+    {"sceImeKeyboardGetResourceId",ime_keyboard_resource}, {"sceImeKeyboardClose",ime_keyboard_close_fn},
+    {"sceAppContentAddcontMount",appcontent_mount}, {"sceAppContentAddcontUnmount",appcontent_unmount},
+    {"sceAppContentGetEntitlementKey",appcontent_entitlement},
     {"sceVideoOutSetWindowModeMargins",ok_void},
     {"select",ok_void},
     {"order_stub_Xs9hdiD7sAA",ok_void},

@@ -89,6 +89,8 @@ inline std::atomic<std::uint64_t> draws{0}, dispatches{0}, submissions{0};
 inline std::atomic<std::uint64_t> gpu_frames{0};
 /// Guest flips the GPU command thread has prepared (counted in every mode, unlike gpu_frames).
 inline std::atomic<std::uint64_t> flips{0};
+/// The Order 1886: arena obtain memo hits and misses (buffer_cache.cpp).
+inline std::atomic<std::uint64_t> obtain_hits{0}, obtain_misses{0};
 /// Wall time spent in operations suspected of stalls (ns, all threads).
 inline std::atomic<std::uint64_t> t_resident{0}, t_protect{0}, t_image_create{0}, t_refresh{0},
     t_staging{0}, t_host_wait{0}, t_copy{0}, copy_bytes{0}, t_read_faults{0}, read_faults{0},

@@ -201,6 +201,44 @@ static int game_path(const char *p) {
     return (!strncmp(p,"/app0",5) && (!p[5] || p[5]=='/')) ||
            (!strncmp(p,"/hostapp",8) && (!p[8] || p[8]=='/'));
 }
+static int try_fallback_path(const char *in_path, char *out_path, size_t out_size) {
+    /* If an asset was requested under /gpu/ (or /GPU/) 2690af50a36aa2b1 and not found,
+     * fall back to /primary/3861c21fc34b7612/ where primary package assets reside. */
+    const char *p = strstr(in_path, "/ps4/gpu/2690af50a36aa2b1/");
+    if (!p) p = strstr(in_path, "/ps4/GPU/2690af50a36aa2b1/");
+    if (!p) p = strstr(in_path, "\\ps4\\gpu\\2690af50a36aa2b1\\");
+    if (!p) p = strstr(in_path, "\\ps4\\GPU\\2690af50a36aa2b1\\");
+    if (p) {
+        size_t prefix_len = (size_t)(p - in_path);
+        char sep = p[0];
+        const char *suffix = p + strlen("/ps4/gpu/2690af50a36aa2b1/");
+        snprintf(out_path, out_size, "%.*s%cps4%cprimary%c3861c21fc34b7612%c%s",
+                 (int)prefix_len, in_path, sep, sep, sep, sep, suffix);
+        HostStat st;
+        if (host_stat(out_path, &st) == 0 && S_ISREG(st.st_mode)) return 1;
+    }
+    return 0;
+}
+static int try_case_fallback(const char *in_path, char *out_path, size_t out_size) {
+    /* Case-sensitivity fallback for host filesystems: /ps4/gpu/ <-> /ps4/GPU/ */
+    const char *p = strstr(in_path, "/ps4/gpu/");
+    if (p) {
+        size_t prefix_len = (size_t)(p - in_path);
+        const char *suffix = p + strlen("/ps4/gpu/");
+        snprintf(out_path, out_size, "%.*s/ps4/GPU/%s", (int)prefix_len, in_path, suffix);
+        HostStat st;
+        if (host_stat(out_path, &st) == 0) return 1;
+    }
+    p = strstr(in_path, "/ps4/GPU/");
+    if (p) {
+        size_t prefix_len = (size_t)(p - in_path);
+        const char *suffix = p + strlen("/ps4/GPU/");
+        snprintf(out_path, out_size, "%.*s/ps4/gpu/%s", (int)prefix_len, in_path, suffix);
+        HostStat st;
+        if (host_stat(out_path, &st) == 0) return 1;
+    }
+    return 0;
+}
 /* All operations return >=0 or -(host errno); wrappers adapt the convention. */
 static int64_t do_open(const char *guest,int flags,int mode) {
     if (game_path(guest) && (flags & (3|0x8|0x200|0x400|0x800))) return -EROFS;
@@ -222,6 +260,13 @@ static int64_t do_open(const char *guest,int flags,int mode) {
         return -e;
     } else {
         host=open(path,host_flags(flags)&~O_DIRECTORY,_S_IREAD|_S_IWRITE);
+        if (host<0 && errno==ENOENT) {
+            char fallback[1024];
+            if (try_fallback_path(path,fallback,sizeof(fallback)) || try_case_fallback(path,fallback,sizeof(fallback))) {
+                host=open(fallback,host_flags(flags)&~O_DIRECTORY,_S_IREAD|_S_IWRITE);
+                if (host>=0) printf("Runtime: fallback asset open(%s) -> %s\n",guest,fallback);
+            }
+        }
         if (host<0) {
             e=errno;
             if (e==ENOENT) { ++missing; printf("Runtime: open(%s) -> not found\n",guest); }
@@ -231,6 +276,13 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     }
 #else
     int host=open(path,host_flags(flags),mode ? mode : 0644);
+    if (host<0 && errno==ENOENT) {
+        char fallback[1024];
+        if (try_fallback_path(path,fallback,sizeof(fallback)) || try_case_fallback(path,fallback,sizeof(fallback))) {
+            host=open(fallback,host_flags(flags),mode ? mode : 0644);
+            if (host>=0) printf("Runtime: fallback asset open(%s) -> %s\n",guest,fallback);
+        }
+    }
     if (host<0) {
         e=errno;
         if (e==ENOENT) { ++missing; printf("Runtime: open(%s) -> not found\n",guest); }
@@ -364,7 +416,16 @@ static int64_t do_stat(const char *guest,GuestStat *out) {
     int e=translate(guest,path,sizeof(path));
     if (e) return -e;
     if (!out) return -EFAULT;
-    if (host_stat(path,&s)) return -errno;
+    if (host_stat(path,&s)) {
+        char fallback[1024];
+        if (try_fallback_path(path,fallback,sizeof(fallback)) || try_case_fallback(path,fallback,sizeof(fallback))) {
+            if (host_stat(fallback,&s)==0) {
+                convert_stat(&s,out);
+                return 0;
+            }
+        }
+        return -errno;
+    }
     convert_stat(&s,out); return 0;
 }
 static int64_t do_getdents(int fd,char *buffer,uint64_t size,int64_t *basep) {

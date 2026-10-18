@@ -2,6 +2,22 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-18 (late night): Language Selection Unlocked, DLC Costume Packs & "The Armoury" Menu, Deft96 Flicker Optimizations, and Ko-fi Support Callout
+
+- **Language selection & regional SKU unlock (`Issue #17`):** Reverse-engineered `eboot.bin` SKU language validation logic at `0xa81583` and `0x768e2c`. The base game (SKU 0) enforced a bitmask (`0x10005`) resetting languages outside English/French/Spanish LA (including Portuguese Brazil `17`) back to English `0` via `31 db` (`xor ebx, ebx`) at `0xa81696` and `45 31 ff` (`xor r15d, r15d`) at `0x768ede`. Added `Unlock All Languages` patch in `patches/TheOrder1886-Orbis.xml`, wired language resolution in `run.py` (CLI `--language` / `--lang`, `theorder.ini`, launcher `settings.json`, and system locale fallback), mapped PS4 language IDs to engine language IDs (`PS4_TO_ENGINE_LANG`), and forwarded `--guest-arg -sku 1 -language <id> -enablesubtitles`.
+- **DLC activation & "The Armoury" pause menu unlocked (`Issue #16`):** Verified mounting of `TO1886GAMEDLC100` (*The Knight's Arsenal DLC* — Arsonist & Red Lightning packs) and `TO1886GAMEDLC200` (*The Knight's Endurance DLC* — Desert Khaki pack) at `/addcont0` and `/addcont1`. Reverse-engineered `CR7ArmoryPage` menu gating at `0x76aeeb`, adding `Unlock The Armoury Menu` patch (`90 90` replacing `74 b5`) to enable "The Armoury" costume selection in the pause menu at any point in the game. Added startup costume selection support (`--costume arsonist|red_lightning|desert_khaki`).
+- **Anti-flicker & stability optimizations from `deft96/order1886_pc`:**
+  - Added deferred upload rate budgeting and drain queue in `TextureCache` to prevent streaming bursts (67-113ms spikes) from dropping frames.
+  - Implemented arena obtain memoization in `BufferCache::ObtainBuffer` for static descriptor binds.
+  - Added volumetric fog RT clear and add-blend RT handling in `Rasterizer::BeginRenderingFull`.
+  - Added multi-threading concurrency protection with `record_mutex` in `Scheduler` for draw pipe stages.
+- **Asset package & case-folding fallback in `src/runtime_file.c`:**
+  - Diagnosed crash at guest offset `0x214535` when reading uninitialized TLS resource after `open(/app0/_data/.../ps4/gpu/2690af50a36aa2b1/.../058345ecbe2ef7d8)` returned `ENOENT`.
+  - Discovered that 18 assets exist exclusively in primary package `3861c21fc34b7612` (not in GPU package `2690af50a36aa2b1`).
+  - Added automatic fallback from `ps4/gpu/2690af50a36aa2b1` to `ps4/primary/3861c21fc34b7612` and case-folding (`ps4/gpu/` <-> `ps4/GPU/`) in `do_open` and `do_stat`, completely resolving the crash.
+- **Ko-fi support callout:** Added an eye-catching Ko-fi badge and motivating contribution card to the top of `README.md`, `README.pt-BR.md`, and `README.es.md` linking to `https://ko-fi.com/mateusmeneses`.
+- **Validation:** Clean build of `theordergpu` and `theorder-probe`; all 42 C/C++ unit test suites and 266 Python unit tests pass (100%). Probe executed smoothly for 300+ flipped frames at locked 30.0 FPS (stddev 0.54ms) with Portuguese (Brazil) language active and DLCs mounted.
+
 ## 2026-10-18 (night): AMD 16-bit vertex alignment, VSM shadow clear hack, NVIDIA SSBO barrier pass, and DrawPipe thread safety
 
 - **AMD 16-bit vertex stream jitter fix (`Issue #18`, Chapters 2 & 3):** Fixed object shivering on AMD RDNA GPUs

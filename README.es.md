@@ -2,6 +2,14 @@
 
 [English](README.md) | [Português (Brasil)](README.pt-BR.md) | **Español**
 
+[![Apoya en Ko-fi](https://img.shields.io/badge/Ko--fi-Invítame%20un%20Café-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/mateusmeneses)
+
+> [!TIP]
+> ### ☕ Apoya el Proyecto / Invítame un Café
+> Si te gusta este proyecto y deseas apoyar el desarrollo continuo, ingeniería inversa y optimización del port nativo de **The Order: 1886 para PC**, ¡considera invitarme un café! Cada contribución ayuda a mantener el proyecto activo con actualizaciones constantes.
+>
+> 👉 **[Haz clic aquí para contribuir en Ko-fi: https://ko-fi.com/mateusmeneses](https://ko-fi.com/mateusmeneses)** ☕❤️
+
 Port para PC, en desarrollo, de **The Order: 1886** (PlayStation 4) para Windows 10 y 11.
 
 La parte de CPU es nativa: el ejecutable original del juego corre directamente en el procesador

@@ -195,6 +195,35 @@ private:
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
 
+    /// The Order: 1886: memo of arena binds (40k binds/s re-obtaining static buffers).
+    /// Read-only path (!is_written, !is_texel_buffer), without stream buffer or readback work.
+    struct ObtainMemoKey {
+        VAddr addr = 0;
+        u32 size = 0;
+        bool operator==(const ObtainMemoKey& o) const noexcept {
+            return addr == o.addr && size == o.size;
+        }
+    };
+    struct ObtainMemoKeyHash {
+        size_t operator()(const ObtainMemoKey& k) const noexcept {
+            size_t h = std::hash<VAddr>{}(k.addr);
+            h ^= std::hash<u32>{}(k.size) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
+    struct ObtainMemoEntry {
+        const Buffer* buffer = nullptr;
+        u64 offset = 0;
+        u64 version = 0;
+    };
+    std::unordered_map<ObtainMemoKey, ObtainMemoEntry, ObtainMemoKeyHash> obtain_memo;
+    std::mutex obtain_memo_mutex;
+    std::atomic<u64> obtain_version{1};
+    void BumpObtainVersion() {
+        std::scoped_lock lock{obtain_memo_mutex};
+        ++obtain_version;
+    }
+
     void DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size, bool is_write,
                         bool async);
 
