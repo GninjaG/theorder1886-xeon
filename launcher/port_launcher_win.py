@@ -59,7 +59,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.2'
+VERSION = '0.7.3'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
@@ -273,7 +273,7 @@ APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_D
                 'gpu_id': '', 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True,
                 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False,
-                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
+                'check_updates': False, 'last_version': '', 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and the left touchpad click (photo mode) from L1 + the right click's
@@ -802,6 +802,7 @@ class Launcher:
         self.tk, self.ttk, self.filedialog, self.messagebox = tk, ttk, filedialog, messagebox
         self.root = root
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
+        self.check_version_migration()
         self.ini, self.ini_lines = load_ini()
         self.vars = {}
         self.process = self.job = None
@@ -845,6 +846,54 @@ class Launcher:
         root.after(500, self.watch_changes)
         if WINDOWS and self.app.get('check_updates', True):
             threading.Thread(target=self.check_update, daemon=True).start()
+
+    def check_version_migration(self):
+        """Performs automatic cache cleanup and settings migration when upgrading between versions."""
+        last_version = self.app.get('last_version', '')
+        if last_version != VERSION:
+            # 1. Clean stale shader and pipeline cache in user/cache
+            user_dir = Path(self.app.get('user_dir') or (DATA_DIR / 'user'))
+            cache_dir = user_dir / 'cache'
+            if cache_dir.is_dir():
+                try:
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    print(f'Launcher: cleared stale shader/pipeline cache at {cache_dir} on upgrade ({last_version or "legacy"} -> {VERSION})', flush=True)
+                except Exception as e:
+                    print(f'Launcher: failed to clean cache at {cache_dir}: {e}', flush=True)
+
+            # 2. Migrate legacy order1886.ini if it exists
+            legacy_ini = DATA_DIR / 'order1886.ini'
+            target_ini = DATA_DIR / 'theorder.ini'
+            if legacy_ini.is_file() and not target_ini.is_file():
+                try:
+                    shutil.copy2(legacy_ini, target_ini)
+                    print(f'Launcher: migrated {legacy_ini} -> {target_ini}', flush=True)
+                except Exception as e:
+                    print(f'Launcher: error copying legacy ini: {e}', flush=True)
+            if legacy_ini.is_file():
+                try:
+                    legacy_ini.unlink(missing_ok=True)
+                    print(f'Launcher: removed obsolete {legacy_ini}', flush=True)
+                except Exception:
+                    pass
+
+            # 3. Clean legacy AppData/Roaming/order1886-launcher if present
+            if WINDOWS:
+                legacy_config_dir = Path(os.environ.get('APPDATA', Path.home())) / 'order1886-launcher'
+                if legacy_config_dir.is_dir():
+                    try:
+                        shutil.rmtree(legacy_config_dir, ignore_errors=True)
+                        print(f'Launcher: removed obsolete config directory at {legacy_config_dir}', flush=True)
+                    except Exception:
+                        pass
+
+            # 4. Update last_version
+            self.app['last_version'] = VERSION
+            try:
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                atomic_write(CONFIG_FILE, json.dumps(self.app, indent=2, ensure_ascii=False))
+            except Exception:
+                pass
 
     def meta_dir(self):
         return meta_folder(self.var('game_dir', 'app').get(), self.var('update_dir', 'app').get())

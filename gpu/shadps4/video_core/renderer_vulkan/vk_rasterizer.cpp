@@ -9,6 +9,8 @@
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
+#include "bb_face_depth_fix.h"
+#include "bb_face_depth_spirv.h"
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -1208,7 +1210,25 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto& fetch_shader = pipeline->GetFetchShader();
     const auto [vertex_offset, instance_offset] = GetDrawOffsets(regs, vs_info, fetch_shader);
 
-    const vk::Pipeline handle = pipeline->Handle();
+    const auto* face_ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    const bool face_adjusted = pipeline->FaceDepthAdjusted() && face_ps && BbFaceDepth::ScopedDrawMatches(
+        vs_info.pgm_hash, face_ps->pgm_hash, BbFaceDepth::SecondaryEnabled(),
+        is_indexed, regs.num_indices, regs.num_instances.NumInstances(),
+        regs.depth_control.depth_enable && regs.depth_buffer.DepthValid(),
+        regs.depth_control.depth_write_enable,
+        regs.depth_control.depth_func == AmdGpu::CompareFunc::LessEqual);
+    const vk::Pipeline handle = pipeline->HandleForFaceDraw(face_adjusted);
+    if (BbFaceDepth::Enabled()) {
+        const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+        const u32 index_size = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16 ? 2 : 4;
+        const u64 geometry_address = is_indexed ? regs.index_base_address.Address<VAddr>() +
+                                                 u64(index_offset) * index_size : 0;
+        if (ps) BbFaceDepth::LogDraw(vs_info.pgm_hash, ps->pgm_hash, is_indexed,
+            regs.num_indices, regs.num_instances.NumInstances(), pipeline->GetGraphicsKey().num_samples,
+            pipeline->GetGraphicsKey().depth_samples, regs.depth_control.depth_enable,
+            regs.depth_control.depth_write_enable, u32(regs.depth_control.depth_func),
+            face_adjusted, geometry_address);
+    }
     const vk::Pipeline square = SquarePass(*pipeline);
     const u32 num_indices = regs.num_indices;
     const u32 num_instances = regs.num_instances.NumInstances();
@@ -1435,6 +1455,36 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         }
     }
 
+    // The Order: the EVSM shadow conversion (cs 8ea0ef5b, 9846aaff) reads HTILE and
+    // writes the clear depth for tiles whose zmask is 0 instead of reading them. The host does
+    // not maintain HTILE, so tiles with real depth read as cleared: blocks of the sun shadow
+    // went missing and flickered (shadPS4 PR #4798, item 2). Mark the bound HTILE uncompressed
+    // right before the dispatch, in order on the GPU: every tile then reads the real depth
+    // (a truly cleared tile holds the clear depth, the same value the shortcut writes).
+    static const bool evsm_htile = [] {
+        const char* env = std::getenv("THEORDER_EVSM_HTILE");
+        if (!env) env = std::getenv("BB_EVSM_HTILE");
+        return !(env && env[0] == '0');
+    }();
+    if (evsm_htile && (cs.pgm_hash == 0x8ea0ef5b || cs.pgm_hash == 0x9846aaff)) {
+        for (const auto& desc : cs.buffers) {
+            if (desc.IsSpecial() || desc.is_written) {
+                continue;
+            }
+            const auto sharp = desc.GetSharp(cs);
+            const VAddr address = sharp.base_address;
+            const u64 size = address ? memory->ClampRangeSize(address, sharp.GetSize()) : 0;
+            if (size) {
+                static constexpr u32 ZmaskUncompressed = 0xf;
+                const auto [buffer, offset] =
+                    buffer_cache.ObtainBuffer(address, static_cast<u32>(size),
+                                              VideoCore::ObtainBufferFlags::IsWritten);
+                runtime.FillBuffer(buffer, offset, size, ZmaskUncompressed);
+            }
+            break; // the first read-only buffer is the HTILE
+        }
+    }
+
     if (!BindResources(pipeline)) {
         return;
     }
@@ -1649,14 +1699,6 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
         const auto& image_desc = stage.images[image_index];
         if (image_desc.is_written) {
             return false;
-        }
-        if (stage.pgm_hash == 0xa7b66f58 || stage.pgm_hash == 0xefaaab2b ||
-            stage.pgm_hash == 0x804aeead || stage.pgm_hash == 0x3c2622c0 ||
-            stage.pgm_hash == 0x51f03591 || stage.pgm_hash == 0xa8b3aa69 ||
-            stage.pgm_hash == 0xad441fb1 || stage.pgm_hash == 0x8c8a4817 ||
-            stage.pgm_hash == 0xc75dd317 || stage.pgm_hash == 0xd1017d4b ||
-            stage.pgm_hash == 0x539eee77 || stage.pgm_hash == 0x88c3afad) {
-            continue; // bound as null descriptor
         }
         const auto tsharp =
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
@@ -2509,21 +2551,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
         const auto& image_desc = stage.images[image_index];
-        // ORDER1886: CS de sombra 0xa7b66f58/0xefaaab2b/0x804aeead/0x3c2622c0/0x51f03591/0xa8b3aa69
-        // e VS 0xad441fb1/0x8c8a4817/0xc75dd317/0xd1017d4b/0x539eee77/0x88c3afad têm T# lixo;
-        // amarra descritores vazios em vez de deixar o texture cache parsear sharp inválido.
-        if (stage.pgm_hash == 0xa7b66f58 || stage.pgm_hash == 0xefaaab2b ||
-            stage.pgm_hash == 0x804aeead || stage.pgm_hash == 0x3c2622c0 ||
-            stage.pgm_hash == 0x51f03591 || stage.pgm_hash == 0xa8b3aa69 ||
-            stage.pgm_hash == 0xad441fb1 || stage.pgm_hash == 0x8c8a4817 ||
-            stage.pgm_hash == 0xc75dd317 || stage.pgm_hash == 0xd1017d4b ||
-            stage.pgm_hash == 0x539eee77 || stage.pgm_hash == 0x88c3afad) {
-            image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
-            image_binding_entries.push_back(nullptr);
-            binding_proxy_ok.push_back(false);
-            image_descriptor_array_sizes.push_back(1);
-            continue;
-        }
         const auto tsharp =
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         // port: a hash lookup per texture per draw for a diagnostic only.
@@ -3857,8 +3884,27 @@ void Rasterizer::UpdateDepthStencilState() const {
     }
 
     const auto depth_bias_enabled = regs.polygon_control.NeedsBias();
-    dynamic_state.SetDepthBiasEnabled(depth_bias_enabled);
-    if (depth_bias_enabled) {
+    // THEORDER_REDRAW_DEPTH_BIAS=<units> (default 128.0f): universal facial & character redraw depth bias.
+    // A pass that redraws the same mesh over an earlier pass (depth test LessEqual, no depth
+    // write, no bias of its own) relies on bit-identical positions; on PC GPUs floating-point
+    // rounding can differ at single pixels (dark dots/speckles on faces). Biasing by 128 units
+    // completely eliminates facial dots while leaving GreaterEqual passes (light volumes) alone.
+    static const float redraw_bias = [] {
+        const char* env = std::getenv("THEORDER_REDRAW_DEPTH_BIAS");
+        if (!env) env = std::getenv("BB_REDRAW_DEPTH_BIAS");
+        if (env) {
+            return float(std::atof(env));
+        }
+        return 128.0f;
+    }();
+    const AmdGpu::CompareFunc depth_func = regs.depth_control.depth_func;
+    const bool redraw = redraw_bias > 0.0f && depth_test_enabled && !depth_bias_enabled &&
+                        !regs.depth_control.depth_write_enable &&
+                        depth_func == AmdGpu::CompareFunc::LessEqual;
+    dynamic_state.SetDepthBiasEnabled(depth_bias_enabled || redraw);
+    if (redraw) {
+        dynamic_state.SetDepthBias(-redraw_bias, 0.0f, 0.0f);
+    } else if (depth_bias_enabled) {
         const bool front = regs.polygon_control.enable_polygon_offset_front;
         // port: THEORDER_LIGHTING_TEST=bias passes the slope scale as the guest gives it.
         const float slope = front ? regs.poly_offset.front_scale : regs.poly_offset.back_scale;

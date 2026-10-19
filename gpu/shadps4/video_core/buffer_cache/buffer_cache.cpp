@@ -958,7 +958,8 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     // THEORDER_ARENA_LIMIT_MB=N: VRAM counts as full once N MiB are backed here (tests the reserve).
     static const u64 arena_limit = [] {
         const char* env = std::getenv("THEORDER_ARENA_LIMIT_MB");
-        return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
+        if (!env) env = std::getenv("BB_ARENA_LIMIT_MB");
+        return (env ? std::strtoull(env, nullptr, 10) : 2560) << 20;
     }();
     static u64 arena_allocated = 0;
     vk::Result alloc_result = vk::Result::eErrorOutOfDeviceMemory;

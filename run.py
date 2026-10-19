@@ -366,6 +366,10 @@ def main():
         if get_env(env, 'EXPERIMENTAL_UPSCALER') != '1':
             env.setdefault('THEORDER_UPSCALER', 'none')
         env.setdefault('THEORDER_READBACK_LINEAR', '0')
+        env.setdefault('THEORDER_FACE_DEPTH_FIX', '1')
+        env.setdefault('THEORDER_FACE_SECONDARY_FIX', '1')
+        env.setdefault('THEORDER_PARTICLE_SRT_FIX', '1')
+        env.setdefault('THEORDER_EVSM_HTILE', '1')
         patches_val = get_env(env, 'PATCHES', '')
         patches_only = get_env(env, 'PATCHES_ONLY') == '1'
         if profile:

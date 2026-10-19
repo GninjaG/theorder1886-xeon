@@ -1802,13 +1802,23 @@ void TextureCache::GarbageCollectImages() {
                 pressure_gc_memory = budget / 100 * 85;
                 critical_gc_memory = budget / 100 * 95;
             }
+        } else {
+            // Discrete GPUs: adapt trigger to driver's current budget or cap at 3072 MB
+            // to prevent textures from previous areas from occupying 4+ GB of VRAM indefinitely.
+            const u64 budget = instance.GetDeviceMemoryBudgetNow();
+            if (budget != 0) {
+                const u64 process_cap = 3072_MB;
+                trigger_gc_memory = std::min(budget / 10 * 6, process_cap);
+                pressure_gc_memory = std::min(budget / 100 * 80, process_cap + 512_MB);
+                critical_gc_memory = std::min(budget / 100 * 90, process_cap + 1024_MB);
+            }
         }
     }
     // port: gc_tick (one per guest submission, hundreds a second) at each of the last 64
     // seconds, for ages in seconds. The usage compared is all of our VRAM, not only images: on a
     // discrete GPU it stays over the trigger, where an age of 16 ticks (~3 frames) would evict
     // every texture briefly off screen and upload it again. Below the pressure mark an image goes
-    // once unused for THEORDER_GC_IDLE_SECONDS (20): the textures of an area left behind.
+    // once unused for THEORDER_GC_IDLE_SECONDS (10): the textures of an area left behind.
     // (From port 0.3, deadinside28/bloodborne_pc 4d4d208.)
     const u64 second = u64(std::chrono::duration_cast<std::chrono::seconds>(
                                std::chrono::steady_clock::now().time_since_epoch())
@@ -1823,7 +1833,7 @@ void TextureCache::GarbageCollectImages() {
     }
     static const u64 idle_seconds = [] {
         const char* env = std::getenv("THEORDER_GC_IDLE_SECONDS");
-        return std::clamp<u64>(env ? std::strtoull(env, nullptr, 10) : 20, 1, 63);
+        return std::clamp<u64>(env ? std::strtoull(env, nullptr, 10) : 10, 1, 63);
     }();
     // Under pressure an image goes once unused for THEORDER_GC_PRESSURE_IDLE_SECONDS (5), over the
     // critical mark for 1 s first, and only then by submissions (a fraction of a second). On

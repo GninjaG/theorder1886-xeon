@@ -17,6 +17,8 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
+#include "bb_face_depth_fix.h"
+#include "bb_face_depth_spirv.h"
 #include "common/elf_info.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -204,6 +206,13 @@ GraphicsPipeline::GraphicsPipeline(
         motion_addresses.data()};
     auto stage = u32(Shader::SwStage::Vertex);
     if (infos[stage]) {
+        const auto* ps = infos[u32(Shader::SwStage::Fragment)];
+        if (BbFaceDepth::Enabled() && ps && BbFaceDepth::Matches(
+                infos[stage]->pgm_hash, ps->pgm_hash, key.num_samples, key.depth_samples,
+                key.num_color_attachments, key.z_format == AmdGpu::DepthBuffer::ZFormat::Z32Float,
+                BbFaceDepth::SecondaryEnabled())) {
+            face_depth_module = BbFaceDepth::Create(modules[stage], device, ps->pgm_hash);
+        }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,
             .module = modules[stage],
@@ -491,6 +500,22 @@ GraphicsPipeline::GraphicsPipeline(
                    "Failed to create the squaring pipeline: {}", vk::to_string(square_result));
         square_pipeline = std::move(square);
         SetObjectName(device, *square_pipeline, "Graphics Pipeline {} squaring pass", debug_str);
+    }
+    if (face_depth_module) {
+        auto face_stages = shader_stages;
+        face_stages.front().module = *face_depth_module;
+        auto face_info = pipeline_info;
+        face_info.pStages = face_stages.data();
+        auto [adjusted_result, adjusted_pipe] =
+            CreateCachedGraphicsPipeline(device, pipeline_cache, face_info, key,
+                                         instance.GetPipelineBinaryGlobalKey(), binary_directory);
+        if (adjusted_result == vk::Result::eSuccess) {
+            face_depth_pipeline = std::move(adjusted_pipe);
+            SetObjectName(device, *face_depth_pipeline, "Facial depth draw variant {}", debug_str);
+        } else {
+            LOG_WARNING(Render_Vulkan, "Facial depth variant failed; original pipeline retained: {}",
+                        vk::to_string(adjusted_result));
+        }
     }
     g_port_pipeline_total_ns += NsSince(started);
     ++g_port_pipelines_built;

@@ -28,6 +28,7 @@
 #include "common/thread.h"
 #include "port_overlay.h"
 #include "core/emulator_settings.h"
+#include "bb_face_depth_fix.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
 #include "video_core/cache_storage.h"
@@ -1017,6 +1018,9 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
         }
     }
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
+    if (it_pgm.value()->info.sw_stage == Shader::SwStage::Vertex) {
+        BbFaceDepth::Register(module, spv, it_pgm.value()->info.pgm_hash);
+    }
 
     sel.infos[stage] = &it_pgm.value()->info;
     sel.modules[stage] = module;
