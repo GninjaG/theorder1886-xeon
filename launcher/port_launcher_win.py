@@ -48,8 +48,7 @@ import steam_shortcut  # noqa: E402  (scripts/)
 from patches import game_profile, game_sfo  # noqa: E402  (scripts/)
 from prepare import load_sfo  # noqa: E402  (scripts/)
 DATA_DIR = Path(os.environ.get('THEORDER_DATA_DIR', PORT_DIR))
-CONFIG_DIR = (Path(os.environ.get('APPDATA', Path.home())) if WINDOWS else
-              Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')) / 'theorder1886-launcher'
+CONFIG_DIR = DATA_DIR
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
 MOD_PRESETS = DATA_DIR / 'mods_presets.json'
 APP_NAME = 'The Order 1886'
@@ -59,12 +58,12 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.3'
+VERSION = '0.7.4'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
 # Never copied over an installation by an update (the package does not hold them either).
-USER_FILES = ('user', 'out', 'mods', 'theorder.ini', 'order1886.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
+USER_FILES = ('user', 'out', 'mods', 'theorder.ini', 'order1886.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log', 'settings.json')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -259,7 +258,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
-                'aspect_ratio': 'original', 'engine_fps': '60',
+                'aspect_ratio': 'original', 'engine_fps': '120',
                 'frames_queued': '1', 'anisotropy': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
@@ -745,6 +744,9 @@ def game_environment(s):
     for kind, name in (('key', 'THEORDER_KEY_MAP'), ('pad', 'THEORDER_PAD_MAP')):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
+    pad_style = s.get('pad_style', 'playstation')
+    env['THEORDER_GLYPHS'] = pad_style
+    env['THEORDER_PAD_STYLE'] = pad_style
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -756,9 +758,9 @@ def game_environment(s):
 # The Order: 1886's colors: soot black, slate and aged brass.
 BG, PANEL, CARD, LINE = '#0c0d0f', '#141619', '#1b1e22', '#2b2f35'
 TEXT, MUTED, ACCENT, ACCENT_HI = '#e8e2d6', '#8d877c', '#a8803c', '#c9a051'
-# '60' runs the game at its own 30 FPS (no frame rate patch); '120' asks for the frame rate patch,
-# which for this game is the 60 FPS one (run.py presents every vblank, capped at 60).
-ENGINE_FPS_CHOICES = [('60', ('30 (original)',)), ('120', ('60 (experimental)',))]
+# '60' runs the game at its own 30 FPS (no frame rate patch); '120' asks for 60 FPS patch; '240' asks for 120 FPS patch.
+ENGINE_FPS_CHOICES = [('60', ('30 FPS (original)',)), ('120', ('60 FPS (default)', '60 FPS (по умолчанию)')),
+                      ('240', ('120 FPS (unlocked)', '120 FPS (разблокировано)'))]
 # The game's 2.40:1 picture, or a game patch that fills a screen of that shape (Vert+).
 ASPECT_CHOICES = [('original', ('Original (2.40:1, black bars)',)), ('16:9', ('16:9',)), ('16:10', ('16:10',)),
                   ('21:9', ('21:9',))]
@@ -849,17 +851,40 @@ class Launcher:
 
     def check_version_migration(self):
         """Performs automatic cache cleanup and settings migration when upgrading between versions."""
+        # 0. Migrate legacy settings.json from AppData if local settings.json does not exist
+        if not CONFIG_FILE.is_file():
+            legacy_dirs = []
+            if WINDOWS:
+                appdata = os.environ.get('APPDATA', '')
+                if appdata:
+                    legacy_dirs.extend([Path(appdata) / 'theorder1886-launcher', Path(appdata) / 'order1886-launcher'])
+            else:
+                legacy_dirs.append(Path.home() / '.config' / 'theorder1886-launcher')
+            for leg_dir in legacy_dirs:
+                leg_file = leg_dir / 'settings.json'
+                if leg_file.is_file():
+                    try:
+                        imported = load_json(leg_file, {})
+                        if imported:
+                            self.app = {**APP_DEFAULTS, **imported}
+                            atomic_write(CONFIG_FILE, json.dumps(self.app, indent=2, ensure_ascii=False))
+                            print(f'Launcher: migrated settings from {leg_file} to local {CONFIG_FILE}', flush=True)
+                            break
+                    except Exception as e:
+                        print(f'Launcher: error migrating legacy settings: {e}', flush=True)
+
         last_version = self.app.get('last_version', '')
         if last_version != VERSION:
-            # 1. Clean stale shader and pipeline cache in user/cache
+            # 1. Clean stale shader and pipeline cache in user/cache and user/shader
             user_dir = Path(self.app.get('user_dir') or (DATA_DIR / 'user'))
-            cache_dir = user_dir / 'cache'
-            if cache_dir.is_dir():
-                try:
-                    shutil.rmtree(cache_dir, ignore_errors=True)
-                    print(f'Launcher: cleared stale shader/pipeline cache at {cache_dir} on upgrade ({last_version or "legacy"} -> {VERSION})', flush=True)
-                except Exception as e:
-                    print(f'Launcher: failed to clean cache at {cache_dir}: {e}', flush=True)
+            for c_name in ('cache', 'shader'):
+                cache_dir = user_dir / c_name
+                if cache_dir.is_dir():
+                    try:
+                        shutil.rmtree(cache_dir, ignore_errors=True)
+                        print(f'Launcher: cleared stale cache at {cache_dir} on upgrade ({last_version or "legacy"} -> {VERSION})', flush=True)
+                    except Exception as e:
+                        print(f'Launcher: failed to clean cache at {cache_dir}: {e}', flush=True)
 
             # 2. Migrate legacy order1886.ini if it exists
             legacy_ini = DATA_DIR / 'order1886.ini'
@@ -877,15 +902,18 @@ class Launcher:
                 except Exception:
                     pass
 
-            # 3. Clean legacy AppData/Roaming/order1886-launcher if present
+            # 3. Clean legacy AppData folders if present (portable mode)
             if WINDOWS:
-                legacy_config_dir = Path(os.environ.get('APPDATA', Path.home())) / 'order1886-launcher'
-                if legacy_config_dir.is_dir():
-                    try:
-                        shutil.rmtree(legacy_config_dir, ignore_errors=True)
-                        print(f'Launcher: removed obsolete config directory at {legacy_config_dir}', flush=True)
-                    except Exception:
-                        pass
+                appdata = os.environ.get('APPDATA', '')
+                if appdata:
+                    for folder in ('theorder1886-launcher', 'order1886-launcher'):
+                        legacy_config_dir = Path(appdata) / folder
+                        if legacy_config_dir.is_dir():
+                            try:
+                                shutil.rmtree(legacy_config_dir, ignore_errors=True)
+                                print(f'Launcher: removed obsolete config directory at {legacy_config_dir}', flush=True)
+                            except Exception:
+                                pass
 
             # 4. Update last_version
             self.app['last_version'] = VERSION
@@ -903,8 +931,10 @@ class Launcher:
 
     def set_icon(self):
         game_icon = Path(self.meta_dir() or '.') / 'sce_sys' / 'icon0.png'
+        icon_cache_dir = DATA_DIR / 'user'
+        icon_cache_dir.mkdir(parents=True, exist_ok=True)
         self.icon = window_icon(self.root, self.tk, game_icon, PORT_DIR / 'launcher' / 'theorder.png',
-                                CONFIG_DIR / 'game_icon.ico')
+                                icon_cache_dir / 'game_icon.ico')
 
     # ---- look --------------------------------------------------------------------------------
     def check_images(self):
@@ -966,6 +996,8 @@ class Launcher:
         s.configure('TSpinbox', foreground=TEXT, arrowcolor=MUTED, insertcolor=TEXT, padding=4)
         s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1)
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
+        s.configure('Small.TButton', background=CARD, foreground=MUTED, padding=(4, 2), font=(UI_FONT, 8), borderwidth=1)
+        s.map('Small.TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('active', ACCENT_HI), ('disabled', PANEL)])
         s.configure('Play.TButton', background=ACCENT, foreground='#f4ece0', font=(*heading_font(15), 'bold'),
                     padding=(36, 10), borderwidth=0)
         s.map('Play.TButton', background=[('active', ACCENT_HI), ('disabled', '#2e1c1c')],
@@ -999,6 +1031,7 @@ class Launcher:
         var = var if var is not None else self.var(key, store)
         values = [v for v, _t in options]
         box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width)
+        box.setting_key = key
         if var.get() not in values:
             var.set(values[0])
 
@@ -1021,19 +1054,26 @@ class Launcher:
             self.ttk.Label(cell, text=_('restart'), style='Restart.TLabel').pack(side='left', padx=(8, 0))
         return cell
 
-    def row(self, parent, title, widget, hint=None, restart=False):
+    def row(self, parent, title, widget, hint=None, restart=False, key=None):
         """Name on the left, control on the right, an optional note below."""
         r = self.next_row(parent)
         self.title_cell(parent, title, restart).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=(8, 0))
         widget.grid(row=r, column=1, sticky='w', pady=(5, 0))
+        actual_key = key or getattr(widget, 'setting_key', None)
+        if actual_key and (actual_key in INI_DEFAULTS or actual_key in APP_DEFAULTS):
+            btn = self.ttk.Button(parent, text='↺', width=2, style='Small.TButton',
+                                  command=lambda k=actual_key: self.reset_single_setting(k))
+            btn.grid(row=r, column=2, sticky='w', padx=(6, 0), pady=(5, 0))
         if hint:
             self.ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(640), justify='left').grid(
-                row=r + 1, column=0, columnspan=2, sticky='w', pady=(1, 2))
+                row=r + 1, column=0, columnspan=3, sticky='w', pady=(1, 2))
         return widget
 
     def check(self, parent, key, store, title, hint=None, var=None, restart=False):
         box = self.ttk.Checkbutton(parent, variable=var if var is not None else self.var(key, store))
-        return self.row(parent, title, box, hint, restart)
+        if key:
+            box.setting_key = key
+        return self.row(parent, title, box, hint, restart, key=key)
 
     def note(self, parent, text, top=12):
         self.ttk.Label(parent, text=text, style='Muted.TLabel', wraplength=self.px(680), justify='left').grid(
@@ -1068,7 +1108,11 @@ class Launcher:
         outer = ttk.Frame(self.content)
         head = ttk.Frame(outer, padding=(28, 22, 28, 6))
         head.pack(fill='x')
-        ttk.Label(head, text=heading_text(title.upper()), background=PANEL, foreground=TEXT, font=heading_font(20)).pack(anchor='w')
+        top_row = ttk.Frame(head)
+        top_row.pack(fill='x')
+        ttk.Label(top_row, text=heading_text(title.upper()), background=PANEL, foreground=TEXT, font=heading_font(20)).pack(side='left')
+        ttk.Button(top_row, text=_('↺ Reset tab', '↺ Сбросить вкладку'),
+                   style='Small.TButton', command=lambda t=name: self.reset_tab_settings(t)).pack(side='right')
         ttk.Label(head, text=subtitle, style='Muted.TLabel').pack(anchor='w')
         canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
@@ -1083,6 +1127,94 @@ class Launcher:
         outer.scroll = lambda units: canvas.yview_scroll(units, 'units') if inner.winfo_height() > canvas.winfo_height() else None
         self.pages[name] = outer
         return inner
+
+    TAB_KEYS = {
+        'home': ['display_mode', 'fps_limit', 'engine_fps', 'aspect_ratio'],
+        'graphics': ['display_mode', 'vsync', 'aspect_ratio', 'anisotropy', 'hdr', 'show_fps'],
+        'performance': ['fps_limit', 'frames_queued', 'engine_fps', 'pipeline_binary_cache', 'background_warmup', 'async_shaders', 'parallel_warmup', 'gpu_id', 'stream_memory', 'stale_readback', 'deferred_readback', 'draw_pipe', 'readbacks', 'no_msaa'],
+        'game': ['language', 'mods_enabled', 'pad_style'],
+        'advanced': ['ui_language', 'close_on_play', 'check_updates', 'vk_validation', 'frame_capture_key', 'perf_diag', 'frame_stats', 'gpu_profile', 'desktop_integration', 'gamemode', 'mangohud'],
+    }
+
+    def reset_single_setting(self, key):
+        """Resets an individual setting to its default value and saves."""
+        if key == 'pad_style':
+            if hasattr(self, 'pad_style'):
+                self.pad_style.set('playstation')
+                self.relabel_pad_controls()
+            self.collect()
+            self.flash_status(_('Restored default for: Gamepad names', 'Сброшены имена кнопок геймпада'))
+            return
+        if key == 'controls':
+            self.reset_controls()
+            self.flash_status(_('Controls reset to defaults.', 'Управление сброшено к значениям по умолчанию.'))
+            return
+        if key in self.vars:
+            v = self.vars[key]
+            store = getattr(v, 'store', 'ini')
+            default = INI_DEFAULTS.get(key) if store == 'ini' else APP_DEFAULTS.get(key)
+            if default is not None:
+                if isinstance(v, self.tk.BooleanVar):
+                    v.set(default == '1' if store == 'ini' else bool(default))
+                else:
+                    v.set(str(default))
+                self.collect()
+                self.flash_status(_(f'Restored default for: {key}', f'Сброшено: {key}'))
+
+    def reset_tab_settings(self, tab):
+        """Resets all settings in the specified tab to their defaults."""
+        keys = self.TAB_KEYS.get(tab, [])
+        for k in keys:
+            if k == 'pad_style':
+                if hasattr(self, 'pad_style'):
+                    self.pad_style.set('playstation')
+                    self.relabel_pad_controls()
+            elif k in self.vars:
+                v = self.vars[k]
+                store = getattr(v, 'store', 'ini')
+                default = INI_DEFAULTS.get(k) if store == 'ini' else APP_DEFAULTS.get(k)
+                if default is not None:
+                    if isinstance(v, self.tk.BooleanVar):
+                        v.set(default == '1' if store == 'ini' else bool(default))
+                    else:
+                        v.set(str(default))
+        if tab in ('game', 'controls'):
+            self.reset_controls()
+            if hasattr(self, 'pad_style'):
+                self.pad_style.set('playstation')
+                self.relabel_pad_controls()
+        self.collect()
+        self.flash_status(_('Tab settings restored to defaults.', 'Настройки вкладки сброшены к значениям по умолчанию.'))
+
+    def reset_all_settings(self):
+        """Resets all settings across all tabs to their default values with confirmation."""
+        if not self.messagebox.askyesno(
+            _('Reset All Settings', 'Сбросить все настройки'),
+            _('Are you sure you want to reset ALL settings to their default values?\n(Deseja restaurar TODAS as opções para o padrão?)',
+              'Вы уверены, что хотите сбросить ВСЕ настройки до значений по умолчанию?')
+        ):
+            return
+        for tab in self.TAB_KEYS:
+            self.reset_tab_settings(tab)
+        self.reset_controls()
+        if hasattr(self, 'pad_style'):
+            self.pad_style.set('playstation')
+            self.relabel_pad_controls()
+        self.collect()
+        self.flash_status(_('All settings have been restored to defaults.', 'Все настройки сброшены к значениям по умолчанию.'))
+
+    def flash_status(self, msg, duration_ms=3000):
+        if hasattr(self, 'status'):
+            self.status.configure(text=msg, fg=ACCENT_HI)
+            self.root.after(duration_ms, self.refresh_status)
+
+    def add_tab_reset_bar(self, parent, tab):
+        """Adds a reset button for this tab at the bottom of the page."""
+        r = self.next_row(parent)
+        frame = self.ttk.Frame(parent)
+        frame.grid(row=r, column=0, columnspan=3, sticky='w', pady=(24, 12))
+        self.ttk.Button(frame, text=_('↺ Reset this tab to defaults', '↺ Сбросить настройки этой вкладки'),
+                        command=lambda t=tab: self.reset_tab_settings(t)).pack(side='left', padx=(0, 12))
 
     # ---- layout ------------------------------------------------------------------------------
     def build(self):
@@ -1109,6 +1241,11 @@ class Launcher:
             self.nav[name] = item
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
         self.update_box = None
+        kofi_frame = tk.Frame(side, bg=BG)
+        kofi_frame.pack(anchor='w', padx=22, pady=(0, 8))
+        kofi_btn = tk.Label(kofi_frame, text='☕ Apoiar no Ko-fi / Support', bg='#29abe0', fg='#ffffff', font=(UI_FONT, 8, 'bold'), cursor='hand2', padx=8, pady=3)
+        kofi_btn.pack(side='left')
+        kofi_btn.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
         self.side_note = tk.Label(side, text=_('In the game: Insert or R3+L2\nopens the port\'s menu.',
                                                'В игре: Insert или R3+L2\nоткрывает меню порта.'),
                                   bg=BG, fg=MUTED, font=(UI_FONT, 9), justify='left', wraplength=self.px(210))
@@ -1121,6 +1258,9 @@ class Launcher:
         bar.pack_propagate(False)
         self.status = tk.Label(bar, text='', bg=BG, fg=MUTED, font=(UI_FONT, 10), anchor='w', justify='left')
         self.status.pack(side='left', padx=24)
+        kofi_bar_btn = tk.Label(bar, text='☕ Ko-fi', bg=BG, fg=ACCENT_HI, font=(UI_FONT, 9, 'bold'), cursor='hand2')
+        kofi_bar_btn.pack(side='left', padx=(0, 10))
+        kofi_bar_btn.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
         self.play_button = ttk.Button(bar, text=heading_text(_('PLAY', 'ИГРАТЬ')), style='Play.TButton', command=self.play)
         self.play_button.pack(side='right', padx=(self.px(10), self.px(24)), pady=self.px(11))
         self.save_button = ttk.Button(bar, text=_('Save', 'Сохранить'), command=self.save, state='disabled')
@@ -1173,6 +1313,10 @@ class Launcher:
             r, c = 2 + index // 2, (index % 2) * 2
             ttk.Label(quick, text=title).grid(row=r, column=c, sticky='w', pady=6, padx=(0, 12))
             self.choice(quick, key, 'ini', options, width=18).grid(row=r, column=c + 1, sticky='w', padx=(0, 40))
+        reset_bar = ttk.Frame(quick)
+        reset_bar.grid(row=4, column=0, columnspan=4, sticky='w', pady=(10, 0))
+        ttk.Button(reset_bar, text=_('↺ Reset quick settings', '↺ Сбросить основные настройки'),
+                   command=lambda: self.reset_tab_settings('home')).pack(side='left')
 
     def draw_banner(self):
         """The cover art of the selected dump (sce_sys/pic1.png) under the title."""
@@ -1223,29 +1367,23 @@ class Launcher:
         f = self.scrolled_page('graphics', _('Graphics', 'Графика'), _('How the game appears on your screen.'))
         self.build_display(f)
         # Temporal upscaling is parked until its image quality is validated.
-        # self.section(f, _('Experimental'))
-        # self.check(f, 'experimental_upscaler', 'app', _('Enable the upscaler (experimental)'),
-        #            _('Off (default): the game runs without temporal upscaling; FSR 3.1 and TAA need this switch on. '
-        #              'FSR 3.1 is not calibrated for this game yet: expect ghosting or flicker. The remaining options require this switch; '
-        #              'leave it off for normal gameplay.',
-        #              'Выкл. (по умолчанию): игра без временного апскейлинга; FSR 3.1 и TAA нужен этот переключатель. '
-        #              'FSR 3.1 ещё не откалиброван для этой игры: возможны гостинг и мерцание.'), restart=True)
-        # self.section(f, _('Upscaling', 'Апскейлинг'))
-        # self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS))
+        # self.section(f, _('Upscaling (FSR / TAA)', 'Апскейлинг'))
+        # self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
+        #          _('FSR 3.1 or TAA anti-aliasing. Renders at lower resolution and scales up to output for higher FPS.',
+        #            'FSR 3.1 или TAA. Рендерит в меньшем разрешении для повышения FPS.'), key='upscaler')
         # self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
         #          _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
-        #            'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'))
+        #            'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
         # self.row(f, _('Output resolution', 'Разрешение вывода'), self.choice(f, 'output_res', 'ini', OUTPUTS),
         #          _('What the upscaler produces; the HUD is drawn at this size too.',
-        #            'Что выдаёт апскейлер; интерфейс рисуется в этом же размере.'))
+        #            'Что выдаёт апскейлер; интерфейс рисуется в этом же размере.'), key='output_res')
         # self.row(f, _('Live resolution changes', 'Смена разрешения на лету'), self.choice(f, 'live_resolution', 'ini', LIVE),
-        #          _('Off: outputs other than 1080p are set by a patch at start (fastest; changing them in the '
-        #            'game restarts it). On: change output and preset in the game without a restart, at a cost.',
-        #            'Выкл.: разрешения кроме 1080p задаются патчем при запуске (быстрее). Вкл.: менять в игре '
-        #            'без перезапуска, но медленнее.'))
+        #          _('Off: outputs other than 1080p are set by a patch at start (fastest). On: change in-game without restart.',
+        #            'Выкл.: быстрее. Вкл.: смена на лету без перезапуска.'), key='live_resolution')
         # self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
         #            _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
         #              'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
+        self.add_tab_reset_bar(f, 'graphics')
 
     def build_display(self, f):
         """Window and overlay: the top of the Graphics page."""
@@ -1314,6 +1452,7 @@ class Launcher:
             box['values'] = [_(*text) for _value, text in no_msaa_options(gpus, card.get())]
             box.current(index)
         card.trace_add('write', relabel)
+        self.add_tab_reset_bar(f, 'performance')
 
     def build_game(self):
         f = self.scrolled_page('game', _('Game', 'Игра'), _('Your game dump, saves and the game patches.'))
@@ -1465,15 +1604,16 @@ class Launcher:
         saved = {kind: control_values(self.app.get('controls'), kind) for kind in ('key', 'pad')}
         style = self.app.get('pad_style') if self.app.get('pad_style') in PAD_STYLES else 'playstation'
         self.pad_style = tk.StringVar(value=style)
+        self.pad_style.trace_add('write', lambda *_a: self.relabel_pad_controls())
         names = ttk.Frame(f)
         for value, label in (('playstation', 'PlayStation'), ('xbox', 'Xbox')):
             ttk.Radiobutton(names, text=label, value=value, variable=self.pad_style,
                             command=self.relabel_pad_controls).pack(side='left', padx=(0, 14))
-        self.row(f, _('Gamepad names'), names)
+        self.row(f, _('Gamepad names'), names, key='pad_style')
         table = ttk.Frame(f)
         table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(16, 0))
-        for column, span, title in ((0, 2, _('GAME BUTTON')), (2, 1, _('KEYBOARD')), (3, 2, _('GAMEPAD'))):
-            ttk.Label(table, text=heading_text(title), style='Section.TLabel').grid(row=0, column=column, columnspan=span, sticky='w')
+        for column, span, title in ((0, 2, _('GAME BUTTON')), (2, 1, _('KEYBOARD')), (3, 2, _('GAMEPAD')), (5, 1, '')):
+            ttk.Label(table, text=heading_text(title) if title else '', style='Section.TLabel').grid(row=0, column=column, columnspan=span, sticky='w')
         self.control_vars, self.pad_boxes, self.pad_icons = {'key': {}, 'pad': {}}, {}, {}
         size = self.px(28)
         labels = PAD_STYLES[style]
@@ -1509,13 +1649,18 @@ class Launcher:
                 box = ttk.Label(table, text=fixed, style='Muted.TLabel')
             box.grid(row=r, column=4, sticky='w')
             self.draw_pad_icon(button)
+            btn = ttk.Button(table, text='↺', width=2, style='Small.TButton',
+                             command=lambda b=button, k=key, p=pad: self.reset_single_control(b, k, p))
+            btn.grid(row=r, column=5, sticky='w', padx=(6, 0))
         self.note(f, _('Keys use SDL names: letters, digits, Space, Return, Tab, Left Shift, Left Ctrl, Left Alt, '
                        'Backspace, Up, Down, Left, Right, F1 to F12. A name the game does not know keeps the default '
                        '(the log says which). L2/R2 on the gamepad stay on the triggers. Touchpad right opens the '
                        'game\'s pause menu; Touchpad left (photo mode) is L1 + Touchpad right on the gamepad. Insert '
                        'and R3+L2 always open the port\'s menu. Applied when the game starts.'))
-        self.ttk.Button(f, text=_('Reset to defaults'), command=self.reset_controls).grid(
-            row=self.next_row(f), column=0, sticky='w', pady=(14, 0))
+        ttk.Button(f, text='↺ ' + _('Reset controls to defaults', 'Сбросить управление к значениям по умолчанию'),
+                   command=self.reset_controls_and_flash).grid(
+            row=self.next_row(f), column=0, sticky='w', pady=(12, 0))
+        self.add_tab_reset_bar(f, 'game')
 
     def draw_pad_icon(self, button):
         """The gamepad column's icon of a game button, in the chosen style (L2/R2: the triggers)."""
@@ -1527,19 +1672,43 @@ class Launcher:
         return next((n for n, l in PAD_STYLES[self.pad_style.get()].items() if l == label), label)
 
     def relabel_pad_controls(self):
-        labels = PAD_STYLES[self.pad_style.get()]
+        if not hasattr(self, 'pad_style') or not hasattr(self, 'pad_boxes'):
+            return
+        labels = PAD_STYLES.get(self.pad_style.get(), PAD_STYLES['playstation'])
         for button, box in self.pad_boxes.items():
             box.configure(values=list(labels.values()))
             name = self.control_vars['pad'][button].get()
             box.set(labels.get(name, name))
-        for button in self.pad_icons:
+        for button in getattr(self, 'pad_icons', {}):
             self.draw_pad_icon(button)
 
     def reset_controls(self):
         for button, key, pad in CONTROLS:
-            self.control_vars['key'][button].set(key)
-            self.control_vars['pad'][button].set(pad or '')
+            if hasattr(self, 'control_vars'):
+                if button in self.control_vars.get('key', {}):
+                    self.control_vars['key'][button].set(key)
+                if button in self.control_vars.get('pad', {}):
+                    self.control_vars['pad'][button].set(pad or '')
+        if hasattr(self, 'pad_style'):
+            self.pad_style.set('playstation')
         self.relabel_pad_controls()
+        self.collect()
+
+    def reset_controls_and_flash(self):
+        self.reset_controls()
+        self.flash_status(_('Controls reset to defaults.', 'Управление сброшено к значениям по умолчанию.'))
+
+    def reset_single_control(self, button, default_key, default_pad):
+        """Resets a single button row (keyboard + gamepad) to default."""
+        if hasattr(self, 'control_vars'):
+            if button in self.control_vars.get('key', {}):
+                self.control_vars['key'][button].set(default_key)
+            if button in self.control_vars.get('pad', {}):
+                self.control_vars['pad'][button].set(default_pad or '')
+        self.relabel_pad_controls()
+        self.collect()
+        btn_name = PS_BUTTON_NAMES.get(button, button)
+        self.flash_status(_(f'Restored default for: {btn_name}', f'Сброшено: {btn_name}'))
 
     def build_linux_options(self, f):
         """Wayland / X11, GameMode and MangoHud: only the ones this system has can be turned on."""
@@ -1590,6 +1759,13 @@ class Launcher:
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Button(holder, text=_('Clear shader cache', 'Очистить кэш шейдеров'), command=self.clear_cache).pack(side='left')
+        ttk.Button(holder, text='🧹 ' + _('Clean Cache & Reset Settings', 'Очистить кэш и сбросить настройки'), command=self.reset_all_cache_and_settings).pack(side='left', padx=8)
+        ttk.Button(holder, text='↺ ' + _('Reset All Settings', 'Сбросить все настройки'), command=self.reset_all_settings).pack(side='left', padx=8)
+        holder_kofi = ttk.Frame(f)
+        holder_kofi.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
+        kofi_banner = tk.Label(holder_kofi, text='☕ ' + _('Support the port on Ko-fi (Apoiar no Ko-fi)'), bg='#29abe0', fg='#ffffff', font=(UI_FONT, 9, 'bold'), cursor='hand2', padx=10, pady=4)
+        kofi_banner.pack(side='left')
+        kofi_banner.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
         ttk.Label(holder, text=_('If the game only shows a black screen, this usually helps.',
                                  'Если игра показывает только чёрный экран, обычно это помогает.'),
                   style='Muted.TLabel').pack(side='left', padx=10)
@@ -1619,6 +1795,7 @@ class Launcher:
         toggle.bind('<Button-1>', flip)
         shown.set(True)
         flip()
+        self.add_tab_reset_bar(f, 'advanced')
         self.build_log(f)
 
     def build_log(self, f):
@@ -2190,6 +2367,69 @@ class Launcher:
         self.messagebox.showinfo(APP_NAME, _('Shader cache cleared. The next start stutters for a few minutes while '
                                                  'it is rebuilt.', 'Кэш шейдеров очищен. Следующий запуск несколько '
                                                  'минут будет подтормаживать, пока кэш собирается заново.'))
+
+    def reset_all_cache_and_settings(self):
+        """Cleans shader cache, user cache, legacy files, and resets configuration."""
+        if self.process:
+            self.messagebox.showwarning(APP_NAME, _('Cannot reset while the game is running.', 'Нельзя выполнить сброс во время работы игры.'))
+            return
+        confirm = self.messagebox.askyesno(
+            APP_NAME,
+            _('Are you sure you want to clean all caches and reset configurations?\n\n'
+              'This will:\n'
+              '• Delete user/cache (shaders & pipeline caches)\n'
+              '• Delete user/shader and captures\n'
+              '• Delete obsolete order1886.ini and legacy AppData folders\n'
+              '• Reset theorder.ini and settings.json to recommended defaults\n\n'
+              'This resolves most graphical glitches, stutters, and flickering.',
+              'Вы уверены, что хотите очистить весь кэш и сбросить настройки?')
+        )
+        if not confirm:
+            return
+
+        import shutil
+        user_dir = Path(self.app.get('user_dir') or (DATA_DIR / 'user'))
+        for sub in ('cache', 'shader', 'captures'):
+            c_path = user_dir / sub
+            if c_path.exists():
+                shutil.rmtree(c_path, ignore_errors=True)
+
+        for ini_name in ('order1886.ini',):
+            p = DATA_DIR / ini_name
+            if p.is_file():
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        if WINDOWS:
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                for folder in ('theorder1886-launcher', 'order1886-launcher'):
+                    legacy_dir = Path(appdata) / folder
+                    if legacy_dir.is_dir():
+                        shutil.rmtree(legacy_dir, ignore_errors=True)
+
+        ini_file = ini_path()
+        if ini_file.is_file():
+            try:
+                ini_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        saved_game_dir = self.app.get('game_dir', '')
+        saved_update_dir = self.app.get('update_dir', '')
+        self.app = {**APP_DEFAULTS, 'game_dir': saved_game_dir, 'update_dir': saved_update_dir, 'last_version': VERSION}
+        atomic_write(CONFIG_FILE, json.dumps(self.app, indent=2, ensure_ascii=False))
+        self.ini, self.ini_lines = load_ini()
+        self.game_changed()
+
+        self.messagebox.showinfo(
+            APP_NAME,
+            _('Clean up completed successfully!\n\n'
+              'All caches, legacy files, and settings have been reset to recommended defaults.',
+              'Очистка успешно завершена!')
+        )
 
     def shortcut(self):
         """The Order 1886.lnk on the desktop (a .desktop entry in the menu and on the desktop on Linux)."""

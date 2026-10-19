@@ -10,6 +10,9 @@
 #include <dlfcn.h>
 #endif
 #include <functional>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 #include "port_copy.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
@@ -284,7 +287,11 @@ void Scheduler::WaitDeferredSignals() {
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
         // Helps the copy threads the signals wait for.
         PortCopy::WaitAsync();
+#if defined(__x86_64__) || defined(_M_X64)
+        _mm_pause();
+#else
         std::this_thread::yield();
+#endif
     }
 }
 
@@ -294,7 +301,11 @@ void Scheduler::WaitHostCopies() {
         PortStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
         while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
+#if defined(__x86_64__) || defined(_M_X64)
+            _mm_pause();
+#else
             std::this_thread::yield();
+#endif
         }
     }
     PortStats::WaitTimer timer{PortStats::copy_threads_wait_ns};

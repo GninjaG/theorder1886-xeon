@@ -248,5 +248,56 @@ class EverySettingSavesTest(LauncherOverTemporaryFiles):
         self.assertEqual(reopened.control_vars['pad']['cross'].get(), 'b')
         self.assertEqual(str(reopened.save_button['state']), 'disabled')
 
+
+class LauncherResetOptionsTest(LauncherOverTemporaryFiles):
+    def test_reset_controls_and_pad_style(self):
+        # Alter control and pad style
+        self.app.pad_style.set('xbox')
+        self.app.control_vars['key']['cross'].set('Z')
+        self.app.control_vars['pad']['cross'].set('b')
+        self.assertEqual(self.app.pad_style.get(), 'xbox')
+        self.assertEqual(self.app.control_vars['key']['cross'].get(), 'Z')
+        self.assertEqual(self.app.control_vars['pad']['cross'].get(), 'b')
+
+        # Run reset_controls
+        self.app.reset_controls()
+        self.assertEqual(self.app.pad_style.get(), 'playstation')
+        self.assertEqual(self.app.control_vars['key']['cross'].get(), 'Space')
+        self.assertEqual(self.app.control_vars['pad']['cross'].get(), 'a')
+
+    def test_reset_single_control(self):
+        self.app.control_vars['key']['triangle'].set('X')
+        self.app.control_vars['pad']['triangle'].set('x')
+        self.app.reset_single_control('triangle', 'Q', 'y')
+        self.assertEqual(self.app.control_vars['key']['triangle'].get(), 'Q')
+        self.assertEqual(self.app.control_vars['pad']['triangle'].get(), 'y')
+
+    def test_reset_single_setting_pad_style(self):
+        self.app.pad_style.set('xbox')
+        self.app.reset_single_setting('pad_style')
+        self.assertEqual(self.app.pad_style.get(), 'playstation')
+
+    def test_reset_tab_settings_game(self):
+        self.app.var('language', 'app').set('8')
+        self.app.pad_style.set('xbox')
+        self.app.control_vars['key']['square'].set('F')
+        self.app.reset_tab_settings('game')
+        self.assertEqual(self.app.var('language', 'app').get(), '1')
+        self.assertEqual(self.app.pad_style.get(), 'playstation')
+        self.assertEqual(self.app.control_vars['key']['square'].get(), 'E')
+
+    def test_reset_all_settings(self):
+        self.app.var('vsync', 'ini').set(False)
+        self.app.var('fps_limit', 'ini').set('30')
+        self.app.pad_style.set('xbox')
+        self.app.control_vars['key']['cross'].set('K')
+        with mock.patch.object(self.app.messagebox, 'askyesno', return_value=True):
+            self.app.reset_all_settings()
+        self.assertTrue(self.app.var('vsync', 'ini').get())
+        self.assertEqual(self.app.var('fps_limit', 'ini').get(), '0')
+        self.assertEqual(self.app.pad_style.get(), 'playstation')
+        self.assertEqual(self.app.control_vars['key']['cross'].get(), 'Space')
+
+
 if __name__ == '__main__':
     unittest.main()

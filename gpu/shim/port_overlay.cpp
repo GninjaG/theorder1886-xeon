@@ -178,12 +178,33 @@ void Choice(const char* label, std::atomic<int>& target, const char* const* labe
     }
 }
 
-// Controller button names in the help text: PlayStation unless THEORDER_GLYPHS names xbox or
-// nintendo. Read once: the environment is fixed for a run.
-static const char* PadText(const char* playstation, const char* xbox, const char* nintendo) {
-    static const char* style = std::getenv("THEORDER_GLYPHS");
-    if (!style) return playstation;
-    return !std::strcmp(style, "xbox") ? xbox : !std::strcmp(style, "nintendo") ? nintendo : playstation;
+// Controller button names in the help text: dynamically adapts to the current input
+// (Xbox, PlayStation or Keyboard & Mouse) or falls back to THEORDER_GLYPHS.
+enum class ActiveInput {
+    Default,
+    PlayStation,
+    Xbox,
+    Keyboard,
+};
+static ActiveInput last_active_input = ActiveInput::Default;
+
+static const char* PadText(const char* playstation, const char* xbox, const char* nintendo, const char* kbm = nullptr) {
+    if (last_active_input == ActiveInput::Keyboard && kbm) {
+        return kbm;
+    }
+    if (last_active_input == ActiveInput::Xbox) {
+        return xbox;
+    }
+    if (last_active_input == ActiveInput::PlayStation) {
+        return playstation;
+    }
+    const char* style = std::getenv("THEORDER_GLYPHS");
+    if (style) {
+        if (!std::strcmp(style, "xbox")) return xbox;
+        if (!std::strcmp(style, "nintendo")) return nintendo;
+        if (!std::strcmp(style, "keyboard") && kbm) return kbm;
+    }
+    return playstation;
 }
 
 // The note for the item under the mouse or the gamepad/keyboard focus, shown in the footer.
@@ -449,11 +470,10 @@ void Menu() {
                                     std::min(680.0f * base_scale, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
-    // port: the game's own title (param.sfo), not a fixed one.
-    static const std::string heading = [] {
-        const std::string_view title = Common::ElfInfo::Instance().Title();
-        return std::string(title.empty() ? "The Order: 1886" : title) + PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)");
-    }();
+    // port: the game's own title (param.sfo), dynamically formatted with active input prompts.
+    const std::string_view title = Common::ElfInfo::Instance().Title();
+    const std::string heading = std::string(title.empty() ? "The Order: 1886" : title) +
+                                PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)", "  (Insert)");
     if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -834,6 +854,9 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        if (down) {
+            last_active_input = ActiveInput::Keyboard;
+        }
         static const bool capture_key = [] {
             const char* env = std::getenv("THEORDER_FRAME_CAPTURE_KEY");
             return env && *env == '1';
@@ -861,6 +884,16 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
         const bool down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+        if (down) {
+            if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gbutton.which)) {
+                const SDL_GamepadType type = SDL_GetGamepadType(pad);
+                if (type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE) {
+                    last_active_input = ActiveInput::Xbox;
+                } else if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
+                    last_active_input = ActiveInput::PlayStation;
+                }
+            }
+        }
         const u8 button = event.gbutton.button;
         // R3+L2 opens the menu: L3+R3 is left to the game.
         if (button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
@@ -879,6 +912,14 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+        if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gaxis.which)) {
+            const SDL_GamepadType type = SDL_GetGamepadType(pad);
+            if (type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE) {
+                last_active_input = ActiveInput::Xbox;
+            } else if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
+                last_active_input = ActiveInput::PlayStation;
+            }
+        }
         if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
             const bool down = event.gaxis.value > 16000;
             if (down && !l2_down && r3_down) {

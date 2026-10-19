@@ -115,8 +115,8 @@ class ControlMapTest(unittest.TestCase):
     def test_graphics_defaults_match_the_game(self):
         d = launcher.INI_DEFAULTS
         # The Order runs at its own 30 FPS by default ('60': no frame rate patch, see ENGINE_FPS_CHOICES).
-        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '60'))
-        self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120'])
+        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '120'))
+        self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120', '240'])
         # The launcher's aspect ratios are the game's (gpu/shim/port_graphics.h, scripts/graphics_options.py).
         from graphics_options import ASPECTS
         self.assertEqual(tuple(v for v, _t in launcher.ASPECT_CHOICES), ASPECTS)
@@ -548,8 +548,8 @@ class SettingsFileMigrationTest(unittest.TestCase):
 
 class ReleaseVersionTest(unittest.TestCase):
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.7.2')
-        self.assertGreater(launcher.version_tuple('windows-v0.7.3'), launcher.version_tuple(launcher.VERSION))
+        self.assertEqual(launcher.VERSION, '0.7.4')
+        self.assertGreater(launcher.version_tuple('windows-v0.7.5'), launcher.version_tuple(launcher.VERSION))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_game_languages_are_the_ps4_ids(self):

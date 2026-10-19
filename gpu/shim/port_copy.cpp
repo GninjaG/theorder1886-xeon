@@ -15,6 +15,9 @@
 
 #include "port_toggles.h"
 #include "common/thread.h"
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 namespace PortCopy {
 namespace {
@@ -76,6 +79,7 @@ public:
 
     void WaitAll() {
         // The waiting thread helps instead of only spinning.
+        int spin_count = 0;
         while (true) {
             Task task;
             {
@@ -90,8 +94,13 @@ public:
             }
             if (task.run) {
                 RunAsync(task);
+                spin_count = 0;
             } else {
+#if defined(__x86_64__) || defined(_M_X64)
+                _mm_pause();
+#else
                 std::this_thread::yield();
+#endif
             }
         }
     }
@@ -109,7 +118,11 @@ public:
         Work(*job);
         // Workers only call the task for indices below count, all done before this returns.
         while (job->done.load(std::memory_order_acquire) < count) {
+#if defined(__x86_64__) || defined(_M_X64)
+            _mm_pause();
+#else
             std::this_thread::yield();
+#endif
         }
         std::scoped_lock lk{mutex};
         if (current == job) {

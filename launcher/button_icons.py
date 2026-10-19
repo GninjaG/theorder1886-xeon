@@ -31,12 +31,13 @@ INK, DIM, BODY = '#e6e0d8', '#5a5250', '#262020'
 
 def spec(button, style):
     """(kind, text, color) of an SDL button in a style, or None for an unknown button."""
-    if button in FACE.get(style, {}):
-        text, color = FACE[style][button]
-        return ('symbol' if style == 'playstation' else 'letter'), text, color
+    eff_style = 'xbox' if style == 'xbox' else 'playstation'
+    if button in FACE.get(eff_style, {}):
+        text, color = FACE[eff_style][button]
+        return ('symbol' if eff_style == 'playstation' else 'letter'), text, color
     if button in DPAD:
         return 'dpad', DPAD[button], INK
-    label = LABELS.get(style, {}).get(button)
+    label = LABELS.get(eff_style, {}).get(button)
     if not label:
         return None
     kind = ('bumper' if button.endswith('shoulder') else 'trigger' if button.endswith('trigger')
