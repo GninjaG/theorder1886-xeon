@@ -548,8 +548,8 @@ class SettingsFileMigrationTest(unittest.TestCase):
 
 class ReleaseVersionTest(unittest.TestCase):
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.7.1')
-        self.assertGreater(launcher.version_tuple('windows-v0.7.2'), launcher.version_tuple(launcher.VERSION))
+        self.assertEqual(launcher.VERSION, '0.7.2')
+        self.assertGreater(launcher.version_tuple('windows-v0.7.3'), launcher.version_tuple(launcher.VERSION))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_game_languages_are_the_ps4_ids(self):

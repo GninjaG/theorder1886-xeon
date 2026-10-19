@@ -1,4 +1,4 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.7.1
+The Order: 1886 for PC (theorder1886-port) - version 0.7.2
 =========================================================
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
@@ -10,6 +10,25 @@ NVIDIA GeForce RTX 5060 laptop. Not checked yet: most of the campaign, sound, AM
 graphics cards. Known issues: the first session after an update builds the shader cache again
 (objects can appear a moment late, and there are short pauses); later sessions pause briefly when
 a scene loads; a rare black triangle can flash for one frame.
+
+UPDATING FROM PREVIOUS VERSIONS (VERY IMPORTANT)
+-----------------------------------------------
+When upgrading from older releases (v0.6.x, v0.7.0, v0.7.1) or another fork to avoid
+conflicts, stale shader caches, black screens, or settings loops, delete these files:
+
+1. Launcher settings in AppData:
+   %APPDATA%\theorder1886-launcher\settings.json
+   (or C:\Users\<YourUsername>\AppData\Roaming\theorder1886-launcher\settings.json)
+   If you used the other fork, also delete:
+   C:\Users\<YourUsername>\AppData\Roaming\order1886-launcher\settings.json
+
+2. Game configuration INI inside the extracted port folder:
+   Delete 'theorder.ini' (or 'order1886.ini')
+
+3. Shader and pipeline cache folder inside the port folder:
+   Delete the 'cache' folder inside 'user':
+   <PortFolder>\user\cache
+   (Your save files in <PortFolder>\user\savedata are safe and will NOT be touched).
 
 Requirements
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.

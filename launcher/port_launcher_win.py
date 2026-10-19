@@ -59,12 +59,12 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.1'
+VERSION = '0.7.2'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
 # Never copied over an installation by an update (the package does not hold them either).
-USER_FILES = ('user', 'out', 'mods', 'theorder.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
+USER_FILES = ('user', 'out', 'mods', 'theorder.ini', 'order1886.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -391,13 +391,17 @@ def ini_path():
 
 
 def migrate_ini(folder):
-    """folder/theorder.ini; the settings of releases up to 0.2.0 (gow3.ini) move to it once."""
-    path, old = Path(folder) / 'theorder.ini', Path(folder) / 'gow3.ini'
-    if not path.exists() and old.is_file():
-        try:
-            old.replace(path)
-        except OSError:
-            return old
+    """folder/theorder.ini; settings of earlier releases or forks (order1886.ini, gow3.ini) move to it once."""
+    path = Path(folder) / 'theorder.ini'
+    if not path.exists():
+        for old_name in ('order1886.ini', 'gow3.ini'):
+            old = Path(folder) / old_name
+            if old.is_file():
+                try:
+                    old.replace(path)
+                    break
+                except OSError:
+                    return old
     return path
 
 
