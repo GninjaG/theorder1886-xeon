@@ -85,7 +85,7 @@ constexpr size_t amd_gpu_number_format_bit_size = 4; // All values are under 16
 constexpr size_t surface_format_table_size =
     (1u << amd_gpu_data_format_bit_size) * (1u << amd_gpu_number_format_bit_size);
 
-extern const std::array<vk::Format, surface_format_table_size> surface_format_table;
+extern std::array<vk::Format, surface_format_table_size> surface_format_table;
 
 constexpr size_t GetSurfaceFormatTableIndex(AmdGpu::DataFormat data_format,
                                             AmdGpu::NumberFormat num_format) {
@@ -99,8 +99,8 @@ constexpr size_t GetSurfaceFormatTableIndex(AmdGpu::DataFormat data_format,
 /// port: SurfaceFormat without the assertion (eUndefined for unknown pairs), for speculative
 /// readers such as the draw-preparation workers. Out-of-range fields (garbage sharps) also give
 /// eUndefined instead of reading past the table.
-constexpr vk::Format TrySurfaceFormat(AmdGpu::DataFormat data_format,
-                                      AmdGpu::NumberFormat num_format) noexcept {
+inline vk::Format TrySurfaceFormat(AmdGpu::DataFormat data_format,
+                                   AmdGpu::NumberFormat num_format) noexcept {
     if (static_cast<u32>(data_format) >= (1u << amd_gpu_data_format_bit_size) ||
         static_cast<u32>(num_format) >= (1u << amd_gpu_number_format_bit_size)) {
         return vk::Format::eUndefined;
@@ -109,8 +109,8 @@ constexpr vk::Format TrySurfaceFormat(AmdGpu::DataFormat data_format,
 }
 
 /// port: an unknown pair is logged and gives eUndefined (stale descriptors), not an assertion.
-constexpr vk::Format SurfaceFormat(AmdGpu::DataFormat data_format,
-                                   AmdGpu::NumberFormat num_format) noexcept {
+inline vk::Format SurfaceFormat(AmdGpu::DataFormat data_format,
+                                AmdGpu::NumberFormat num_format) noexcept {
     const vk::Format result = TrySurfaceFormat(data_format, num_format);
     if (result == vk::Format::eUndefined && data_format != AmdGpu::DataFormat::FormatInvalid) {
         LOG_ERROR(Render_Vulkan, "Unknown data_format={} and num_format={}, falling back to eUndefined",

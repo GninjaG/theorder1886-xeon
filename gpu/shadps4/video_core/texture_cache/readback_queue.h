@@ -4,6 +4,7 @@
 #include <cassert>
 #include <deque>
 #include <utility>
+#include <vector>
 
 namespace VideoCore {
 
@@ -17,15 +18,15 @@ public:
         bool valid = true;
         bool watched = true; ///< still protects its pages (see ReleaseOutside)
         std::uint64_t token = 0; ///< port: buffer copy-backs, BufferCache::NoteReadbackPublished
+        std::vector<std::uint8_t> before; ///< Readback Guard snapshot at submission time
     };
     bool CanFit(std::uint64_t size) const {
         return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
     }
     void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload,
-              std::uint64_t token = 0) {
+              std::uint64_t token = 0, std::vector<std::uint8_t> before = {}) {
         assert(CanFit(size));
-        entries.push_back({address, size, tick, std::move(payload)});
-        entries.back().token = token;
+        entries.push_back({address, size, tick, std::move(payload), true, true, token, std::move(before)});
         bytes += size;
     }
     std::uint64_t RequiredTick(std::uint64_t address, std::uint64_t size) const {

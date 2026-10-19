@@ -800,8 +800,28 @@ void PipelineCache::FinishCompilations() {
     }
 }
 
+namespace {
+// port: a draw whose color targets are all small (lookup tables, 1x1 luminance, the end of
+// downsample chains, light ramps). Such draws are often made once at scene initialization;
+// compiling these at once costs a short stall the first time only, preventing unlit or broken materials.
+bool SmallTargetDraw(const AmdGpu::Regs& regs) {
+    bool any = false;
+    for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+        const auto& col_buf = regs.color_buffers[cb];
+        if (!col_buf || !regs.color_target_mask.GetMask(cb)) {
+            continue;
+        }
+        if (u64(col_buf.Pitch()) * col_buf.Height() > 256 * 256) {
+            return false;
+        }
+        any = true;
+    }
+    return any;
+}
+} // namespace
+
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && PortSettings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && !sync_compile && PortSettings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
@@ -863,7 +883,7 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         }
     }
     const auto it = graphics_pipelines.find(prepared.key);
-    return it != graphics_pipelines.end() ? it->second.get() : nullptr;
+    return it != graphics_pipelines.end() && !it->second->Failed() ? it->second.get() : nullptr;
 }
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params,
@@ -883,6 +903,25 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
     }
     sel.draw_indirect_params = params;
+    sync_compile = SmallTargetDraw(liverpool->regs);
+    struct SyncReset {
+        bool& flag;
+        ~SyncReset() {
+            flag = false;
+        }
+    } sync_reset{sync_compile};
+    if (sync_compile) {
+        // Queued in the background earlier: waited for, not compiled twice.
+        if (const auto pending = pending_graphics.find(sel.graphics_key);
+            pending != pending_graphics.end()) {
+            pending.value()->job.Wait();
+            PublishGraphics();
+            if (const auto found = graphics_pipelines.find(sel.graphics_key);
+                found != graphics_pipelines.end()) {
+                return found->second->Failed() ? nullptr : found->second.get();
+            }
+        }
+    }
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
             ++g_port_pending_draws;
@@ -995,7 +1034,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     if (it->second && !it->second->hot_noted) {
         NoteHot(*it->second, 'g', std::hash<GraphicsPipelineKey>{}(sel.graphics_key));
     }
-    return it->second.get();
+    return it->second && !it->second->Failed() ? it->second.get() : nullptr;
 }
 
 const ComputePipeline* PipelineCache::GetComputePipeline() {

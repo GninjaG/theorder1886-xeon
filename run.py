@@ -457,6 +457,11 @@ def main():
         # Resolve language & pass guest arguments
         ps4_lang = resolve_language(cli_lang, env, env['THEORDER_CONFIG'], graphics_options)
         engine_lang = PS4_TO_ENGINE_LANG.get(ps4_lang, ps4_lang)
+        if ps4_lang == 17:
+            title_id = profile[1] if profile and len(profile) > 1 else ''
+            if title_id in ('CUSA00076', 'CUSA00070', 'CUSA00035'):
+                engine_lang = 7
+                print(f'Language: Title {title_id} lacks native PT-BR assets, mapping Portuguese to engine id 7 (PT-PT)', flush=True)
         env['THEORDER_LANGUAGE'] = str(ps4_lang)
         print(f'Language: PS4 id {ps4_lang} -> engine id {engine_lang}', flush=True)
 
@@ -476,6 +481,8 @@ def main():
             guest_lang_args.extend(['--guest-arg', '-language', '--guest-arg', str(engine_lang)])
         if '-enablesubtitles' not in args:
             guest_lang_args.extend(['--guest-arg', '-enablesubtitles'])
+        if '-usedlc' not in args:
+            guest_lang_args.extend(['--guest-arg', '-usedlc'])
 
         timeout_val = get_env(env, 'TIMEOUT', '0')
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),

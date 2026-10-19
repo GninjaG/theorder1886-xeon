@@ -6,8 +6,7 @@ port's.
 Every setting of the port in one window: the game folder and saves, theorder.ini (upscaler,
 preset, output, effects), start-up options passed to run.py as environment variables
 (frame rate, presentation, HDR, ...), mods, third-party patches and controls.
-Launcher options live in %APPDATA%/theorder1886-launcher/settings.json
-(~/.config/theorder1886-launcher on Linux).
+Launcher options live in settings.json within the application folder (100% portable mode).
 
 Frozen with PyInstaller (packaging/windows/package.sh) the same The Order 1886.exe also runs the
 game without the window (`--play`), run.py (`--run`) and the preparation scripts (`--script`),
@@ -58,7 +57,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.4'
+VERSION = '0.7.5'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
@@ -338,7 +337,8 @@ UPSCALERS = [('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеок�
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
-           ('2560x1440', ('2560 × 1440',)), ('3840x2160', ('3840 × 2160 (4K)',))]
+           ('2560x1440', ('2560 × 1440',)), ('3440x1440', ('3440 × 1440 (21:9 Ultrawide)',)),
+           ('3840x2160', ('3840 × 2160 (4K)',)), ('5120x1440', ('5120 × 1440 (32:9 Super Ultrawide)',))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
 # The PS4 system language ids (sceSystemServiceParamGetInt LANG): the game shows the ones its
@@ -763,7 +763,7 @@ ENGINE_FPS_CHOICES = [('60', ('30 FPS (original)',)), ('120', ('60 FPS (default)
                       ('240', ('120 FPS (unlocked)', '120 FPS (разблокировано)'))]
 # The game's 2.40:1 picture, or a game patch that fills a screen of that shape (Vert+).
 ASPECT_CHOICES = [('original', ('Original (2.40:1, black bars)',)), ('16:9', ('16:9',)), ('16:10', ('16:10',)),
-                  ('21:9', ('21:9',))]
+                  ('21:9', ('21:9',)), ('32:9', ('32:9 (Super Ultrawide)',))]
 # Anisotropic filtering forced on the game's mipmapped textures (port_settings.h anisotropy).
 ANISOTROPY_CHOICES = [('0', ('Game default',)), ('2', ('2x',)), ('4', ('4x',)), ('8', ('8x',)),
                       ('16', ('16x',))]
@@ -850,32 +850,24 @@ class Launcher:
             threading.Thread(target=self.check_update, daemon=True).start()
 
     def check_version_migration(self):
-        """Performs automatic cache cleanup and settings migration when upgrading between versions."""
-        # 0. Migrate legacy settings.json from AppData if local settings.json does not exist
-        if not CONFIG_FILE.is_file():
-            legacy_dirs = []
-            if WINDOWS:
-                appdata = os.environ.get('APPDATA', '')
-                if appdata:
-                    legacy_dirs.extend([Path(appdata) / 'theorder1886-launcher', Path(appdata) / 'order1886-launcher'])
-            else:
-                legacy_dirs.append(Path.home() / '.config' / 'theorder1886-launcher')
-            for leg_dir in legacy_dirs:
-                leg_file = leg_dir / 'settings.json'
-                if leg_file.is_file():
-                    try:
-                        imported = load_json(leg_file, {})
-                        if imported:
-                            self.app = {**APP_DEFAULTS, **imported}
-                            atomic_write(CONFIG_FILE, json.dumps(self.app, indent=2, ensure_ascii=False))
-                            print(f'Launcher: migrated settings from {leg_file} to local {CONFIG_FILE}', flush=True)
-                            break
-                    except Exception as e:
-                        print(f'Launcher: error migrating legacy settings: {e}', flush=True)
+        """Performs automatic cache cleanup and settings migration when upgrading between versions.
+        Ensures 100% portable mode by unconditionally purging any legacy AppData directories."""
+        # 1. Unconditionally remove legacy AppData folders if present (portable mode guarantee)
+        if WINDOWS:
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                for folder in ('theorder1886-launcher', 'order1886-launcher'):
+                    legacy_config_dir = Path(appdata) / folder
+                    if legacy_config_dir.is_dir():
+                        try:
+                            shutil.rmtree(legacy_config_dir, ignore_errors=True)
+                            print(f'Launcher: purged legacy AppData directory at {legacy_config_dir}', flush=True)
+                        except Exception:
+                            pass
 
         last_version = self.app.get('last_version', '')
         if last_version != VERSION:
-            # 1. Clean stale shader and pipeline cache in user/cache and user/shader
+            # 2. Clean stale shader and pipeline cache in user/cache and user/shader on version upgrade
             user_dir = Path(self.app.get('user_dir') or (DATA_DIR / 'user'))
             for c_name in ('cache', 'shader'):
                 cache_dir = user_dir / c_name
@@ -886,7 +878,7 @@ class Launcher:
                     except Exception as e:
                         print(f'Launcher: failed to clean cache at {cache_dir}: {e}', flush=True)
 
-            # 2. Migrate legacy order1886.ini if it exists
+            # 3. Migrate legacy order1886.ini if it exists
             legacy_ini = DATA_DIR / 'order1886.ini'
             target_ini = DATA_DIR / 'theorder.ini'
             if legacy_ini.is_file() and not target_ini.is_file():
@@ -901,19 +893,6 @@ class Launcher:
                     print(f'Launcher: removed obsolete {legacy_ini}', flush=True)
                 except Exception:
                     pass
-
-            # 3. Clean legacy AppData folders if present (portable mode)
-            if WINDOWS:
-                appdata = os.environ.get('APPDATA', '')
-                if appdata:
-                    for folder in ('theorder1886-launcher', 'order1886-launcher'):
-                        legacy_config_dir = Path(appdata) / folder
-                        if legacy_config_dir.is_dir():
-                            try:
-                                shutil.rmtree(legacy_config_dir, ignore_errors=True)
-                                print(f'Launcher: removed obsolete config directory at {legacy_config_dir}', flush=True)
-                            except Exception:
-                                pass
 
             # 4. Update last_version
             self.app['last_version'] = VERSION
@@ -1604,11 +1583,11 @@ class Launcher:
         saved = {kind: control_values(self.app.get('controls'), kind) for kind in ('key', 'pad')}
         style = self.app.get('pad_style') if self.app.get('pad_style') in PAD_STYLES else 'playstation'
         self.pad_style = tk.StringVar(value=style)
-        self.pad_style.trace_add('write', lambda *_a: self.relabel_pad_controls())
+        self.pad_style.trace_add('write', lambda *_a: (self.relabel_pad_controls(), self.refresh_save_button()))
         names = ttk.Frame(f)
         for value, label in (('playstation', 'PlayStation'), ('xbox', 'Xbox')):
             ttk.Radiobutton(names, text=label, value=value, variable=self.pad_style,
-                            command=self.relabel_pad_controls).pack(side='left', padx=(0, 14))
+                            command=lambda: (self.relabel_pad_controls(), self.refresh_save_button())).pack(side='left', padx=(0, 14))
         self.row(f, _('Gamepad names'), names, key='pad_style')
         table = ttk.Frame(f)
         table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(16, 0))

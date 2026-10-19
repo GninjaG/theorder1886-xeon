@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 # The game's 2.40:1 picture, or the "Aspect Ratio - <name>" patch that fills a screen of that shape.
-ASPECTS = ('original', '16:9', '16:10', '21:9')
+ASPECTS = ('original', '16:9', '16:10', '21:9', '32:9')
 ENGINE_FPS = (60, 120, 240)
 DEFAULTS = {'aspect_ratio': 'original', 'engine_fps': '120', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1'}

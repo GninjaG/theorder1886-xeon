@@ -222,6 +222,7 @@ private:
         std::jthread thread;
     };
     std::unique_ptr<MetaPrefetch> meta_prefetch;
+    bool sync_compile = false;
     bool AsyncCompilation() const;
     bool RefreshGraphicsKey(PipelineSelection& sel);
     bool RefreshGraphicsStages(PipelineSelection& sel);

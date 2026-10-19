@@ -17,7 +17,7 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_defaults_and_invalid_values(self):
-        self.ini.write_text('aspect_ratio=32:9\nengine_fps=90\nstale_readback=yes\n', encoding='utf-8')
+        self.ini.write_text('aspect_ratio=4:3\nengine_fps=90\nstale_readback=yes\n', encoding='utf-8')
         options, reverted = g.prepare(self.ini, self.state)
         self.assertFalse(reverted)
         self.assertEqual(options, {'aspect_ratio': 'original', 'engine_fps': '120', 'deferred_readback': '1',

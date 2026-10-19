@@ -36,6 +36,10 @@ public:
         return *pipeline;
     }
 
+    bool Failed() const noexcept {
+        return !pipeline;
+    }
+
     vk::PipelineLayout GetLayout() const noexcept {
         return *pipeline_layout;
     }

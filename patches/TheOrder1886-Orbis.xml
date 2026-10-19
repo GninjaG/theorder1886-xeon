@@ -55,6 +55,9 @@
             <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.759375"/>
             <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.759375"/>
             <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.759375"/>
+            <Line Type="float32" Address="0x00896b62" Value="1.77777778" Pattern="c7 83 ac 00 00 00 01 00 00 00 c7 43 48 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x0089f87c" Value="1.77777778" Pattern="c7 45 9c 01 00 00 00 c7 85 38 ff ff ff 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x008a0dd5" Value="1.77777778" Pattern="c7 83 44 01 00 00 01 00 00 00 c7 83 e0 00 00 00 9a 99 19 40" At="16"/>
         </PatchList>
         <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
         <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
@@ -81,6 +84,9 @@
             <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.84375"/>
             <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.84375"/>
             <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.84375"/>
+            <Line Type="float32" Address="0x00896b62" Value="1.6" Pattern="c7 83 ac 00 00 00 01 00 00 00 c7 43 48 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x0089f87c" Value="1.6" Pattern="c7 45 9c 01 00 00 00 c7 85 38 ff ff ff 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x008a0dd5" Value="1.6" Pattern="c7 83 44 01 00 00 01 00 00 00 c7 83 e0 00 00 00 9a 99 19 40" At="16"/>
         </PatchList>
         <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
         <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
@@ -107,6 +113,38 @@
             <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.56953125"/>
             <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.56953125"/>
             <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.56953125"/>
+            <Line Type="float32" Address="0x00896b62" Value="2.37037037" Pattern="c7 83 ac 00 00 00 01 00 00 00 c7 43 48 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x0089f87c" Value="2.37037037" Pattern="c7 45 9c 01 00 00 00 c7 85 38 ff ff ff 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x008a0dd5" Value="2.37037037" Pattern="c7 83 44 01 00 00 01 00 00 00 c7 83 e0 00 00 00 9a 99 19 40" At="16"/>
+        </PatchList>
+        <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
+        <Target Name="fov3" Address="0x0147f3c0" Pattern="c5 fa 5a 83 a8 00 00 00 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="25" Ref="1"/>
+        <Target Name="fov4" Address="0x0147f3d0" Pattern="c5 fa 11 95 34 ff ff ff c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="29" Ref="1"/>
+        <Target Name="fov5" Address="0x0147f5e8" Pattern="c5 fa 11 4d b0 e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="14" Ref="1"/>
+        <Target Name="fov6" Address="0x0147f610" Pattern="49 89 c7 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="20" Ref="1"/>
+        <Target Name="fov7" Address="0x0147f670" Pattern="c5 fa 10 45 bc c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="26" Ref="1"/>
+    </Metadata>
+    <Metadata Title="The Order 1886"
+              Name="Aspect Ratio - 32:9"
+              Note="Fills a 32:9 super ultrawide screen without black bars: the picture keeps the original horizontal view and expands visibility."
+              Author="theorder1886-port"
+              PatchVer="1.0"
+              AppVer="01.02"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <Line Type="float32" Address="0x0044ce8c" Value="3.55555556" Pattern="c7 85 18 fc ff ff 9a 99 19 40 c7 85 d0 fb ff ff 00 00 00 00" At="6"/>
+            <Line Type="float64" Target="fov1" Address="0x0147f2b0" Value="0.3796875"/>
+            <Line Type="float64" Target="fov2" Address="0x0147f2d0" Value="0.3796875"/>
+            <Line Type="float64" Target="fov3" Address="0x0147f3c0" Value="0.3796875"/>
+            <Line Type="float64" Target="fov4" Address="0x0147f3d0" Value="0.3796875"/>
+            <Line Type="float64" Target="fov5" Address="0x0147f5e8" Value="0.3796875"/>
+            <Line Type="float64" Target="fov6" Address="0x0147f610" Value="0.3796875"/>
+            <Line Type="float64" Target="fov7" Address="0x0147f670" Value="0.3796875"/>
+            <Line Type="float32" Address="0x00896b62" Value="3.55555556" Pattern="c7 83 ac 00 00 00 01 00 00 00 c7 43 48 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x0089f87c" Value="3.55555556" Pattern="c7 45 9c 01 00 00 00 c7 85 38 ff ff ff 9a 99 19 40" At="13"/>
+            <Line Type="float32" Address="0x008a0dd5" Value="3.55555556" Pattern="c7 83 44 01 00 00 01 00 00 00 c7 83 e0 00 00 00 9a 99 19 40" At="16"/>
         </PatchList>
         <Target Name="fov1" Address="0x0147f2b0" Pattern="c5 fa 11 85 e4 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>
         <Target Name="fov2" Address="0x0147f2d0" Pattern="c5 fa 11 85 e0 fe ff ff 48 8b bd e8 fe ff ff 48 8b 07 ff 90 08 01 00 00 c5 fa 5a c0 c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ?? c5 fb 59 05 ?? ?? ?? ?? e8 ?? ?? ?? ??" At="45" Ref="1"/>

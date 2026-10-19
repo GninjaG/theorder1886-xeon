@@ -24,7 +24,7 @@ MINGW*|MSYS*)
         -DTHEORDER_LTO="${THEORDER_LTO:-OFF}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
     echo "GPU library and loader: LTO ${THEORDER_LTO:-OFF}"
     if ! ninja -C out/gpu theorder-probe theorder-gpu-capabilities theorder-play > out/gpu-build.log 2>&1; then
-        grep -v '^\[' out/gpu-build.log | tail -40 >&2
+        tail -40 out/gpu-build.log >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     cp out/gpu/theorder-probe.exe out/gpu/theorder-gpu-capabilities.exe out/gpu/theorder-play.exe out/

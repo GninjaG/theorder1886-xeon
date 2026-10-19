@@ -60,10 +60,12 @@ cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
 find "$dest" -name __pycache__ -prune -exec rm -r {} +
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.
+set -f
 forbidden=$(find "$dest" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
     -o -iname user -o -iname cache -o -iname '*.log' -o -iname theorder.ini -o -iname settings.json \
     -o -iname mods.json -o -iname patches.json -o -iname 'nvngx_dlss*.dll' \
     -o \( ! -path "*/fsr4_shaders/*" -iname '*.spv' \) -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' \) -print)
+set +f
 if [[ -n $forbidden ]]; then
     echo "Package holds files that must not ship:" >&2
     echo "$forbidden" >&2

@@ -231,11 +231,38 @@ static size_t carve_host(uintptr_t a, uintptr_t b) {
     free(runs);
     return at;
 }
+/* theorder 19 Oct 2026: a guest mapping is made of views of at most VIEW_CHUNK bytes, cut at
+ * VIEW_CHUNK-aligned guest addresses. Windows only unmaps whole views: unmapping small blocks of a large
+ * mapping (carve_host) unmapped all of it, mapped the rest again and restored every page's
+ * protection, about 23 ms each time. Transitions and cutscenes unmap ~100 1 MiB pieces:
+ * a 1-1.8 s freeze. Now it touches at most the two chunks at the ends of the range.
+ * Mappings whose address or offset is not 64 KiB aligned stay one view (view offsets must keep
+ * the alignment Windows asks for). THEORDER_VIEW_CHUNK_MB=0 maps every range as one view. */
+#define VIEW_CHUNK (UINT64_C(2)<<20)
+static int view_chunks(void) {
+    static int on=-1;
+    if (on<0) { const char *env=getenv("THEORDER_VIEW_CHUNK_MB"); on=!(env && env[0]=='0'); }
+    return on;
+}
 static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, uint64_t phys) {
     size_t i=carve_host(address,address+size);
     if (reserved) return 0;
-    regions[i].phys=phys; regions[i].mapped=1;
-    view_map(&regions[i],win_prot(prot));
+    const DWORD protect=win_prot(prot);
+    const uintptr_t end=address+size;
+    const int chunked=view_chunks() && !(address&0xffff) && !(phys&0xffff);
+    for (uintptr_t at=address; at<end; ++i) {
+        uintptr_t next=chunked ? (at/VIEW_CHUNK+1)*VIEW_CHUNK : end;
+        if (next>end) next=end;
+        if (next<end) { /* split the rest off: [at,next) stays at regions[i] */
+            if (!VirtualFree((void *)at,next-at,MEM_RELEASE|MEM_PRESERVE_PLACEHOLDER))
+                win_fail("splitting a placeholder",at,next-at);
+            regions[i].end=next;
+            region_insert(i+1,(HostRegion){next,end,0,0});
+        }
+        regions[i].phys=phys+(at-address); regions[i].mapped=1;
+        view_map(&regions[i],protect);
+        at=next;
+    }
     return 0;
 }
 static int host_unmap(uintptr_t address, uint64_t size) { carve_host(address,address+size); return 0; }

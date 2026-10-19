@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cstdlib>
+#include <functional>
 #include <unordered_set>
+#include <vector>
 #include "shader_recompiler/ir/breadth_first_search.h"
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/program.h"
@@ -80,12 +84,102 @@ static bool IsDivergent(const IR::U1& cond) {
            }) == true;
 }
 
+// With several GCN waves per group a condition can be uniform inside each wave (ballots,
+// readfirstlane, loaded data) and still differ between waves: a group barrier inside it hangs
+// the GPU. Only values built from constants, user data and the workgroup id count as uniform.
+static bool IsGroupNonUniform(const IR::U1& cond) {
+    using Op = IR::Opcode;
+    return IR::BreadthFirstSearch(cond, [](IR::Inst* inst) -> std::optional<bool> {
+               switch (inst->GetOpcode()) {
+               case Op::GetAttribute:
+               case Op::GetAttributeU1:
+               case Op::GetAttributeU32:
+                   if (inst->NumArgs() > 0 && inst->Arg(0).IsImmediate() &&
+                       inst->Arg(0).Type() == IR::Type::Attribute &&
+                       inst->Arg(0).Attribute() == IR::Attribute::WorkgroupId) {
+                       return std::nullopt;
+                   }
+                   return true;
+               case Op::GetExec:
+               case Op::GetVcc:
+               case Op::GetVccLo:
+               case Op::GetVccHi:
+               case Op::GetScc:
+               case Op::GetScalarRegister:
+               case Op::GetVectorRegister:
+               case Op::GetVirtualRegister:
+               case Op::MaskedBitCount32:
+               case Op::LaneId:
+               case Op::QuadBroadcast:
+               case Op::ReadFirstLane:
+               case Op::ReadLane:
+               case Op::WriteLane:
+               case Op::Ballot:
+               case Op::BallotFindLsb:
+               case Op::InverseBallot:
+               case Op::GroupAny:
+                   return true;
+               default:
+                   break;
+               }
+               const auto name = IR::NameOf(inst->GetOpcode());
+               if (name.starts_with("LoadShared") || name.starts_with("SharedAtomic") ||
+                   name.starts_with("LoadBuffer") || name.starts_with("BufferAtomic") ||
+                   name.starts_with("Image") || name.starts_with("Load")) {
+                   return true;
+               }
+               return std::nullopt;
+           }) == true;
+}
+
+static NodeSet FindBarrierRegions(const IR::AbstractSyntaxList& syntax_list) {
+    using Type = IR::AbstractSyntaxNode::Type;
+    NodeSet regions;
+    std::vector<const IR::Block*> open;
+    for (const IR::AbstractSyntaxNode& node : syntax_list) {
+        switch (node.type) {
+        case Type::If:
+            open.push_back(node.data.if_node.merge);
+            break;
+        case Type::Loop:
+            open.push_back(node.data.loop.merge);
+            break;
+        case Type::EndIf:
+        case Type::Repeat: {
+            const IR::Block* merge =
+                node.type == Type::EndIf ? node.data.end_if.merge : node.data.repeat.merge;
+            const auto it = std::ranges::find(open, merge);
+            if (it != open.end()) {
+                open.erase(it, open.end());
+            }
+            break;
+        }
+        case Type::Block:
+            for (const IR::Inst& inst : node.data.block->Instructions()) {
+                if (inst.GetOpcode() == IR::Opcode::Barrier) {
+                    regions.insert(open.begin(), open.end());
+                    break;
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return regions;
+}
+
 // Inserts a barrier after divergent conditional blocks to avoid undefined
 // behavior when some threads write and others read from shared memory.
 static void EmitBarrierInMergeBlock(const IR::AbstractSyntaxNode::Data& data,
-                                    NodeSet& divergence_end, u32& divergence_depth) {
+                                    NodeSet& divergence_end, u32& divergence_depth,
+                                    bool group_check = false,
+                                    const NodeSet* barrier_regions = nullptr) {
     const IR::U1 cond = data.if_node.cond;
-    if (IsDivergent(cond)) {
+    if (barrier_regions && barrier_regions->contains(data.if_node.merge)) {
+        return;
+    }
+    if (group_check ? IsGroupNonUniform(cond) : IsDivergent(cond)) {
         if (divergence_depth == 0) {
             EmitBarrierAtBlockStart(data.if_node.merge);
         }
@@ -96,17 +190,24 @@ static void EmitBarrierInMergeBlock(const IR::AbstractSyntaxNode::Data& data,
 
 // A barrier inside a loop is invalid when different invocations leave on different iterations.
 // Mark such loops so their shared-memory synchronization can be deferred to the merge block.
-static NodeSet FindDivergentLoops(const IR::AbstractSyntaxList& syntax_list) {
+static NodeSet FindDivergentLoops(const IR::AbstractSyntaxList& syntax_list, bool group_check = false,
+                                  const NodeSet* barrier_regions = nullptr) {
     NodeSet divergent_loops;
+    const auto divergent = [group_check](const IR::U1& cond) {
+        return group_check ? IsGroupNonUniform(cond) : IsDivergent(cond);
+    };
+    const auto game_barrier = [barrier_regions](const IR::Block* merge) {
+        return barrier_regions && barrier_regions->contains(merge);
+    };
     for (const IR::AbstractSyntaxNode& node : syntax_list) {
         switch (node.type) {
         case IR::AbstractSyntaxNode::Type::Repeat:
-            if (IsDivergent(node.data.repeat.cond)) {
+            if (divergent(node.data.repeat.cond) && !game_barrier(node.data.repeat.merge)) {
                 divergent_loops.emplace(node.data.repeat.merge);
             }
             break;
         case IR::AbstractSyntaxNode::Type::Break:
-            if (IsDivergent(node.data.break_node.cond)) {
+            if (divergent(node.data.break_node.cond) && !game_barrier(node.data.break_node.merge)) {
                 divergent_loops.emplace(node.data.break_node.merge);
             }
             break;
@@ -118,6 +219,14 @@ static NodeSet FindDivergentLoops(const IR::AbstractSyntaxList& syntax_list) {
 }
 
 static constexpr u32 GcnSubgroupSize = 64;
+
+bool MultiwaveLdsBarriers(u64 pgm_hash) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("THEORDER_LDS_BARRIERS_MULTIWAVE");
+        return !env || env[0] != '0';
+    }();
+    return enabled;
+}
 
 void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_info,
                              const Profile& profile) {
@@ -131,12 +240,12 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     if (shared_memory_size == 0) {
         return;
     }
-    // The compiler can only omit barriers when the local workgroup size is the same as the HW
-    // subgroup.
-    if (threadgroup_size != GcnSubgroupSize || !profile.needs_lds_barriers) {
-        // GCN waves can use shared memory between invocations without explicit barriers because
-        // they run in lockstep. Host compilers can reorder these accesses, so keep their order
-        // with subgroup memory barriers.
+    const bool multiwave = MultiwaveLdsBarriers(program.info.pgm_hash);
+    const bool wave_split = profile.subgroup_size < GcnSubgroupSize;
+    const bool eligible = threadgroup_size == GcnSubgroupSize ||
+                          (multiwave && wave_split && threadgroup_size > GcnSubgroupSize &&
+                           threadgroup_size % GcnSubgroupSize == 0);
+    if (!eligible || !profile.needs_lds_barriers) {
         for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
             if (node.type == IR::AbstractSyntaxNode::Type::Block) {
                 EmitBarrierInBlock(node.data.block, true);
@@ -147,7 +256,17 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     using Type = IR::AbstractSyntaxNode::Type;
     u32 divergence_depth{};
     NodeSet divergence_end;
-    const NodeSet divergent_loops = FindDivergentLoops(program.syntax_list);
+    const bool group_check = threadgroup_size != GcnSubgroupSize;
+    if (group_check) {
+        for (size_t i = 0; i + 1 < program.syntax_list.size(); ++i) {
+            if (program.syntax_list[i].type == Type::Return) {
+                return;
+            }
+        }
+    }
+    const NodeSet barrier_regions = group_check ? FindBarrierRegions(program.syntax_list) : NodeSet{};
+    const NodeSet divergent_loops =
+        FindDivergentLoops(program.syntax_list, group_check, group_check ? &barrier_regions : nullptr);
     for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
         if (node.type == Type::EndIf) {
             if (divergence_end.contains(node.data.end_if.merge)) {
@@ -155,10 +274,9 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
             }
             continue;
         }
-        // Check if branch depth is zero, we don't want to insert barrier in potentially divergent
-        // code.
         if (node.type == Type::If) {
-            EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth);
+            EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, group_check,
+                                   group_check ? &barrier_regions : nullptr);
             continue;
         }
         if (node.type == Type::Loop && divergent_loops.contains(node.data.loop.merge)) {

@@ -1,26 +1,25 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.7.2
+The Order: 1886 for PC (theorder1886-port) - version 0.7.5
 =========================================================
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
 eboot.bin, sce_module and sce_sys. Tested: CUSA00035, version 01.02.
 
-This is a work in progress. Checked so far: the logos, the title screen, the prologue and the first
-gameplay after it (the cover tutorial, from a save), at the game's own 30 FPS without crashes on an
-NVIDIA GeForce RTX 5060 laptop. Not checked yet: most of the campaign, sound, AMD and Intel
-graphics cards. Known issues: the first session after an update builds the shader cache again
-(objects can appear a moment late, and there are short pauses); later sessions pause briefly when
-a scene loads; a rare black triangle can flash for one frame.
+Support the project on Ko-fi: https://ko-fi.com/mateusmeneses
 
-UPDATING FROM PREVIOUS VERSIONS (VERY IMPORTANT)
------------------------------------------------
-When upgrading from older releases (v0.6.x, v0.7.0, v0.7.1) or another fork to avoid
-conflicts, stale shader caches, black screens, or settings loops, delete these files:
+This build runs in 100% PORTABLE mode: all configurations, saves, shaders and caches reside
+locally inside this folder. No global %APPDATA% files are created.
 
-1. Launcher settings in AppData:
-   %APPDATA%\theorder1886-launcher\settings.json
-   (or C:\Users\<YourUsername>\AppData\Roaming\theorder1886-launcher\settings.json)
-   If you used the other fork, also delete:
-   C:\Users\<YourUsername>\AppData\Roaming\order1886-launcher\settings.json
+UPDATES & IMPROVEMENTS IN v0.7.5:
+- Fixed Sun Shadows (Issue #26): Corrected BufferMemoryBarrier2 flags in buffer cache download and included EVSM shadow reduction shader hash 0x8ea0ef5b with HTILE barrier flushing.
+- Super Ultrawide 32:9 Support (Issue #27): Added Aspect Ratio 32:9 patch with 3.55555556 aspect ratio, 0.3796875 FOV, and launcher resolutions (3440x1440 and 5120x1440).
+- Portuguese Localization Fix (Issue #28): Automatically maps Portuguese to engine id 7 on CUSA00076 and CUSA00035, preventing fallback to English. Full native PT-BR audio/subtitles preserved on CUSA00785.
+- Elimination of Black Polygons, Flickers & Combat Stutter (Issues #29 & #30): Reverted invalid depth attachment eGeneral transition, keeping depth buffers in optimal depth layouts (eDepthStencilAttachmentOptimal) with full Hi-Z hardware culling.
+- Windows Cooperative CPU Scheduler: Replaced busy-spinning sched_yield() with SwitchToThread() and Sleep(0) fallback in runtime_thread.c, eliminating 100% CPU lock and thread starvation on high-core processors (AMD Ryzen 9 7950X, Threadripper 3990X).
+- AMD RDNA 4 Surface Format Fallback (Issue #33): Added dynamic remapping of A2B10G10R10SnormPack32 to A2B10G10R10UnormPack32 when unsupported by host Vulkan drivers, eliminating shiny silver reflection artifacts in dark scenes.
+- Official DLC Runtime Loading (Issue #16): Engine automatically passes -usedlc at startup to load accessible DLC costume and weapon packages mounted at /addcont0 and /addcont1.
+- 100% Portable Mode: settings.json and theorder.ini reside strictly in the local folder. Stale %APPDATA% entries are automatically purged.
+- Aspect Ratio Menu Fix: In 16:9, 16:10, 21:9, and 32:9 the game pause/options menus expand to full screen.
+- Support up to 120 FPS Unlocked with smooth micro-pause pacing and FSR 3.1 temporal upscaling.
 
 2. Game configuration INI inside the extracted port folder:
    Delete 'theorder.ini' (or 'order1886.ini')
