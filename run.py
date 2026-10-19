@@ -365,7 +365,7 @@ def main():
         # off unless the launcher's experimental switch is on; linear image readbacks fix textures.
         if get_env(env, 'EXPERIMENTAL_UPSCALER') != '1':
             env.setdefault('THEORDER_UPSCALER', 'none')
-        env.setdefault('THEORDER_READBACK_LINEAR', '1')
+        env.setdefault('THEORDER_READBACK_LINEAR', '0')
         patches_val = get_env(env, 'PATCHES', '')
         patches_only = get_env(env, 'PATCHES_ONLY') == '1'
         if profile:

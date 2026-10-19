@@ -225,14 +225,14 @@ struct Image {
     }
 
     [[nodiscard]] u32 NumLayers() const noexcept {
-        // Depth is the number of layers for Array images.
-        u32 slices = depth + 1;
         const auto image_type = GetType();
-        if (image_type == ImageType::Color3D) {
-            // Depth is the actual texture depth for 3D images.
-            slices = 1;
-        } else if (image_type == ImageType::Cube) {
-            // Depth is the number of full cubes for Cube images.
+        if (image_type == ImageType::Color1D || image_type == ImageType::Color2D ||
+            image_type == ImageType::Color2DMsaa || image_type == ImageType::Color3D) {
+            return 1;
+        }
+        // Depth is the number of layers for Array images or full cubes.
+        u32 slices = depth + 1;
+        if (image_type == ImageType::Cube) {
             slices *= 6;
         }
         if (pow2pad) {
@@ -251,7 +251,7 @@ struct Image {
         if (IsGuestMsaa()) {
             return 1;
         }
-        return last_level + 1;
+        return std::max(1u, static_cast<u32>(last_level + 1));
     }
 
     u32 GuestNumSamples() const {

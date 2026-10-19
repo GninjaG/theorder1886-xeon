@@ -3132,7 +3132,71 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         const auto mip = image_view.info.range.base.level;
 
         const auto& col_buf = regs.color_buffers[cb];
-        const bool is_clear = texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice);
+        const u64 frame = PortStats::gpu_frames.load(std::memory_order_relaxed);
+        static std::array<std::pair<u64, u64>, 16> forced_clear{};
+        static std::array<std::tuple<u64, u64, u32>, 64> rt_use{}; // addr, last_frame, consec
+        static std::array<u64, 32> cmask_rts{}; // RTs cleared via CMask
+        const bool is_volumetric_rt = col_buf.GetNumberFmt() == AmdGpu::NumberFormat::Float &&
+                                      image->info.size.width <= 960 &&
+                                      image->info.size.height <= 400 &&
+                                      !(image->info.size.width == 1 && image->info.size.height == 1);
+        const bool is_add_blend =
+            regs.blend_control[0].enable &&
+            regs.blend_control[0].color_dst_factor == AmdGpu::BlendControl::BlendFactor::One &&
+            (regs.blend_control[0].color_src_factor == AmdGpu::BlendControl::BlendFactor::One ||
+             (regs.blend_control[0].color_src_factor ==
+                  AmdGpu::BlendControl::BlendFactor::SrcAlpha &&
+              regs.blend_control[0].color_func == AmdGpu::BlendControl::BlendFunc::Add));
+        const bool is_add_1920 = is_add_blend && image->info.size.width == 1920 &&
+                                 col_buf.GetNumberFmt() == AmdGpu::NumberFormat::Float;
+        if (texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice)) {
+            for (auto& e : cmask_rts) {
+                if (e == 0 || e == col_buf.Address()) {
+                    e = col_buf.Address();
+                    break;
+                }
+            }
+        }
+        const bool is_cmask_rt = [&] {
+            for (const auto e : cmask_rts) {
+                if (e == col_buf.Address()) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+        bool blood_rt = false;
+        if (is_add_1920 && !is_cmask_rt) {
+            for (auto& e : rt_use) {
+                if (std::get<0>(e) == 0 || std::get<0>(e) == col_buf.Address()) {
+                    if (std::get<0>(e) == 0) {
+                        std::get<0>(e) = col_buf.Address();
+                        std::get<1>(e) = ~0ull;
+                    }
+                    const bool consecutive = std::get<1>(e) == frame - 1;
+                    std::get<2>(e) = consecutive ? std::get<2>(e) + 1 : 1;
+                    std::get<1>(e) = frame;
+                    blood_rt = std::get<2>(e) >= 2;
+                    break;
+                }
+            }
+        }
+        bool force_clear = false;
+        if (is_volumetric_rt || blood_rt) {
+            for (auto& e : forced_clear) {
+                if (e.first == 0 || e.first == col_buf.Address()) {
+                    if (e.first == 0) {
+                        e.first = col_buf.Address();
+                        e.second = ~0ull;
+                    }
+                    force_clear = e.second != frame;
+                    e.second = frame;
+                    break;
+                }
+            }
+        }
+        const bool is_clear =
+            force_clear || texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice);
         texture_cache.TouchMeta(col_buf.CmaskAddress(), slice, false);
 
         if (reduced) {
@@ -3162,8 +3226,12 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         state.height = std::min<u32>(state.height, std::max(image->info.size.height >> mip, 1u));
         state.num_layers = std::min<u32>(state.num_layers, image_view.info.range.extent.layers);
 
-        const auto clear_value =
-            is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{};
+        const auto clear_value = [&]() {
+            if (force_clear) {
+                return vk::ClearValue{};
+            }
+            return is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{};
+        }();
         auto& attachment = state.color_attachments[cb];
         attachment.image_view = *image_view.image_view;
         attachment.image_layout = runtime.GetBackingLayout(image);
@@ -3436,6 +3504,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
+            texture_cache.InvalidateMemory(address, num_bytes);
             return;
         }
     }

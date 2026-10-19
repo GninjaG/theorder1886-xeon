@@ -106,6 +106,10 @@ enum class TileMode : u32 {
     Thick3DThickPrt = 24,
     Thick2DXThick = 25,
     Thick3DXThick = 26,
+    Thin3DThin1 = 27,
+    Thick3DThickAlt = 28,
+    Thick3DXThickAlt = 29,
+    Prt3DThick = 30,
     DisplayLinearGeneral = 31,
 };
 
@@ -229,6 +233,14 @@ constexpr ArrayMode GetArrayMode(TileMode tile_mode) {
         return ArrayMode::Array2DTiledXThick;
     case TileMode::Thick3DXThick:
         return ArrayMode::Array3DTiledXThick;
+    case TileMode::Thin3DThin1:
+        return ArrayMode::Array3DTiledThin1;
+    case TileMode::Thick3DThickAlt:
+        return ArrayMode::Array3DTiledThick;
+    case TileMode::Thick3DXThickAlt:
+        return ArrayMode::Array3DTiledXThick;
+    case TileMode::Prt3DThick:
+        return ArrayMode::ArrayPrt3DTiledThick;
     case TileMode::DisplayLinearAligned:
         return ArrayMode::ArrayLinearAligned;
     case TileMode::DisplayLinearGeneral:
@@ -263,6 +275,7 @@ constexpr MicroTileMode GetMicroTileMode(TileMode tile_mode) {
     case TileMode::ThinThinPrt:
     case TileMode::Thin2DThinPrt:
     case TileMode::Thin3DThinPrt:
+    case TileMode::Thin3DThin1:
         return MicroTileMode::Thin;
     case TileMode::Thick1DThick:
     case TileMode::Thick2DThick:
@@ -272,6 +285,9 @@ constexpr MicroTileMode GetMicroTileMode(TileMode tile_mode) {
     case TileMode::Thick3DThickPrt:
     case TileMode::Thick2DXThick:
     case TileMode::Thick3DXThick:
+    case TileMode::Thick3DThickAlt:
+    case TileMode::Thick3DXThickAlt:
+    case TileMode::Prt3DThick:
         return MicroTileMode::Thick;
     default:
         return MicroTileMode::Display; // port: as GetArrayMode

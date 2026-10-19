@@ -170,7 +170,7 @@ ImageInfo::ImageInfo(const AmdGpu::Image& sharp, const Shader::ImageResource& de
     };
     size.width = image.width + 1;
     size.height = image.height + 1;
-    size.depth = props.is_volume ? image.depth + 1 : 1;
+    size.depth = props.is_volume ? std::min<u32>(image.depth + 1, 2048u) : 1;
     pitch = image.Pitch();
     resources.levels = image.NumLevels();
     resources.layers = std::min(image.NumLayers(), 2048u);

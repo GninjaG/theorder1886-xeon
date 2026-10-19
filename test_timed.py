@@ -22,12 +22,46 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     timeout_sec, run_args = _parse_timeout(argv)
 
+    dump_dir = os.path.abspath('out/dump')
+    if os.path.exists(dump_dir):
+        for f in os.listdir(dump_dir):
+            try:
+                os.remove(os.path.join(dump_dir, f))
+            except OSError:
+                pass
+
+    pad_file = os.path.abspath('pad_inject.txt')
+    with open(pad_file, 'w') as f:
+        f.write('')
+
     env = dict(os.environ)
     env['THEORDER_GAME_DIR'] = r'C:\Users\Mateus\Downloads\games\CUSA00035'
     env['THEORDER_TIMEOUT'] = str(timeout_sec)
-    env['THEORDER_FRAME_DUMP_INTERVAL'] = '100'
+    env['THEORDER_FRAME_DUMP_INTERVAL'] = '60'
+    env['THEORDER_USER_DIR'] = os.path.abspath('out/user_gameplay')
+    env['THEORDER_PAD_FILE'] = pad_file
 
-    print(f"Launching game with THEORDER_TIMEOUT={timeout_sec}s, dumping frames every 100 flips...")
+    import threading
+    import time
+
+    stop_event = threading.Event()
+    def pad_pusher():
+        time.sleep(12)
+        while not stop_event.is_set():
+            try:
+                with open(pad_file, 'w') as f:
+                    f.write('cross\n')
+                time.sleep(0.3)
+                with open(pad_file, 'w') as f:
+                    f.write('\n')
+                time.sleep(2.0)
+            except Exception:
+                pass
+
+    t = threading.Thread(target=pad_pusher, daemon=True)
+    t.start()
+
+    print(f"Launching game with THEORDER_TIMEOUT={timeout_sec}s, dumping frames every 60 flips...")
     try:
         with open('run_video_test.log', 'w', encoding='utf-8', errors='replace') as f:
             result = subprocess.run(
@@ -35,12 +69,15 @@ def main(argv=None):
                 env=env,
                 stdout=f,
                 stderr=subprocess.STDOUT,
-                timeout=timeout_sec + 10
+                timeout=timeout_sec + 15
             )
+        stop_event.set()
         print(f"Game finished with exit code {result.returncode}")
+        subprocess.run([sys.executable, 'tools/convert_dumps.py'])
         return result.returncode
     except subprocess.TimeoutExpired:
         print(f"Subprocess timeout expired after {timeout_sec + 10} seconds; process terminated.")
+        subprocess.run([sys.executable, 'tools/convert_dumps.py'])
         return 124
 
 

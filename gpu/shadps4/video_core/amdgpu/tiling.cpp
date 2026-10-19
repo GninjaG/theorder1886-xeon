@@ -44,6 +44,10 @@ PipeConfig GetPipeConfig(TileMode tile_mode) {
     case TileMode::ThickThickPrt:
     case TileMode::Thick3DThickPrt:
     case TileMode::Thick3DXThick:
+    case TileMode::Thin3DThin1:
+    case TileMode::Thick3DThickAlt:
+    case TileMode::Thick3DXThickAlt:
+    case TileMode::Prt3DThick:
         return PipeConfig::P8_32x32_8x16;
     case TileMode::DisplayLinearGeneral:
         return PipeConfig::P2;
@@ -81,6 +85,10 @@ PipeConfig GetAltPipeConfig(TileMode tile_mode) {
     case TileMode::Thick3DThickPrt:
     case TileMode::Thick2DXThick:
     case TileMode::Thick3DXThick:
+    case TileMode::Thin3DThin1:
+    case TileMode::Thick3DThickAlt:
+    case TileMode::Thick3DXThickAlt:
+    case TileMode::Prt3DThick:
         return PipeConfig::P16_32x32_8x16;
     case TileMode::DisplayLinearGeneral:
         return PipeConfig::P2;
@@ -110,6 +118,9 @@ u32 GetSampleSplit(TileMode tile_mode) {
     case TileMode::Thick3DThickPrt:
     case TileMode::Thick2DXThick:
     case TileMode::Thick3DXThick:
+    case TileMode::Thick3DThickAlt:
+    case TileMode::Thick3DXThickAlt:
+    case TileMode::Prt3DThick:
     case TileMode::DisplayLinearGeneral:
         return 1;
     case TileMode::Display2DThin:
@@ -120,6 +131,7 @@ u32 GetSampleSplit(TileMode tile_mode) {
     case TileMode::ThinThinPrt:
     case TileMode::Thin2DThinPrt:
     case TileMode::Thin3DThinPrt:
+    case TileMode::Thin3DThin1:
         return 2;
     default:
         return 1;
@@ -149,6 +161,10 @@ u32 GetTileSplitHw(TileMode tile_mode) {
     case TileMode::Thick3DThickPrt:
     case TileMode::Thick2DXThick:
     case TileMode::Thick3DXThick:
+    case TileMode::Thin3DThin1:
+    case TileMode::Thick3DThickAlt:
+    case TileMode::Thick3DXThickAlt:
+    case TileMode::Prt3DThick:
     case TileMode::DisplayLinearGeneral:
         return 64;
     case TileMode::Depth2DThin128:
