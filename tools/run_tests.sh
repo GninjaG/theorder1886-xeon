@@ -11,7 +11,7 @@ tests=(mp3 videodec services pad-map audio-downmix cpu-check isa-emulate isa-stu
        frame-capture lighting-test-knob amd-paths no-msaa async-pipeline-cache async-fetch-snapshot
        ui-composition upscaler-support perf-overlay readback-queue wait-diagnostics
        graphics-settings readback-sources page-state scene-resolution taa-shader camera-motion dma-barriers
-       shader-resource)
+       renderpass-barrier shader-resource)
 declare -A args=([isa-stub]=tests/data/isa_fixture.bin)
 if ! ninja -C out/gpu "${tests[@]/%/-test}" > out/tests-build.log 2>&1; then
     grep -E 'error:|FAILED' out/tests-build.log | head -20; echo 'test build failed (out/tests-build.log)'; exit 1

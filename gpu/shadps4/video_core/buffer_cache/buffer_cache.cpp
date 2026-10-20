@@ -469,6 +469,11 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     // Synchronize prior GPU writes to this arena buffer (e.g. compute SSBO writes) before the transfer
     // read. Without this barrier the copy can read stale L2 cache contents written before the
     // dispatch, which surfaced as all-zero readbacks of the cascade AABB ring buffer (TdlifePeng 6d27ee8e).
+    // End any open dynamic-rendering instance first: a vkCmdPipelineBarrier2 recorded inside a render
+    // pass is illegal without dynamicRenderingLocalRead (VUID-vkCmdPipelineBarrier2-None-09553/09554),
+    // and the producer/consumer ordering it guards would otherwise not be honored (matches the sibling
+    // EndRendering-before-CopyBuffer in ReadEdgeImagePages).
+    scheduler.EndRendering();
     scheduler.Record([handle = arena->Handle(), size = arena->SizeBytes()](vk::CommandBuffer cmdbuf) {
         const vk::BufferMemoryBarrier2 pre_barrier = {
             .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
