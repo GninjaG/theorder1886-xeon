@@ -362,9 +362,22 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
 }
 
 // port: raw copy of an image for THEORDER_FRAME_DUMP_TRIGGER, written once the GPU is done.
+static const char* RawChannelOrder(vk::Format format) {
+    switch (format) {
+    case vk::Format::eR8G8B8A8Unorm:
+    case vk::Format::eR8G8B8A8Srgb:
+        return "rgba";
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb:
+        return "bgra";
+    default:
+        return "unknown";
+    }
+}
+
 static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                     vk::Image image, vk::ImageLayout layout, u32 w, u32 h, const char* name,
-                    int index) {
+                    int index, const char* channel_order) {
     const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                        .size = VkDeviceSize(w) * h * 4,
                                        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
@@ -386,8 +399,8 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     std::error_code ec;
     std::filesystem::create_directories(dump_dir, ec);
     char path[512];
-    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dump_dir.c_str(), name,
-                  index, w, h);
+    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u_%s.raw", dump_dir.c_str(), name,
+                  index, w, h, channel_order);
     scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
                                       size = buffer_ci.size, file = std::string{path}] {
         vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
@@ -495,7 +508,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                 runtime.FlushBarriers();
                 DumpRaw(instance, draw_scheduler, cmdbuf, image.GetImage(),
                         vk::ImageLayout::eTransferSrcOptimal, image.info.size.width,
-                        image.info.size.height, "display", frame_dump_index);
+                    image.info.size.height, "display", frame_dump_index,
+                    RawChannelOrder(view_info.format));
             }
             auto& view = image.FindView(view_info);
             if (view.image_view) {
@@ -555,7 +569,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                                       .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
         cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &done});
         DumpRaw(instance, draw_scheduler, cmdbuf, frame->image, vk::ImageLayout::eGeneral,
-                frame->width, frame->height, "output", frame_dump_index);
+            frame->width, frame->height, "output", frame_dump_index,
+            RawChannelOrder(swapchain.GetHDR() ? vk::Format::eUndefined
+                               : swapchain.GetSurfaceFormat().format));
         std::printf("Frame dump %d at flip %llu\n", frame_dump_index,
                     static_cast<unsigned long long>(PortStats::flips.load()));
         ++frame_dump_index;

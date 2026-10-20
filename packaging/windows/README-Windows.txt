@@ -1,5 +1,13 @@
-The Order: 1886 for PC (theorder1886-port) - version 0.7.2
+The Order: 1886 for PC (theorder1886-port) - version 0.7.6-rc.1 (TEST PRE-RELEASE)
 =========================================================
+
+This is an investigation build, NOT a replacement for stable windows-v0.7.5.
+It is based on the v0.7.3 renderer plus the flicker RCA and regression-harness work.
+The separate v0.7.4/v0.7.5 branch has NOT been merged into this build.
+No before/after gameplay validation establishes that #29, #30 or #39 is fixed.
+Extract into a NEW folder and test with COPIES of saves/configs, not your only copy.
+The existing launcher upgrade routine can clear its selected profile's shader cache.
+Do not use this RC with your original user profile. Keep the stable installation intact.
 
 No game files are included. You need your own copy of The Order: 1886 as a folder that contains
 eboot.bin, sce_module and sce_sys. Tested: CUSA00035, version 01.02.

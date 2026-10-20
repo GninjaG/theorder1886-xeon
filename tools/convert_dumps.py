@@ -16,16 +16,20 @@ def main():
 
     for raw_path in files:
         png_path = raw_path[:-4] + ".png"
-        m = re.search(r'(\d+)x(\d+)\.raw$', raw_path)
+        m = re.search(r'(\d+)x(\d+)(?:_(rgba|bgra|unknown))?\.raw$', raw_path)
         if not m:
             continue
         w, h = int(m.group(1)), int(m.group(2))
+        channel_order = m.group(3) or 'bgra'
+        if channel_order == 'unknown':
+            print(f"Skipping {raw_path}: unknown raw channel order.")
+            continue
         try:
             with open(raw_path, 'rb') as f:
                 data = f.read()
             if len(data) >= w * h * 4:
                 # Vulkan A8R8G8B8Srgb is stored as BGRA in memory
-                img = Image.frombytes('RGBA', (w, h), data[:w*h*4], 'raw', 'BGRA')
+                img = Image.frombytes('RGBA', (w, h), data[:w*h*4], 'raw', channel_order.upper())
                 img.save(png_path)
                 print(f"Converted {raw_path} -> {png_path} ({w}x{h})")
         except Exception as e:

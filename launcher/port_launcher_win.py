@@ -59,7 +59,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.3'
+VERSION = '0.7.6-rc.1'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
@@ -2399,7 +2399,11 @@ def play_without_window(settings):
 
 
 def version_tuple(text):
-    return tuple(int(number) for number in re.findall(r'\d+', text or ''))
+    match = re.search(r'(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?', text or '')
+    if not match:
+        return ()
+    major, minor, patch, candidate = match.groups()
+    return (int(major), int(minor), int(patch), int(candidate is None), int(candidate or 0))
 
 
 def latest_release():

@@ -79,7 +79,9 @@ rm -f dist/theorder1886-windows.zip
 play=dist/theorder1886-windows
 running=$(powershell -NoProfile -Command \
     "@(Get-Process | Where-Object { \$_.Path -like '$(cygpath -w "$PWD/$play")\\*' }).Count" | tr -d '\r')
-if [[ ${running:-0} != 0 ]]; then
+if [[ ${THEORDER_PACKAGE_REFRESH:-1} == 0 ]]; then
+    echo 'Playable dist folder not refreshed (THEORDER_PACKAGE_REFRESH=0); the zip is ready.'
+elif [[ ${running:-0} != 0 ]]; then
     echo "dist/theorder1886-windows is in use ($running processes): not refreshed; the zip is ready." >&2
 else
     mkdir -p "$play"
