@@ -281,6 +281,29 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
     auto& last_state = backing->state;
     auto& subresource_states = backing->subresource_states;
 
+    // FEAT-003 (Class B): the tracked src scope for a depth image coming out of a depth-attachment
+    // layout is often the generic last state (e.g. ALL_COMMANDS / SHADER_READ) rather than the
+    // depth store's LATE_FRAGMENT_TESTS + DEPTH_STENCIL_ATTACHMENT_WRITE. A transition built from
+    // that scope does not wait on the depth store (SYNC-HAZARD-WRITE-AFTER-WRITE) -> unstable depth
+    // -> shadow/Z flicker. Promote the generated src scope to include the depth-write stage/access
+    // for is_depth images in a depth-attachment layout. Color images are left untouched.
+    const auto promote_depth_src = [this](const State& state, vk::PipelineStageFlags2& src_stage,
+                                          vk::AccessFlags2& src_access) {
+        if (!info.props.is_depth) {
+            return;
+        }
+        const bool depth_attachment_layout =
+            state.layout == vk::ImageLayout::eDepthStencilAttachmentOptimal ||
+            state.layout == vk::ImageLayout::eDepthAttachmentOptimal;
+        const bool depth_write =
+            static_cast<bool>(state.access_mask & vk::AccessFlagBits2::eDepthStencilAttachmentWrite);
+        if (depth_attachment_layout && depth_write) {
+            src_stage |= vk::PipelineStageFlagBits2::eLateFragmentTests |
+                         vk::PipelineStageFlagBits2::eEarlyFragmentTests;
+            src_access |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+        }
+    };
+
     const bool needs_partial_transition =
         subres_range &&
         (subres_range->base != SubresourceBase{} || subres_range->extent != info.resources);
@@ -321,9 +344,13 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                                              vk::AccessFlagBits2::eMemoryWrite;
                 const bool is_write = static_cast<bool>(state.access_mask & write_flags);
                 if (state.layout != dst_layout || state.access_mask != dst_mask || is_write) {
+                    // FEAT-003 (Class B): ensure the transition waits on the depth store.
+                    vk::PipelineStageFlags2 src_stage = state.pl_stage;
+                    vk::AccessFlags2 src_access = state.access_mask;
+                    promote_depth_src(state, src_stage, src_access);
                     barriers.emplace_back(vk::ImageMemoryBarrier2{
-                        .srcStageMask = state.pl_stage,
-                        .srcAccessMask = state.access_mask,
+                        .srcStageMask = src_stage,
+                        .srcAccessMask = src_access,
                         .dstStageMask = dst_stage,
                         .dstAccessMask = dst_mask,
                         .oldLayout = state.layout,
@@ -357,9 +384,13 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         if (last_state.layout == dst_layout && last_state.access_mask == dst_mask && !is_write) {
             return;
         }
+        // FEAT-003 (Class B): ensure the transition waits on the depth store.
+        vk::PipelineStageFlags2 src_stage = last_state.pl_stage;
+        vk::AccessFlags2 src_access = last_state.access_mask;
+        promote_depth_src(last_state, src_stage, src_access);
         barriers.emplace_back(vk::ImageMemoryBarrier2{
-            .srcStageMask = last_state.pl_stage,
-            .srcAccessMask = last_state.access_mask,
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
             .dstStageMask = dst_stage,
             .dstAccessMask = dst_mask,
             .oldLayout = last_state.layout,
