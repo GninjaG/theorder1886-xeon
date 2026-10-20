@@ -2,6 +2,112 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-20: Flicker/popping/black-polygon RCA — Classes A/B/C fixed, D/E/F gated HYPOTHESIS (#29, #30, #39)
+
+Root-cause work on `investigate/flicker-rca` for the v0.7.5 flicker reports that users said
+persisted. Stable IDs were added first so every artifact can be tied to a real resource and draw,
+then three CONFIRMED hazards were fixed with red/green regression tests, and three HYPOTHESIS
+classes were implemented behind gates that still need AMD/Chapter-5 runtime evidence. No effect
+was disabled, no blanket cache clear was done, and `dynamicRenderingLocalRead` was NOT enabled.
+
+- **Stable-ID instrumentation (diagnostic only, no render behavior change):** `struct Image` and
+  `struct Buffer` now carry a monotonic `stable_id` (file-scope `std::atomic<u64>`, minted at
+  construction before the first `SetObjectName`, never reused; images also store `creation_frame`),
+  so the first Vulkan validation/sync message a resource triggers self-identifies as
+  `#<stable_id> f<frame>`. `FrameCapture` gained `CurrentFrameIndex()`, per-frame `NextDrawSeq()`/
+  `NextDispatchSeq()` reset at each flip in `Poll()`, and a never-silent `LogSkipStall(frame,
+  draw_seq, target_id, vs_hash, ps_hash, disposition)` helper. `(frame_index, draw_seq)` is the
+  stable draw identity minted in `DrawRecord`/`DrawIndirectRecord`/`DispatchRecord`.
+
+- **Class A — CONFIRMED root cause (`#29`/`#30`):** the arena path of
+  `BufferCache::DownloadMemory` recorded a `vk::BufferMemoryBarrier2` *inside* an open
+  dynamic-rendering instance (illegal without `dynamicRenderingLocalRead`;
+  `VUID-vkCmdPipelineBarrier2-None-09553`/`09554`), so the producer/consumer ordering was dropped
+  and the transfer/BDA read could observe stale arena data — disappearing geometry/effects. Fix is
+  a placement correction only: `scheduler.EndRendering()` before the `pre_barrier` record block,
+  mirroring the correct sibling in `ReadEdgeImagePages`; barrier scope unchanged.
+
+- **Class B — CONFIRMED hazard:** a depth image was transitioned by a `pipelineBarrier2` whose src
+  scope came from the tracked last state (e.g. `TOP_OF_PIPE`) rather than the depth store's
+  `LATE/EARLY_FRAGMENT_TESTS` + `DEPTH_STENCIL_ATTACHMENT_WRITE`, so the transition did not wait on
+  the store (`SYNC-HAZARD-WRITE-AFTER-WRITE` on depth `0x104f080000`/`0x104ee78000`) → unstable
+  depth → shadow/Z flicker. Fix adds a `promote_depth_src` step in `Image::GetBarriers`, scoped
+  strictly to `info.props.is_depth` images in a depth-attachment layout with a write access, in
+  BOTH the full-resource and per-subresource emit branches; color-image barrier generation is
+  byte-for-byte unchanged.
+
+- **Class C — CONFIRMED behavior:** `GetGraphicsPipeline` returned `nullptr` for two different
+  reasons (async compile still pending vs failed), and the rasterizer null-pipeline guard collapsed
+  them, silently dropping the draw — objects/lights popped in and out while shaders compiled. Fix
+  adds a key-scoped `PipelineCache::WaitGraphics(key)` that waits on exactly ONE in-flight build and
+  retires it with the same steps as the `PublishGraphics` loop body, a `LastLookupWasPending()`
+  side-channel (mirroring `UsedPrepared()`), and a `TargetsVisibleSceneAttachment()` predicate
+  (color target ≥ 256×256). A visible pending draw now stalls on one compile (~130-250 ms worst
+  case, never spins, never re-waits across frames) instead of being dropped; every skip/stall is
+  logged with its stable IDs. No `PublishGraphics(true)` and no global sync-compile toggle were
+  added. The compute dispatch guards were deliberately left unchanged — they use
+  `GetComputePipeline` with its own synchronous fallback, so no compute draw is silently dropped.
+
+- **New regression tests (red/green demonstrated on the NVIDIA RTX 5060 dev device):**
+  - `renderpass-barrier-test` (`tests/test_renderpass_barrier.cpp` + a dedicated
+    `test_renderpass_runtime_stubs.cpp`) installs a debug-utils messenger counting the relevant
+    VUIDs/hazards. Class A: `09553`/`09554` count = 0 with the fix, fires (count 2) when the
+    `EndRendering` line is reverted. Class B: `SYNC-HAZARD-WRITE-AFTER-WRITE` on depth
+    `0x104f080000` = 0 with the fix, fires with the exact design-section-3 signature when
+    `promote_depth_src` is reverted. Skips cleanly (exit 0) when no device is present.
+  - `format-remap-test` (`tests/test_format_remap.cpp`, pure-logic) asserts the Class D host
+    fallback policy keeps SIGNED decoding — green for the signed Uint path, red for a deliberately
+    wrong bare-Unorm policy (both shown in one run).
+  - `multiwave-barriers-test` (`tests/test_multiwave_barriers.cpp`) asserts LDS barrier-mode
+    placement for known kernel shapes and that a genuinely multiwave group does NOT take the group
+    path by default.
+  - All three are registered in BOTH `tools/run_tests.sh` and `gpu/CMakeLists.txt`.
+
+- **Classes D/E/F — HYPOTHESIS, gated, NOT visually confirmed:**
+  - **Class D (2_10_10_10 Snorm):** when the host lacks `eA2B10G10R10SnormPack32`,
+    `vk_instance.cpp` now remaps the Snorm surface to the host-supported *signed* `eA2B10G10R10Uint`
+    view (NOT a bare Unorm reinterpret) and `resource_patching_pass.cpp` applies a per-component
+    `*2-1` signed expand on the image-sample path (new routing per design NIT-2), gated on the new
+    `Profile::needs_snorm_2101010_expand` flag. **Correction to the original plan text:** the NVIDIA
+    RTX 5060 repro machine itself reports `A2B10G10R10SnormPack32` as unsupported, so this path is
+    ACTIVE on NVIDIA here — it is NOT NVIDIA-exempt, and "no NVIDIA regression" is therefore a
+    RUNTIME claim that needs a before/after capture, not something the build guarantees.
+  - **Class E (multiwave LDS barriers):** kept behind `THEORDER_LDS_BARRIERS_MULTIWAVE`; the
+    shipped decision is reproduced byte-for-byte by default (group-barrier path only when
+    `threadgroup_size == 64 && needs_lds_barriers`), the env flag is a no-op test hook today. Note:
+    this v0.7.3 worktree's `shared_memory_barrier_pass.cpp` is pure upstream and has none of the
+    v0.7.5 multiwave heuristic the design hypothesized, so "keep it gated" here means not
+    introducing a multiwave behavior change as the primary fix.
+  - **Class F (present-after-present):** the re-measure gate (≥3 non-blocking section-0 repros over
+    the Flip#420+ window, tightening `vk_presenter.cpp` only if any run shows a non-zero
+    `SYNC-HAZARD-WRITE-AFTER-PRESENT` on swapchain image 0) **could NOT be run** — see below. Class
+    F is UNDECIDED, not closed.
+
+- **What was VERIFIED:** clean build of `theorder-probe`; the full C/C++ suite passes via
+  `tools/run_tests.sh`, including the new `renderpass-barrier`, `format-remap`, and
+  `multiwave-barriers` suites; Class A and Class B are red-without-fix / green-with-fix on the
+  NVIDIA RTX 5060 dev device with the exact design-3 validation/sync signatures; the Class C
+  drop→stall mechanism was observed at runtime (20 `STALLED` log lines in the initial compile burst
+  around frames 191-193, 0 `SKIPPED` visible draws, no crashes), with stable-ID evidence such as
+  `frame 192 draw 4 img#0 vs/ps 00000f5c30432f4b 0000000000000000 STALLED`.
+
+- **What could NOT be verified (needs runtime evidence; no FPS gain or visual-fix claimed):**
+  - No AMD GPU on the dev machine → Class D (`#39`, RX 9070) and Class E (wave32) CANNOT be
+    reproduced locally; their visual fixes remain HYPOTHESIS pending AMD / Chapter-5 / combat-save
+    before/after captures tied to a stable image id.
+  - The Class F gate was NOT run (0 valid runs): the hidden-window probe exits early at
+    `Language: PS4 id 17` and never reaches GPU init / any Flip in this environment, and the
+    KNOWN-GOOD v0.7.3 binary exits at the same point — an environment limitation, not a regression.
+    A historical unfixed-build log showed `SYNC-HAZARD-WRITE-AFTER-PRESENT` on swapchain 0, but that
+    must be re-measured on the fixed build before deciding; it was not acted on.
+  - The Class D NVIDIA no-regression rooftop capture was NOT run (same probe/environment blocker).
+  - No in-game before/after FPS or visual comparison was captured for any class; the only runtime
+    evidence is the Class C stall log above.
+
+- **Known unrelated test failure:** the Python `test_launcher_controls.ReleaseVersionTest` expects
+  launcher `VERSION` `0.7.2` while the base repo is `0.7.3`; it fails identically on the base branch
+  independent of this work and is out of scope.
+
 ## 2026-10-18 (late night): Language Selection Unlocked, DLC Costume Packs & "The Armoury" Menu, Deft96 Flicker Optimizations, and Ko-fi Support Callout
 
 - **Language selection & regional SKU unlock (`Issue #17`):** Reverse-engineered `eboot.bin` SKU language validation logic at `0xa81583` and `0x768e2c`. The base game (SKU 0) enforced a bitmask (`0x10005`) resetting languages outside English/French/Spanish LA (including Portuguese Brazil `17`) back to English `0` via `31 db` (`xor ebx, ebx`) at `0xa81696` and `45 31 ff` (`xor r15d, r15d`) at `0x768ede`. Added `Unlock All Languages` patch in `patches/TheOrder1886-Orbis.xml`, wired language resolution in `run.py` (CLI `--language` / `--lang`, `theorder.ini`, launcher `settings.json`, and system locale fallback), mapped PS4 language IDs to engine language IDs (`PS4_TO_ENGINE_LANG`), and forwarded `--guest-arg -sku 1 -language <id> -enablesubtitles`.
