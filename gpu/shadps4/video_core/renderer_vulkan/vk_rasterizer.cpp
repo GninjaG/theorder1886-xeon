@@ -933,6 +933,62 @@ bool Rasterizer::FilterDrawPasses() const {
     return !(mode == Mode::Disable && (depth_copy || stencil_copy));
 }
 
+bool Rasterizer::TargetsVisibleSceneAttachment() const {
+    // port (FEAT-004 Class C): a visible scene draw renders into a large on-screen color target.
+    // Stalling (~130-250 ms) is only worth it for those; tiny/offscreen targets (UI glyph atlas,
+    // small shadow tile, staging surface) skip for a frame or two with no user-visible pop.
+    // Threshold: a bound color buffer whose extent is at least 256x256 (area >= 64K texels). The
+    // game's scene color/gbuffer/lighting passes are 1920-class; the small helper targets are not.
+    constexpr u32 MinSide = 256;
+    constexpr u64 MinArea = u64(MinSide) * MinSide;
+    const auto& regs = Regs();
+    for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+        if (!regs.color_buffers[cb]) {
+            continue;
+        }
+        const auto extent = CbExtent(cb);
+        if (!extent.Valid()) {
+            continue;
+        }
+        if (extent.width >= MinSide && extent.height >= MinSide &&
+            u64(extent.width) * extent.height >= MinArea) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const GraphicsPipeline* Rasterizer::ResolvePendingGraphics(const GraphicsPipeline* pipeline) {
+    // Pipeline was selected: nothing pending to resolve.
+    if (pipeline) {
+        return pipeline;
+    }
+    // Only a still-compiling (pending) key is a candidate for a stall; a failed/absent lookup is
+    // skipped as before. Never spin, never re-wait across frames, never wait on more than one key.
+    if (pipeline_cache.LastLookupWasPending()) {
+        const auto& key = pipeline_cache.LastPendingGraphicsKey();
+        // stage_hashes[0] = vertex, [4] = fragment (see PipelineCache build_in_background log).
+        const u64 vs_hash = key.stage_hashes[0];
+        const u64 ps_hash = key.stage_hashes[4];
+        const u64 frame = FrameCapture::CurrentFrameIndex();
+        if (TargetsVisibleSceneAttachment()) {
+            // Stall this one visible draw on exactly this one compile instead of dropping it.
+            if (const auto* ready = pipeline_cache.WaitGraphics(key)) {
+                // Never silent: a stalled draw is logged, then proceeds (DrawRecord mints its own
+                // stable draw_seq for the capture stream).
+                FrameCapture::LogSkipStall(frame, FrameCapture::NextDrawSeq(), 0, vs_hash, ps_hash,
+                                           FrameCapture::DrawDisposition::Stalled);
+                return ready;
+            }
+            // Build finished as a failure while we waited: fall through to the skip log.
+        }
+        // Pending on a non-visible/tiny target, or the compile failed: skip, but never silently.
+        FrameCapture::LogSkipStall(frame, FrameCapture::NextDrawSeq(), 0, vs_hash, ps_hash,
+                                   FrameCapture::DrawDisposition::Skipped);
+    }
+    return nullptr;
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
     RENDERER_TRACE;
     PortStats::draws.fetch_add(1, std::memory_order_relaxed);
@@ -959,6 +1015,12 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
         draw_prep->Count(pipeline != nullptr &&
                          prepared->state.load(std::memory_order_acquire) == PreparedDraw::Ready &&
                          prepared->reg_checksum == liverpool->gfx_reg_checksum);
+    }
+    // port (FEAT-004 Class C): stall a visible pending draw on its one compiling pipeline (never
+    // silently drop it); a prepared stall invalidates the prepared sharps, so take the regular path.
+    if (!pipeline) {
+        pipeline = ResolvePendingGraphics(pipeline);
+        used_prepared = nullptr;
     }
     if (!pipeline) {
         return;
@@ -1294,6 +1356,10 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         .instance_sgpr_offset = instance_sgpr_offset,
     };
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
+    // port (FEAT-004 Class C): stall a visible pending indirect draw, else log the skip.
+    if (!pipeline) {
+        pipeline = ResolvePendingGraphics(pipeline);
+    }
     if (!pipeline) {
         return;
     }
@@ -1419,6 +1485,10 @@ void Rasterizer::DispatchDirect() {
         DrainDrawPipe();
     }
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
+    // port (FEAT-004 Class C): this is a COMPUTE dispatch, not a graphics draw into a visible scene
+    // attachment. WaitGraphics does not apply; a failed compute build already falls back to a
+    // synchronous GPU-thread compile (sync_compute_keys/FallbackComputePipeline), so no draw is
+    // silently dropped here. Left unchanged by design (the compute equivalent was not needed).
     if (!pipeline) {
         return;
     }
@@ -1562,6 +1632,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         DrainDrawPipe();
     }
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
+    // port (FEAT-004 Class C): COMPUTE dispatch; see DispatchDirect - WaitGraphics does not apply
+    // and failed compute builds already fall back synchronously, so this guard is left unchanged.
     if (!pipeline) {
         return;
     }

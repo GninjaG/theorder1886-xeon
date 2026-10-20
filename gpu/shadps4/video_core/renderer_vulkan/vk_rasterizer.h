@@ -253,6 +253,14 @@ private:
     const AmdGpu::Regs& Regs() const;
     AmdGpu::CbDbExtent CbExtent(u32 index) const;
     AmdGpu::CbDbExtent DbExtent() const;
+    /// port (FEAT-004 Class C): whether the current draw targets a visible scene attachment (a
+    /// large on-screen color/depth target) as opposed to a tiny/offscreen target (UI glyph atlas,
+    /// small shadow tile, staging surface). Only visible draws stall on a pending pipeline.
+    bool TargetsVisibleSceneAttachment() const;
+    /// port (FEAT-004 Class C): stall exactly one visible pending graphics draw on its compiling
+    /// pipeline, else log the never-silent skip/stall. Returns the pipeline to use, or nullptr to
+    /// skip the draw as before. Must be called right after a null GetGraphicsPipeline().
+    const GraphicsPipeline* ResolvePendingGraphics(const GraphicsPipeline* pipeline);
 
     void BindBuffers(const Shader::Info& stage, const PreparedStage* prepared,
                      Shader::Backend::Bindings& binding,

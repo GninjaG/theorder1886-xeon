@@ -160,6 +160,21 @@ public:
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);
 
+    /// port (FEAT-004 Class C): wait on and retire exactly ONE in-flight graphics build, the one
+    /// keyed by `key`. Returns the finished pipeline, or nullptr if `key` is not pending or its
+    /// build failed. Reuses the PublishGraphics retire steps; never waits on more than one key.
+    const GraphicsPipeline* WaitGraphics(const GraphicsPipelineKey& key);
+
+    /// port (FEAT-004 Class C): whether the just-returned null from GetGraphicsPipeline came from
+    /// a still-compiling (pending) key rather than a failed/absent one. Mirrors UsedPrepared().
+    [[nodiscard]] bool LastLookupWasPending() const noexcept {
+        return last_lookup_pending;
+    }
+    /// port (FEAT-004): the key GetGraphicsPipeline last found pending, for WaitGraphics().
+    [[nodiscard]] const GraphicsPipelineKey& LastPendingGraphicsKey() const noexcept {
+        return last_pending_key;
+    }
+
     /// port: worker side of draw preparation: selects the pipeline key for `sel.regs` without
     /// creating anything. False when a program or permutation does not exist yet.
     bool PrepareGraphicsPipeline(PipelineSelection& sel);
@@ -282,6 +297,11 @@ private:
     std::shared_mutex programs_mutex;
     u64 prepared_hits = 0, prepared_misses = 0;
     const PreparedDraw* used_prepared = nullptr;
+    /// port (FEAT-004): side-channel from the last GetGraphicsPipeline lookup that returned null,
+    /// recording whether that null was a pending (still-compiling) key and which key it was, so
+    /// the rasterizer can stall on exactly that one build (WaitGraphics).
+    bool last_lookup_pending = false;
+    GraphicsPipelineKey last_pending_key{};
     tsl::robin_map<ComputePipelineKey, std::unique_ptr<ComputePipeline>> compute_pipelines;
     tsl::robin_map<GraphicsPipelineKey, std::unique_ptr<GraphicsPipeline>> graphics_pipelines;
     PipelineSelection sel{}; ///< GPU thread selection state

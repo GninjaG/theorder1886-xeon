@@ -757,6 +757,36 @@ void PipelineCache::PublishGraphics(bool wait) {
     }
 }
 
+const GraphicsPipeline* PipelineCache::WaitGraphics(const GraphicsPipelineKey& key) {
+    // port (FEAT-004 Class C): a visible draw whose pipeline is still compiling would otherwise be
+    // dropped (object pops in/out). Stall this one draw on exactly that one build instead of
+    // skipping it. We wait on a single key's in-flight job and retire it with the same steps the
+    // PublishGraphics loop body uses for a completed build; never the whole pending_graphics set.
+    const auto it = pending_graphics.find(key);
+    if (it == pending_graphics.end()) {
+        return nullptr;
+    }
+    auto build = it.value();
+    build->job.Wait(); // exactly one job.Wait(); ~130-250 ms worst case, bounded to this key.
+    const auto result = build->job.Poll();
+    if (!result) {
+        if (build->job.Failed() && !build->failure_logged) {
+            LOG_ERROR(Render_Vulkan, "port: pipeline {:#x} compilation failed: {}",
+                      std::hash<GraphicsPipelineKey>{}(key), build->job.Error());
+            build->failure_logged = true;
+        }
+        pending_graphics.erase(it);
+        return nullptr;
+    }
+    build->pipeline->PublishStages(build->live_infos);
+    RegisterPipelineData(key, std::hash<GraphicsPipelineKey>{}(key), build->data);
+    auto* pl = build->pipeline.get();
+    graphics_pipelines.emplace(key, std::move(build->pipeline));
+    ++num_new_pipelines;
+    pending_graphics.erase(it);
+    return pl;
+}
+
 void PipelineCache::PublishCompute(bool wait) {
     for (auto it = pending_compute.begin(); it != pending_compute.end();) {
         auto build = it.value();
@@ -873,6 +903,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     PublishGraphics();
     PumpWarmUp();
     used_prepared = nullptr;
+    last_lookup_pending = false; // port (FEAT-004): reset the pending side-channel each lookup.
     if (prepared) {
         if (const auto* pipeline = TryPreparedPipeline(*prepared)) {
             used_prepared = prepared;
@@ -953,6 +984,12 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             }
         }
         ++g_port_pending_draws;
+        // port (FEAT-004): record whether this null is a still-compiling key (vs a failed/absent
+        // one) so the rasterizer can stall a visible draw on exactly that one build.
+        if (pending_graphics.contains(sel.graphics_key)) {
+            last_lookup_pending = true;
+            last_pending_key = sel.graphics_key;
+        }
         return nullptr;
     };
     if (can_async && (pending_graphics.contains(sel.graphics_key) ||
