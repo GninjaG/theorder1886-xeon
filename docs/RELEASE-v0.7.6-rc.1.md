@@ -4,9 +4,14 @@
 
 ## Base and Scope
 
-This build is based on `windows-v0.7.3` plus the flicker root-cause investigation
-through `4c1e971` and the regression-harness changes. The separate v0.7.4/v0.7.5
-branch is NOT merged. Do not assume this RC contains every feature or fix in v0.7.5.
+This build unifies the two release lines onto a single branch (`master`): the v0.7.4/v0.7.5
+feature line (120 FPS, FSR, launcher reset, sun shadows #26, 32:9 #27, PT-BR fallback #28,
+Hi-Z, RDNA4 format fallback #33, `-usedlc` #16) merged together with the flicker root-cause
+investigation (FEAT-001..005 diagnostic IDs and targeted depth/render-pass sync fixes) and the
+regression harness. Every v0.7.5 feature is preserved; the RCA work is added on top. The merge
+kept the v0.7.5 multiwave LDS-barrier default and exposes `THEORDER_LDS_BARRIERS_MULTIWAVE` as an
+explicit diagnostic override (=0 off, =1 on, unset = v0.7.5 default). AMD wave32 visual validation
+is still pending.
 
 - Stable image/buffer/frame/draw/dispatch diagnostic IDs from the RCA work.
 - Targeted render-pass and depth-store synchronization corrections, with regression tests.
