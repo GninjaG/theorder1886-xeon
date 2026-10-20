@@ -1,0 +1,109 @@
+{
+  "task_id": "task-flicker-rca-fix",
+  "branch": "investigate/flicker-rca",
+  "worktree": "c:\\projetos\\fork\\theorder1886-port\\.worktrees\\flicker-rca",
+  "iteration": 1,
+  "role": "cross-FEAT convergence fixer (integration verification)",
+  "verdict": "READY_FOR_REVIEW",
+  "verdict_note": "This is the fixer's integration verdict submitted for the convergence review. It is intentionally NOT 'APPROVED': the APPROVED verdict is the reviewer's to set after reviewing this integration. The loop's stop contract (fix-converge.json verdict == APPROVED) is satisfied only once the reviewer approves.",
+  "head_commit": "cc8e814",
+  "integrated_feats": [
+    "FEAT-001 (3b0650e) stable image/buffer/frame/draw/dispatch IDs for RCA",
+    "FEAT-002 (a786c0f) Class A: end render pass before arena download barrier",
+    "FEAT-003 (11dba60) Class B: wait on depth store in GetBarriers transition",
+    "FEAT-004 (964bd03) Class C: key-scoped WaitGraphics + never-silent skip/stall log",
+    "FEAT-005 (cc8e814) gated Class D Snorm->Uint-view + in-shader signed expand, Class E multiwave guard, format-remap/multiwave tests (HYPOTHESIS)"
+  ],
+  "build": {
+    "command": "cmake --build out/gpu --target theorder-probe -j 4",
+    "result": "PASS",
+    "evidence": "The integrated theorder-probe builds and links clean across all 5 FEATs. out/gpu/theorder-probe.exe (16:37:11) is newer than the latest FEAT source edit (vk_pipeline_cache.cpp 16:35:40), so the binary reflects the fully integrated cross-FEAT tree. The out/gpu Ninja tree resolves via subst W: -> worktree (SPIRV-Headers/fsr-vulkan/miniz SOURCE_DIR are W:/...), which is mapped, so the build is genuine. The test-build step (out/tests-build.log) relinks theordergpu for every *-test target with zero error/warning lines, confirming the whole GPU core compiles integrated."
+  },
+  "tests": {
+    "command": "MSYSTEM=CLANG64 /c/msys64/usr/bin/bash.exe -lc 'cd <worktree> && bash tools/run_tests.sh'",
+    "cpp_result": "PASS",
+    "cpp_detail": "All 46 C/C++ suites pass (none entered run_tests.sh's failed[] before the Python step). FEAT-added suites all green: renderpass-barrier, format-remap, multiwave-barriers, shader-resource.",
+    "python_result": "FAIL (pre-existing, out-of-scope)",
+    "python_detail": "The only failure is test_launcher_controls.ReleaseVersionTest.test_the_order_release_version: assertEqual(launcher.VERSION, '0.7.2') while launcher/port_launcher_win.py:62 is '0.7.3'. This is a stale assertion on the base v0.7.3 commit (9173d6c): no FEAT in this work touched run.py, launcher/, or test_launcher_controls.py (git log 9173d6c..HEAD on those paths is empty). It fails identically on the base branch. Carried forward as OUT-OF-SCOPE; changing VERSION or the assertion is a release/version decision, not a flicker-RCA integration fix."
+  },
+  "cross_feat_seams": {
+    "result": "CLEAN - no cross-FEAT fixes required",
+    "files_touched_by_multiple_feats": [
+      "vk_rasterizer.cpp (FEAT-001 IDs + FEAT-004 skip/stall)",
+      "image.cpp (FEAT-001 IDs + FEAT-003 depth WAW)",
+      "vk_pipeline_cache.cpp (FEAT-004 + FEAT-005)",
+      "vk_frame_capture.cpp/.h (FEAT-001 IDs host FEAT-004's LogSkipStall/DrawDisposition/NextDrawSeq/CurrentFrameIndex)",
+      "tools/run_tests.sh and gpu/CMakeLists.txt (FEAT-002 + FEAT-005 registrations)",
+      "tests/test_renderpass_barrier.cpp (FEAT-002 Class A + FEAT-003 Class B assertions)"
+    ],
+    "seam_checks": [
+      "FEAT-004 pending side-channel: last_lookup_pending is reset to false at the top of PipelineCache::GetGraphicsPipeline (vk_pipeline_cache.cpp:912, beside used_prepared=nullptr) and set true only inside build_in_background when the key lands in pending_graphics. So a nullptr returned via a different path (e.g. RefreshGraphicsKey failure) cannot leak a stale true into Rasterizer::ResolvePendingGraphics. No stale-flag bug.",
+      "FEAT-004 symbols (FrameCapture::LogSkipStall, DrawDisposition, NextDrawSeq, CurrentFrameIndex) are defined in FEAT-001's vk_frame_capture.h/.cpp and resolve at link time (probe + tests build clean), confirming the FEAT-001/FEAT-004 boundary is consistent.",
+      "FEAT-002+FEAT-003 share tests/test_renderpass_barrier.cpp; the single integrated target asserts BOTH Class A (09553/09554 count = 0) and Class B (depth WAW count = 0) in one run and passes.",
+      "FEAT-005's PublishGraphics additions coexist with FEAT-004's WaitGraphics/pending_graphics in vk_pipeline_cache.cpp without conflict (both compile and all async-pipeline/compiler tests pass)."
+    ]
+  },
+  "root_cause_status": {
+    "ClassA": {
+      "label": "CONFIRMED",
+      "proof": "DETERMINISTIC TEST (red/green) on this machine's NVIDIA RTX 5060",
+      "detail": "In-render-pass arena download barrier (SYNC VUID 09553/09554) in BufferCache::DownloadMemory. Fixed by EndRendering() before the arena download barrier (FEAT-002). renderpass-barrier-test prints 'arena download barrier recorded outside the render pass (09553/09554 count = 0)'; red without the fix."
+    },
+    "ClassB": {
+      "label": "CONFIRMED",
+      "proof": "DETERMINISTIC TEST (red/green) on this machine's NVIDIA RTX 5060",
+      "detail": "Depth store vs layout-transition WRITE-AFTER-WRITE src-scope gap in Image::GetBarriers on depth 0x104f080000/0x104ee78000. Fixed by promoting the depth-write stage/access into the generated src scope for is_depth images in a depth-attachment layout, both emit branches (FEAT-003). renderpass-barrier-test prints 'depth transition ordered after the depth store (WRITE-AFTER-WRITE count = 0)'; red without the fix."
+    },
+    "ClassC": {
+      "label": "CONFIRMED BEHAVIOR",
+      "proof": "BEHAVIOR confirmed in code + demonstrated at runtime in the earlier FEAT-004 run (Flip #420, 20 STALLED / 0 SKIPPED visible draws) when memory headroom existed",
+      "detail": "GetGraphicsPipeline returned nullptr for two reasons (pending async compile vs failed compile) and the rasterizer null-pipeline guard collapsed them, silently dropping the draw -> objects/lights pop in/out while shaders compile. Fixed by key-scoped WaitGraphics (stall exactly one visible pending draw on exactly one compile) + a never-silent skip/stall log (FEAT-004). Which specific objects this fixes remains HYPOTHESIS as designed; the drop->stall mechanism and its stable-ID linkage are confirmed."
+    },
+    "ClassD": {
+      "label": "HYPOTHESIS (needs AMD RX 9070 / #39 Chapter-5 + this-machine NVIDIA rooftop before/after capture)",
+      "proof": "DETERMINISTIC format-remap-test proves the fallback POLICY is a signed path (Snorm->eA2B10G10R10UintPack32 + shader expand, never a bare Unorm reinterpret); the VISUAL fix is not claimed.",
+      "detail": "Gated Snorm->Uint-view + in-shader signed *2-1 expand (FEAT-005). NOTE: the NVIDIA RTX 5060 repro machine reports A2B10G10R10SnormPack32 as unsupported, so needs_snorm_2101010_expand is TRUE here and the Class D path IS active on NVIDIA; 'no NVIDIA regression' is a RUNTIME claim requiring a visual capture, not guaranteed by the unit gate."
+    },
+    "ClassE": {
+      "label": "HYPOTHESIS (needs AMD wave32)",
+      "proof": "DETERMINISTIC multiwave-barriers-test asserts barrier-mode placement for known kernel shapes; default behavior reproduces the shipped decision byte-for-byte.",
+      "detail": "Multiwave LDS barriers kept behind THEORDER_LDS_BARRIERS_MULTIWAVE (no-op test hook by default); not promoted to the primary flicker fix (FEAT-005)."
+    },
+    "ClassF": {
+      "label": "HYPOTHESIS / ENVIRONMENT-LIMITED (re-measure gate UNDECIDED)",
+      "proof": "NONE on the fixed build - gate could not be executed this session (see live_integrated_reprobe).",
+      "detail": "Present-after-present (SYNC-HAZARD-WRITE-AFTER-PRESENT on swapchain image 0) re-measure gate requires >=3 non-blocking section-0 repros over the Flip#420+ window on the FIXED build; if any run is non-zero, tighten vk_presenter.cpp acquire->write. Not run (environment-limited); carried forward from FEAT-005 as UNDECIDED."
+    }
+  },
+  "live_integrated_reprobe": {
+    "status": "DEFERRED / ENVIRONMENT-LIMITED",
+    "not_passed_not_failed": true,
+    "mirrors": "FEAT-005 Class F re-measure gate handling (recorded as needs-verification / environment-limited, neither pass nor fail).",
+    "intended_checks": [
+      "live 09553/09554 = 0 against the rooftop save",
+      "live depth WAW = 0 on 0x104f080000 / 0x104ee78000",
+      "Class C skip/stall log present with no visible draw silently dropped",
+      "Class F present-after-present re-measure >=3 runs"
+    ],
+    "procedure_attempted": "Non-blocking: PowerShell Start-Process -WindowStyle Hidden on run.py with THEORDER_PROBE=out/gpu/theorder-probe.exe (integrated build), THEORDER_DATA_DIR=parent root, THEORDER_GAME_DIR=C:\\Users\\Mateus\\Downloads\\games\\CUSA00035, THEORDER_USER_DIR=<parent>/out/qa-v061/user (rooftop save), THEORDER_CAPTURE_TRIGGER set, THEORDER_VK_VALIDATION=1, THEORDER_VK_VALIDATION_SYNC=1, THEORDER_FRAME_STATS=1, VK_ADD_LAYER_PATH=C:\\msys64\\clang64\\bin; redirected stdout/stderr; intended to run to ~Flip #420, create the trigger, Stop-Process.",
+    "blocker": "The guest commits its full ~6080 MiB memory pool at startup (run.py documents it closes if the page file cannot grow). The host currently has only ~3.4 GB free commit / ~4.5 GB free physical of 32 GB (held by the user's Rider/VS Code/browsers). All launch attempts exit cleanly right after 'Language: PS4 id 17' and never reach 'Runtime: guest memory pool created: 6080 MiB' / GPU init / any Flip.",
+    "control": "The KNOWN-GOOD v0.7.3 release probe (out/theorder-probe.exe) exits at the EXACT same point in this session, proving the early exit is purely environmental (host commit-charge pressure), NOT a cross-FEAT integration defect. The user directed not to free RAM or kill their processes.",
+    "prior_runtime_evidence_on_integrated_classes": "Class C drop->stall was demonstrated at runtime in the earlier FEAT-004 run (.agents/tasks/feat004-runtime/) when headroom existed: 20 STALLED / 0 SKIPPED visible draws to Flip #420, no crash.",
+    "evidence_logs": [
+      ".agents/tasks/converge-runtime/probe.out.log (integrated build, env+hidden)",
+      ".agents/tasks/converge-runtime/noval.out.log (integrated build, no validation, visible window)",
+      ".agents/tasks/converge-runtime/baseline073.out.log (v0.7.3 control, identical early exit)"
+    ],
+    "next_step_for_a_machine_with_commit_headroom": "Re-run the non-blocking probe >=3x over the Flip#420+ window on out/gpu/theorder-probe.exe with validation+sync on; confirm live 09553/09554=0 and depth WAW=0, the Class C skip/stall log with no silently dropped visible draw, and record per-run swapchain-0 present-after-present counts for the Class F decision."
+  },
+  "out_of_scope_carried_forward": [
+    {
+      "id": "PRE-EXISTING-PY-VERSION",
+      "where": "tests/test_launcher_controls.py:551 (test_the_order_release_version)",
+      "problem": "Asserts launcher.VERSION == '0.7.2' but the base v0.7.3 repo sets it to '0.7.3'.",
+      "status": "PRE-EXISTING on base 9173d6c; not introduced by this work; no FEAT touched run.py/launcher/this test. Out of flicker-RCA scope; fixing it is a release/version decision."
+    }
+  ],
+  "constraints_honored": "No effect disabled (TAA/FSR/jitter/VSM/readback-guard untouched); dynamicRenderingLocalRead NOT enabled to silence validation; no blanket cache clear. Class D/E/F changes are gated and HYPOTHESIS-marked; no D/E/F visual fix is claimed without runtime/AMD capture.",
+  "reviewDoc_expected": "c:\\projetos\\fork\\theorder1886-port\\.worktrees\\flicker-rca\\.agents\\tasks\\fix-review-notes.md"
+}
