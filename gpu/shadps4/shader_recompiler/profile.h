@@ -50,6 +50,15 @@ struct Profile {
     /// port: NVIDIA without fragment shader barycentrics (Pascal and older).
     bool needs_integer_interpolation_fix{};
     bool needs_lds_barriers{};
+    /// FEAT-005 Class D (HYPOTHESIS, needs AMD RX 9070 / #39 Chapter-5 capture to confirm the
+    /// visual fix): the host cannot sample eA2B10G10R10SnormPack32, so GetSupportedFormat remapped
+    /// the guest Snorm 2_10_10_10 surface to the unsigned eA2B10G10R10UintPack32 view. When set,
+    /// the image-sample lowering reconstructs the signed [-1,1] decode in the shader
+    /// (PatchImageSampleArgs). This is set on ANY host lacking the Snorm pack format, which
+    /// includes the NVIDIA RTX 5060 repro machine - it is NOT NVIDIA-exempt. "No NVIDIA
+    /// regression" is therefore a runtime claim to be verified by capture, not guaranteed by this
+    /// gate.
+    bool needs_snorm_2101010_expand{};
     bool needs_buffer_offsets{};
     bool needs_unorm_fixup{};
     bool needs_clip_distance_emulation{};

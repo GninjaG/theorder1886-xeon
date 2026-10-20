@@ -56,6 +56,15 @@ public:
         return vk13_features.subgroupSizeControl;
     }
 
+    /// FEAT-005 Class D (HYPOTHESIS): true when the host can sample the signed 2_10_10_10 pack
+    /// format natively. When false, GetSupportedFormat remaps the Snorm surface to the unsigned
+    /// Uint view and the recompiled shader must reconstruct the sign (see
+    /// Profile::needs_snorm_2101010_expand). NVIDIA (the repro machine) returns true here.
+    bool IsSnorm2101010Supported() const {
+        return IsFormatSupported(vk::Format::eA2B10G10R10SnormPack32,
+                                 vk::FormatFeatureFlagBits2::eSampledImage);
+    }
+
     /// Largest VkBuffer the driver allows (2 GiB on AMD's Windows driver).
     u64 GetMaxBufferSize() const {
         return vk13_props.maxBufferSize;

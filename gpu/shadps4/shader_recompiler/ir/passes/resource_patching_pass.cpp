@@ -772,7 +772,7 @@ IR::Value FixCubeCoords(IR::IREmitter& ir, const AmdGpu::Image& image, const IR:
 }
 
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
-                          const AmdGpu::Image& image) {
+                          const AmdGpu::Image& image, const Profile& profile) {
     const auto handle = inst.Arg(0);
     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
     const auto sampler = sampler_res.GetSharp(info);
@@ -963,10 +963,31 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
     if (sampler.force_degamma && image.GetNumberFmt() != AmdGpu::NumberFormat::Srgb) {
         converted = ApplyForceDegamma(ir, texel);
     }
+    // FEAT-005 Class D (HYPOTHESIS, needs AMD RX 9070 / #39 Chapter-5 verification): when the host
+    // lacks eA2B10G10R10SnormPack32 the guest 2_10_10_10 Snorm surface was remapped to the
+    // unsigned eA2B10G10R10UintPack32 view (Instance::GetSupportedFormat). The host sampler then
+    // returns UNSIGNED-normalized values in [0,1]; reconstruct the signed [-1,1] decode the guest
+    // expects with a per-component *2-1 expand (the UnpackSnorm2_10_10_10 semantics the buffer
+    // path already uses, see ir_emitter.cpp Unpack2_10_10_10 / lower_buffer_format_to_raw.cpp).
+    // Gated on Profile::needs_snorm_2101010_expand (host lacks the native Snorm pack format).
+    // That gate is TRUE on the NVIDIA RTX 5060 repro machine too (its driver reports the Snorm
+    // pack format unsupported), so this path is NOT NVIDIA-exempt - "no NVIDIA regression" is a
+    // runtime claim to confirm by capture. Visual correctness on the signed data is UNVERIFIED on
+    // this machine and must be confirmed with an AMD RX 9070 / #39 Chapter-5 capture before being
+    // claimed fixed.
+    if (profile.needs_snorm_2101010_expand &&
+        image.GetNumberFmt() == AmdGpu::NumberFormat::Snorm &&
+        image.GetDataFmt() == AmdGpu::DataFormat::Format2_10_10_10) {
+        const auto expand = [&](u32 comp) -> IR::Value {
+            const IR::F32 v{ir.CompositeExtract(converted, comp)};
+            return ir.FPSub(ir.FPMul(v, ir.Imm32(2.0f)), ir.Imm32(1.0f));
+        };
+        converted = ir.CompositeConstruct(expand(0), expand(1), expand(2), expand(3));
+    }
     inst.ReplaceUsesWith(converted);
 }
 
-void PatchImageArgs(IR::Inst& inst, Info& info) {
+void PatchImageArgs(IR::Inst& inst, Info& info, const Profile& profile) {
     // Nothing to patch for dimension query.
     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
         return;
@@ -979,7 +1000,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 
     // Sample instructions must be handled separately using address register data.
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
-        return PatchImageSampleArgs(inst, info, image_res, image);
+        return PatchImageSampleArgs(inst, info, image_res, image, profile);
     }
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
@@ -1083,7 +1104,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
         } else if (IsImageInstruction(inst)) {
-            PatchImageArgs(inst, info);
+            PatchImageArgs(inst, info, profile);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }

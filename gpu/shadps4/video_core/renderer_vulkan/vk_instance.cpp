@@ -1072,6 +1072,26 @@ vk::Format Instance::GetSupportedFormat(const vk::Format format,
                 return vk::Format::eR8G8Unorm;
             }
             break;
+        case vk::Format::eA2B10G10R10SnormPack32:
+            // FEAT-005 Class D (HYPOTHESIS, needs AMD RX 9070 / #39 Chapter-5 capture to confirm
+            // the visual fix). When the host cannot sample the signed 2_10_10_10 pack format, fall
+            // back to the host-supported UNSIGNED integer view (eA2B10G10R10UintPack32), NOT a bare
+            // Unorm reinterpret. Unorm would decode the 10-bit values to [0,1] and drop the sign,
+            // the suspected cause of the green/blue hue shift on signed data (normals, specular,
+            // motion). The signed [-1,1] decode is reconstructed in the recompiled shader (see
+            // PatchImageSampleArgs, gated by Profile::needs_snorm_2101010_expand).
+            //
+            // NOTE: this branch IS taken on the NVIDIA RTX 5060 repro machine - its driver reports
+            // A2B10G10R10SnormPack32 as missing all features (see the repro validation log). So
+            // this is NOT NVIDIA-exempt; the "no NVIDIA regression" requirement is a RUNTIME claim
+            // (the signed path must not make the rooftop save worse than the prior behavior and
+            // should restore the hue), still to be verified with a capture - it must not be
+            // claimed fixed from this code alone. See liverpool_to_vk.h Snorm2101010HostView /
+            // Snorm2101010FallbackPreservesSign (format-remap-test).
+            if (IsFormatSupported(vk::Format::eA2B10G10R10UintPack32, flags)) {
+                return vk::Format::eA2B10G10R10UintPack32;
+            }
+            break;
         default:
             break;
         }

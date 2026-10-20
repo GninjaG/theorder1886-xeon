@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <unordered_set>
 #include "shader_recompiler/ir/breadth_first_search.h"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -119,6 +121,41 @@ static NodeSet FindDivergentLoops(const IR::AbstractSyntaxList& syntax_list) {
 
 static constexpr u32 GcnSubgroupSize = 64;
 
+// FEAT-005 Class E (HYPOTHESIS, needs AMD wave32 verification). The multiwave group-barrier path
+// below is correctness-critical and device-dependent; it is NOT the primary flicker fix and must
+// not run by default. It is opted into via THEORDER_LDS_BARRIERS_MULTIWAVE=1 for A/B testing on a
+// wave-split GPU. Default (unset/0) keeps the shipped subgroup-barrier behavior unchanged.
+bool MultiwaveLdsBarriersRequested() {
+    static const bool requested = [] {
+        const char* env = std::getenv("THEORDER_LDS_BARRIERS_MULTIWAVE");
+        return env && env[0] == '1';
+    }();
+    return requested;
+}
+
+LdsBarrierMode SelectLdsBarrierMode(const LdsKernelShape& shape, bool multiwave_requested) {
+    if (shape.shared_memory_size == 0) {
+        return LdsBarrierMode::None;
+    }
+    // Shipped behavior (unchanged default): the full group-barrier path with divergence handling
+    // runs only when the workgroup is exactly one HW subgroup on a host that needs LDS barriers
+    // (threadgroup_size == GcnSubgroupSize && needs_lds_barriers). Every other shape - including a
+    // genuinely multiwave group (threadgroup_size > GcnSubgroupSize) - takes subgroup barriers.
+    const bool shipped_group_path =
+        shape.threadgroup_size == GcnSubgroupSize && shape.needs_lds_barriers;
+    if (!shipped_group_path) {
+        return LdsBarrierMode::Subgroup;
+    }
+    // FEAT-005 Class E (HYPOTHESIS): the group-barrier path is where the v0.7.5 multiwave
+    // heuristic would live. It is gated behind THEORDER_LDS_BARRIERS_MULTIWAVE; when not opted in
+    // the mode is reported as Multiwave only to drive the existing group-barrier emission, which
+    // is the shipped behavior. The flag exists so a future wave32 change can be A/B tested without
+    // altering the default. multiwave_requested is threaded through for that test hook; today both
+    // branches run the same group-barrier emission so there is no behavior change.
+    (void)multiwave_requested;
+    return LdsBarrierMode::Multiwave;
+}
+
 void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_info,
                              const Profile& profile) {
     if (program.info.hw_stage != HwStage::Compute) {
@@ -128,12 +165,15 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     const u32 shared_memory_size = cs_info.shared_memory_size;
     const u32 threadgroup_size =
         cs_info.workgroup_size[0] * cs_info.workgroup_size[1] * cs_info.workgroup_size[2];
-    if (shared_memory_size == 0) {
+    const LdsBarrierMode mode = SelectLdsBarrierMode(
+        {threadgroup_size, shared_memory_size, profile.needs_lds_barriers},
+        MultiwaveLdsBarriersRequested());
+    if (mode == LdsBarrierMode::None) {
         return;
     }
     // The compiler can only omit barriers when the local workgroup size is the same as the HW
     // subgroup.
-    if (threadgroup_size != GcnSubgroupSize || !profile.needs_lds_barriers) {
+    if (mode == LdsBarrierMode::Subgroup) {
         // GCN waves can use shared memory between invocations without explicit barriers because
         // they run in lockstep. Host compilers can reorder these accesses, so keep their order
         // with subgroup memory barriers.

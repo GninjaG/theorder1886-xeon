@@ -421,6 +421,12 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         }(),
         .needs_lds_barriers = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||
                               instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
+        // FEAT-005 Class D (HYPOTHESIS): reconstruct the signed 2_10_10_10 decode in-shader when
+        // the host forced the Snorm surface onto the unsigned Uint view (see
+        // Instance::IsSnorm2101010Supported / GetSupportedFormat). This is active on ANY host that
+        // lacks the Snorm pack format, including the NVIDIA RTX 5060 repro machine - so "no NVIDIA
+        // regression" must be verified at runtime (capture), not assumed from the gate.
+        .needs_snorm_2101010_expand = !instance.IsSnorm2101010Supported(),
         .needs_buffer_offsets = instance.StorageMinAlignment() > 4,
         .needs_unorm_fixup = instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
         .needs_clip_distance_emulation = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,

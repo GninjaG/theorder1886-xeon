@@ -72,6 +72,27 @@ struct DepthFormatInfo {
 };
 std::span<const DepthFormatInfo> DepthFormats();
 
+/// port / FEAT-005 Class D (HYPOTHESIS): host-fallback policy for a guest 2_10_10_10 Snorm
+/// surface. The guest format is SIGNED; when the host lacks eA2B10G10R10SnormPack32 (e.g. some
+/// AMD RX 9070 driver paths reported in #39) the fallback MUST stay on a signed decode path -
+/// eA2B10G10R10UintPack32 read as raw integers with an in-shader *2-1 signed expand - and must
+/// NEVER collapse to a bare eA2B10G10R10UnormPack32 reinterpret, which drops the sign bit and
+/// shifts the hue. This is deterministic and testable without a device (format-remap-test).
+/// Returns true if `fallback` preserves signed decoding for the Snorm source.
+constexpr bool Snorm2101010FallbackPreservesSign(vk::Format fallback) noexcept {
+    return fallback == vk::Format::eA2B10G10R10SnormPack32 ||
+           fallback == vk::Format::eA2B10G10R10UintPack32;
+}
+
+/// Chooses the host view for a guest 2_10_10_10 Snorm surface given whether the host advertises
+/// the native Snorm pack format. See Snorm2101010FallbackPreservesSign for why Uint (not Unorm)
+/// is the fallback. HYPOTHESIS: the Uint-view + shader-expand path needs AMD RX 9070 runtime
+/// verification; NVIDIA keeps the native Snorm path and is unaffected.
+constexpr vk::Format Snorm2101010HostView(bool host_supports_snorm_pack32) noexcept {
+    return host_supports_snorm_pack32 ? vk::Format::eA2B10G10R10SnormPack32
+                                      : vk::Format::eA2B10G10R10UintPack32;
+}
+
 vk::Format DepthFormat(AmdGpu::DepthBuffer::ZFormat z_format,
                        AmdGpu::DepthBuffer::StencilFormat stencil_format);
 
