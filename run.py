@@ -168,17 +168,29 @@ def resolve_language(cli_lang, env, ini_path, graphics_options=None):
             if val.isdigit():
                 return int(val)
     try:
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            s_file = Path(appdata) / 'theorder1886-launcher' / 'settings.json'
-            if s_file.is_file():
-                s_data = json.loads(s_file.read_text(encoding='utf-8'))
+        # Portable launcher settings: check local folder first
+        for s_candidate in (PORT / 'settings.json', PORT / 'user' / 'settings.json'):
+            if s_candidate.is_file():
+                s_data = json.loads(s_candidate.read_text(encoding='utf-8'))
                 if 'language' in s_data:
                     val = str(s_data['language']).strip().lower()
                     if val in LANG_CODE_TO_PS4:
                         return LANG_CODE_TO_PS4[val]
                     if val.isdigit():
                         return int(val)
+        # Legacy fallback if migration hasn't happened yet
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            for s_name in ('theorder1886-launcher', 'order1886-launcher'):
+                s_file = Path(appdata) / s_name / 'settings.json'
+                if s_file.is_file():
+                    s_data = json.loads(s_file.read_text(encoding='utf-8'))
+                    if 'language' in s_data:
+                        val = str(s_data['language']).strip().lower()
+                        if val in LANG_CODE_TO_PS4:
+                            return LANG_CODE_TO_PS4[val]
+                        if val.isdigit():
+                            return int(val)
     except Exception:
         pass
     try:
@@ -361,10 +373,7 @@ def main():
             env.setdefault('THEORDER_WINDOW_ICON', str(out / 'window_icon.bmp'))
         except (ImportError, OSError):
             pass
-        # The temporal upscalers and motion vectors are not calibrated for this game yet: they stay
-        # off unless the launcher's experimental switch is on; linear image readbacks fix textures.
-        if get_env(env, 'EXPERIMENTAL_UPSCALER') != '1':
-            env.setdefault('THEORDER_UPSCALER', 'none')
+        # Linear image readbacks fix textures; preserve upscaler setting from theorder.ini
         env.setdefault('THEORDER_READBACK_LINEAR', '0')
         env.setdefault('THEORDER_FACE_DEPTH_FIX', '1')
         env.setdefault('THEORDER_FACE_SECONDARY_FIX', '1')
@@ -396,12 +405,14 @@ def main():
             # halves the step, so the presentation has to follow (every vblank, at most 60 FPS) or
             # the game runs in slow motion. Derived like the values below, so a restart back to 30 FPS
             # drops them (flip rate 0 without the patch doubles the game's speed).
-            if profile[3] == 'The Order 1886' and f'{graphics_options.FPS_PREFIX} - 60 FPS' in applied:
-                for key, value in (('FLIP_RATE', '0'), ('FPS_LIMIT', '60')):
-                    if not get_env(env, key):
-                        env[f'THEORDER_{key}'] = value
-                        derived.append(f'THEORDER_{key}')
-                print('The Order 60 FPS patch: presenting every vblank, at most 60 FPS', flush=True)
+            if profile[3] == 'The Order 1886':
+                applied_fps = 120 if f'{graphics_options.FPS_PREFIX} - 120 FPS' in applied else (60 if f'{graphics_options.FPS_PREFIX} - 60 FPS' in applied else None)
+                if applied_fps:
+                    for key, value in (('FLIP_RATE', '0'), ('FPS_LIMIT', str(applied_fps))):
+                        if not get_env(env, key):
+                            env[f'THEORDER_{key}'] = value
+                            derived.append(f'THEORDER_{key}')
+                    print(f'The Order {applied_fps} FPS patch: presenting every vblank, at most {applied_fps} FPS', flush=True)
             for key, value in (('DMEM_MB', dmem), ('VBLANK_HZ', vblank)):
                 if value and not get_env(env, key):
                     env[f'THEORDER_{key}'] = str(value)
@@ -446,14 +457,32 @@ def main():
         # Resolve language & pass guest arguments
         ps4_lang = resolve_language(cli_lang, env, env['THEORDER_CONFIG'], graphics_options)
         engine_lang = PS4_TO_ENGINE_LANG.get(ps4_lang, ps4_lang)
+        if ps4_lang == 17:
+            title_id = profile[1] if profile and len(profile) > 1 else ''
+            if title_id in ('CUSA00076', 'CUSA00070', 'CUSA00035'):
+                engine_lang = 7
+                print(f'Language: Title {title_id} lacks native PT-BR assets, mapping Portuguese to engine id 7 (PT-PT)', flush=True)
         env['THEORDER_LANGUAGE'] = str(ps4_lang)
         print(f'Language: PS4 id {ps4_lang} -> engine id {engine_lang}', flush=True)
+
+        if 'THEORDER_GLYPHS' not in env:
+            for s_c in (PORT / 'settings.json', PORT / 'user' / 'settings.json'):
+                if s_c.is_file():
+                    try:
+                        s_obj = json.loads(s_c.read_text(encoding='utf-8'))
+                        if 'pad_style' in s_obj:
+                            env['THEORDER_GLYPHS'] = s_obj['pad_style']
+                            break
+                    except Exception:
+                        pass
 
         guest_lang_args = []
         if '-language' not in args:
             guest_lang_args.extend(['--guest-arg', '-language', '--guest-arg', str(engine_lang)])
         if '-enablesubtitles' not in args:
             guest_lang_args.extend(['--guest-arg', '-enablesubtitles'])
+        if '-usedlc' not in args:
+            guest_lang_args.extend(['--guest-arg', '-usedlc'])
 
         timeout_val = get_env(env, 'TIMEOUT', '0')
         command = [*launch_prefix(env), str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),

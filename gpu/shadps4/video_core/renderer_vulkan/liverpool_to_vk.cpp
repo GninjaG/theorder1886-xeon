@@ -773,7 +773,7 @@ std::span<const SurfaceFormatInfo> SurfaceFormats() {
     return formats;
 }
 
-constexpr std::array<vk::Format, surface_format_table_size> surface_format_table = []() {
+std::array<vk::Format, surface_format_table_size> surface_format_table = []() {
     std::array<vk::Format, surface_format_table_size> result;
     for (auto& entry : result) {
         entry = vk::Format::eUndefined;

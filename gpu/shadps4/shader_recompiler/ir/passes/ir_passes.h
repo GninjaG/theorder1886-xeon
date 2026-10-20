@@ -44,13 +44,13 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
                              const Profile& profile);
 void SharedMemorySimplifyPass(IR::Program& program, const Profile& profile);
 
-/// FEAT-005 Class E (HYPOTHESIS, needs AMD wave32 verification): the shape of a compute kernel
-/// as it reaches the shared-memory barrier pass, enough to decide which barrier path the pass
-/// takes. Kept as a small, deterministic descriptor so barrier-placement can be unit-tested
-/// (multiwave-barriers-test) without constructing a full IR::Program.
+/// The shape of a compute kernel as it reaches the shared-memory barrier pass, enough to decide
+/// which barrier path the pass takes. Kept as a small, deterministic descriptor so barrier
+/// placement can be unit-tested (multiwave-barriers-test) without constructing a full IR::Program.
 struct LdsKernelShape {
     u32 threadgroup_size{};   ///< workgroup_size[0]*[1]*[2]
     u32 shared_memory_size{}; ///< bytes of LDS the kernel declares
+    u32 subgroup_size{};      ///< Profile::subgroup_size (host HW subgroup width)
     bool needs_lds_barriers{};///< Profile::needs_lds_barriers (wave-split host)
 };
 
@@ -60,19 +60,27 @@ struct LdsKernelShape {
 enum class LdsBarrierMode : u32 {
     None,      ///< shared_memory_size == 0: nothing to synchronize
     Subgroup,  ///< lockstep single subgroup / host without needs_lds_barriers
-    Multiwave, ///< threadgroup spans multiple subgroups on a wave-split host (HYPOTHESIS path)
+    Multiwave, ///< threadgroup spans multiple subgroups on a wave-split host (v0.7.5 default)
 };
 
-/// true when THEORDER_LDS_BARRIERS_MULTIWAVE is set to 1, opting into the HYPOTHESIS multiwave
-/// group-barrier path for A/B testing. Default (unset/0) keeps the shipped behavior, so there is
-/// no behavior change unless a tester explicitly opts in.
-[[nodiscard]] bool MultiwaveLdsBarriersRequested();
+/// THEORDER_LDS_BARRIERS_MULTIWAVE as a diagnostic override of the v0.7.5 multiwave default.
+/// Default (env unset) keeps the shipped v0.7.5 eligibility heuristic; ForceOff (=0) and
+/// ForceOn (=1) let a tester A/B the multiwave group-barrier path on AMD wave32 hardware, whose
+/// visual correctness is not yet validated here.
+enum class LdsBarrierOverride : u32 {
+    Default,   ///< env unset: v0.7.5 eligibility heuristic decides
+    ForceOff,  ///< THEORDER_LDS_BARRIERS_MULTIWAVE=0: subgroup barriers only
+    ForceOn,   ///< THEORDER_LDS_BARRIERS_MULTIWAVE=1: group path wherever a wave-split host has LDS
+};
 
-/// The barrier mode the pass selects for `shape`. When `multiwave_requested` is false the
-/// multiwave group-barrier path is NOT taken even on a wave-split host (it falls back to the
-/// subgroup path), which is how the pass stays gated behind the env flag.
+/// The override selected from THEORDER_LDS_BARRIERS_MULTIWAVE for this process.
+[[nodiscard]] LdsBarrierOverride MultiwaveLdsBarrierOverride();
+
+/// The barrier mode the pass selects for `shape`. With LdsBarrierOverride::Default the v0.7.5
+/// heuristic chooses the multiwave group path on a wave-split host for whole-subgroup workgroups;
+/// ForceOff collapses to subgroup barriers, ForceOn widens the group path on wave-split hosts.
 [[nodiscard]] LdsBarrierMode SelectLdsBarrierMode(const LdsKernelShape& shape,
-                                                  bool multiwave_requested);
+                                                  LdsBarrierOverride override);
 void SharedMemoryToStoragePass(IR::Program& program, const RuntimeInfo& runtime_info,
                                const Profile& profile);
 

@@ -972,6 +972,11 @@ void Instance::CollectImageFormatInfo() {
                         static_cast<u32>(format.data_format),
                         static_cast<u32>(format.number_format), vk::to_string(format.vk_format),
                         vk::to_string(format.flags & ~GetFormatFeatureFlags(format.vk_format)));
+            if (format.vk_format == vk::Format::eA2B10G10R10SnormPack32) {
+                LiverpoolToVK::surface_format_table[LiverpoolToVK::GetSurfaceFormatTableIndex(
+                    format.data_format, format.number_format)] = vk::Format::eA2B10G10R10UnormPack32;
+                LOG_INFO(Render_Vulkan, "Surface format 2_10_10_10 Snorm remapped to Unorm for host compatibility");
+            }
         }
     }
     for (const auto& format : LiverpoolToVK::DepthFormats()) {

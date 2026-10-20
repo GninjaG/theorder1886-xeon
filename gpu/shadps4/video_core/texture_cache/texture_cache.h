@@ -496,6 +496,12 @@ private:
     /// Records the copy of a GPU-modified image into a deferred staging allocation.
     std::optional<PendingDownload> RecordImageDownload(ImageId image_id);
 
+    /// Tiny GPU-written images (1 row of <= 4 KiB, linear or 1 texel) copied back on EOP.
+    [[nodiscard]] bool IsTinyReadbackImage(const Image& image) const;
+    void QueueTinyReadback(ImageId image_id, const Image& image);
+    void ProcessTinyReadbacks();
+    void CancelTinyReadbacks(VAddr address, u64 size);
+
     /// Register image in the page table
     void RegisterImage(ImageId image);
 
@@ -552,6 +558,13 @@ private:
     TileManager tile_manager;
     std::unordered_map<u64, SamplerId> samplers;
     std::unordered_set<ImageId> download_images;
+    std::unordered_set<ImageId> tiny_downloads;
+    std::vector<std::pair<VAddr, u64>> tiny_ranges;
+    std::mutex tiny_mutex;
+    const bool tiny_readbacks = [] {
+        const char* value = std::getenv("THEORDER_TINY_IMAGE_READBACK");
+        return !value || value[0] != '0';
+    }();
     u64 total_used_memory = 0;
     u64 gc_evictions = 0, gc_downloads = 0, gc_dropped = 0; ///< port: pressure report
     u64 gc_kept = 0, gc_kept_bytes = 0; ///< port: old images the latest pass could not evict

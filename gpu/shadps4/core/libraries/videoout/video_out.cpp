@@ -12,6 +12,9 @@
 #include "core/libraries/videoout/videoout_error.h"
 #include "core/platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 
@@ -393,7 +396,11 @@ s32 sceVideoOutSubmitEopFlip(s32 handle, u32 buf_id, u32 mode, s64 flip_arg, voi
                     std::chrono::steady_clock::now() + std::chrono::milliseconds(20);
                 while (port->buffer_labels[buf_id] != 1 &&
                        std::chrono::steady_clock::now() < deadline) {
+#if defined(__x86_64__) || defined(_M_X64)
+                    _mm_pause();
+#else
                     std::this_thread::yield();
+#endif
                 }
                 if (port->buffer_labels[buf_id] != 1) {
                     static u32 logged = 0;

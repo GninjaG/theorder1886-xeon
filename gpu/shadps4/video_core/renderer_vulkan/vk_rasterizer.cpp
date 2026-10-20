@@ -137,6 +137,29 @@ bool ImplausibleTexture(const VideoCore::ImageInfo& info) {
     }
     return true;
 }
+
+// Shadow pass and depth-reconstructed passes: moving against geometry with every jitter step
+// caused flickering shadows under TAA and FSR. Supporting jitter offset keeps them stable.
+bool JitterFullScreenPass(u64 hash) {
+    static const std::vector<u64> listed = [] {
+        std::vector<u64> list;
+        if (const char* env = std::getenv("THEORDER_JITTER_PS")) {
+            for (const char* p = env; *p;) {
+                char* end;
+                const u64 value = std::strtoull(p, &end, 16);
+                if (end == p) break;
+                list.push_back(u64(u32(value)));
+                p = *end == ',' ? end + 1 : end;
+            }
+        }
+        return list;
+    }();
+    const u64 h = u64(u32(hash));
+    for (const u64 item : listed) {
+        if (item == h) return true;
+    }
+    return false;
+}
 } // namespace
 
 bool Rasterizer::FilterDraw() {
@@ -1009,6 +1032,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
             return;
         }
     }
+    const auto& regs = Regs();
+    if (regs.num_indices == 0 || regs.num_instances.NumInstances() == 0) {
+        return;
+    }
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline({}, prepared);
     const PreparedDraw* used_prepared = pipeline_cache.UsedPrepared();
     if (prepared) {
@@ -1257,12 +1284,22 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     pipeline->BindResources(set_writes, push_data);
+
     // port: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
     if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
         (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
+    } else if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+               ps && upscaler->Enabled() && JitterFullScreenPass(ps->pgm_hash)) {
+        draw_jitter = upscaler->Jitter();
+        static bool noted = false;
+        if (!noted) {
+            noted = true;
+            std::printf("Upscaler: full-screen pass %08x gets the scene jitter\n",
+                        u32(ps->pgm_hash));
+        }
     }
     UpdateDynamicState(pipeline, is_indexed);
     MarkPass(pipeline, state);
@@ -1280,6 +1317,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         regs.depth_control.depth_write_enable,
         regs.depth_control.depth_func == AmdGpu::CompareFunc::LessEqual);
     const vk::Pipeline handle = pipeline->HandleForFaceDraw(face_adjusted);
+    if (!handle) {
+        ResetBindings(false);
+        return;
+    }
     if (BbFaceDepth::Enabled()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         const u32 index_size = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16 ? 2 : 4;
@@ -1436,6 +1477,10 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     ASSERT(stride == (is_indexed ? sizeof(VkDrawIndexedIndirectCommand)
                                  : sizeof(VkDrawIndirectCommand)));
     const vk::Pipeline handle = pipeline->Handle();
+    if (!handle) {
+        ResetBindings(false);
+        return;
+    }
     const vk::Pipeline square = SquarePass(*pipeline);
     const vk::Buffer args = buffer->Handle();
     const u64 args_offset = base;
@@ -1526,9 +1571,9 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     }
 
     // The Order 1886 VSM shadow hack (TdlifePeng/shadPS4@1886 af2b036): depth-reduction
-    // clear never dispatches, so force clear shader 0x9846aaff to write 0x7F80000F (+inf with tile mask 0xF)
+    // clear never dispatches, so force clear shader 0x9846aaff and 0x8ea0ef5b to write 0x7F80000F (+inf with tile mask 0xF)
     // to the tile coverage SSBO so the VSM conversion pass doesn't take the empty-tile path (no shadows / AMD hang).
-    if (cs.pgm_hash == 0x9846aaff) {
+    if (cs.pgm_hash == 0x9846aaff || cs.pgm_hash == 0x8ea0ef5b) {
         auto& mutable_cs = const_cast<Shader::Info&>(cs);
         if (mutable_cs.flattened_ud_buf.size() > 4) {
             mutable_cs.flattened_ud_buf[4] = 0x7F80000F;
@@ -1563,6 +1608,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
                     buffer_cache.ObtainBuffer(address, static_cast<u32>(size),
                                               VideoCore::ObtainBufferFlags::IsWritten);
                 runtime.FillBuffer(buffer, offset, size, ZmaskUncompressed);
+                runtime.FlushBarriers();
             }
             break; // the first read-only buffer is the HTILE
         }
@@ -1581,6 +1627,9 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     pipeline->BindResources(set_writes, push_data);
 
     const vk::Pipeline handle = pipeline->Handle();
+    if (!handle) {
+        return;
+    }
     const u32 dim_x = cs_program.dim_x, dim_y = cs_program.dim_y, dim_z = cs_program.dim_z;
     if (FrameCapture::Active()) {
         // FEAT-001: (frame,dispatch_seq) is this dispatch's stable identity.

@@ -14,7 +14,7 @@ source ./msys2-env.sh
 # A Windows Python (not MSYS2's) for PyInstaller.
 python=${WINPYTHON:-}
 if [[ -z $python ]]; then
-    for candidate in /c/Python3*/python.exe "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}"/Programs/Python/Python3*/python.exe; do
+    for candidate in /c/Python3*/python.exe "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}"/Programs/Python/Python3*/python.exe "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}"/Python/*/python.exe; do
         [[ -x $candidate ]] && python=$candidate
     done
 fi
@@ -55,15 +55,17 @@ ldd "$dest/bin/theorder-probe.exe" "$dest/bin/theorder-gpu-capabilities.exe" |
     awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
         cp -u "$dll" "$dest/bin/"
     done
-cp -r scripts patches "$dest/"
+cp -r scripts patches fsr4_shaders "$dest/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
 find "$dest" -name __pycache__ -prune -exec rm -r {} +
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.
+set -f
 forbidden=$(find "$dest" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
     -o -iname user -o -iname cache -o -iname '*.log' -o -iname theorder.ini -o -iname settings.json \
-    -o -iname mods.json -o -iname patches.json -o -iname fsr4_shaders -o -iname 'nvngx_dlss*.dll' \
-    -o -iname '*.spv' -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' \) -print)
+    -o -iname mods.json -o -iname patches.json -o -iname 'nvngx_dlss*.dll' \
+    -o \( ! -path "*/fsr4_shaders/*" -iname '*.spv' \) -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' \) -print)
+set +f
 if [[ -n $forbidden ]]; then
     echo "Package holds files that must not ship:" >&2
     echo "$forbidden" >&2
@@ -85,9 +87,9 @@ elif [[ ${running:-0} != 0 ]]; then
     echo "dist/theorder1886-windows is in use ($running processes): not refreshed; the zip is ready." >&2
 else
     mkdir -p "$play"
-    # gow3.ini: the settings of releases up to 0.2.0, moved to theorder.ini at the next start.
-    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name theorder.ini ! -name gow3.ini \
-        ! -name mods.json ! -name mods_presets.json ! -name patches.json -exec rm -rf {} +
+    # Keep saves, user data, and port configs (order1886.ini, settings.json, etc.)
+    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name theorder.ini ! -name order1886.ini \
+        ! -name settings.json ! -name gow3.ini ! -name mods.json ! -name mods_presets.json ! -name patches.json -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
 du -sh "$dest" dist/theorder1886-windows.zip

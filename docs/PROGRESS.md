@@ -59,8 +59,9 @@ was disabled, no blanket cache clear was done, and `dynamicRenderingLocalRead` w
     fallback policy keeps SIGNED decoding — green for the signed Uint path, red for a deliberately
     wrong bare-Unorm policy (both shown in one run).
   - `multiwave-barriers-test` (`tests/test_multiwave_barriers.cpp`) asserts LDS barrier-mode
-    placement for known kernel shapes and that a genuinely multiwave group does NOT take the group
-    path by default.
+    placement for known kernel shapes: the v0.7.5 default (a genuinely multiwave group on a
+    wave-split host takes the group path) and the `THEORDER_LDS_BARRIERS_MULTIWAVE` override
+    (ForceOff/ForceOn). Updated for the v0.7.5 merge (2026-10-21).
   - All three are registered in BOTH `tools/run_tests.sh` and `gpu/CMakeLists.txt`.
 
 - **Classes D/E/F — HYPOTHESIS, gated, NOT visually confirmed:**
@@ -72,12 +73,16 @@ was disabled, no blanket cache clear was done, and `dynamicRenderingLocalRead` w
     RTX 5060 repro machine itself reports `A2B10G10R10SnormPack32` as unsupported, so this path is
     ACTIVE on NVIDIA here — it is NOT NVIDIA-exempt, and "no NVIDIA regression" is therefore a
     RUNTIME claim that needs a before/after capture, not something the build guarantees.
-  - **Class E (multiwave LDS barriers):** kept behind `THEORDER_LDS_BARRIERS_MULTIWAVE`; the
-    shipped decision is reproduced byte-for-byte by default (group-barrier path only when
-    `threadgroup_size == 64 && needs_lds_barriers`), the env flag is a no-op test hook today. Note:
-    this v0.7.3 worktree's `shared_memory_barrier_pass.cpp` is pure upstream and has none of the
-    v0.7.5 multiwave heuristic the design hypothesized, so "keep it gated" here means not
-    introducing a multiwave behavior change as the primary fix.
+  - **Class E (multiwave LDS barriers) — UPDATED after the v0.7.5 merge (2026-10-21):** the
+    v0.7.5 multiwave default is now PRESERVED, not gated off. With `THEORDER_LDS_BARRIERS_MULTIWAVE`
+    unset, the v0.7.5 eligibility heuristic decides (group-barrier path for a one-subgroup
+    workgroup, or a whole-subgroup multiwave group on a wave-split host). The env var is now an
+    explicit diagnostic OVERRIDE routed through `SelectLdsBarrierMode`: `=0` forces the group path
+    off (subgroup barriers only), `=1` forces it on wherever a wave-split host has LDS to sync. The
+    earlier RCA stance ("keep gated / no-op by default") was superseded because turning off a
+    default already shipped in v0.7.5 without AMD evidence would be a precautionary change outside
+    this merge's scope. Group-barrier visual correctness on AMD wave32 is STILL NOT validated here
+    (no AMD hardware); the override exists precisely so that A/B test can be run later.
   - **Class F (present-after-present):** the re-measure gate (≥3 non-blocking section-0 repros over
     the Flip#420+ window, tightening `vk_presenter.cpp` only if any run shows a non-zero
     `SYNC-HAZARD-WRITE-AFTER-PRESENT` on swapchain image 0) **could NOT be run** — see below. Class

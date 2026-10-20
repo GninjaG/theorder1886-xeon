@@ -115,8 +115,8 @@ class ControlMapTest(unittest.TestCase):
     def test_graphics_defaults_match_the_game(self):
         d = launcher.INI_DEFAULTS
         # The Order runs at its own 30 FPS by default ('60': no frame rate patch, see ENGINE_FPS_CHOICES).
-        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '60'))
-        self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120'])
+        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('windowed', '1', '0', '120'))
+        self.assertEqual([v for v, _t in launcher.ENGINE_FPS_CHOICES], ['60', '120', '240'])
         # The launcher's aspect ratios are the game's (gpu/shim/port_graphics.h, scripts/graphics_options.py).
         from graphics_options import ASPECTS
         self.assertEqual(tuple(v for v, _t in launcher.ASPECT_CHOICES), ASPECTS)

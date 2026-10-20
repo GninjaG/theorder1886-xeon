@@ -485,7 +485,7 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
             .size = size,
         };
         cmdbuf.pipelineBarrier2(vk::DependencyInfo{
-            .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+            .dependencyFlags = vk::DependencyFlags{},
             .bufferMemoryBarrierCount = 1,
             .pBufferMemoryBarriers = &pre_barrier,
         });

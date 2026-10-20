@@ -178,12 +178,33 @@ void Choice(const char* label, std::atomic<int>& target, const char* const* labe
     }
 }
 
-// Controller button names in the help text: PlayStation unless THEORDER_GLYPHS names xbox or
-// nintendo. Read once: the environment is fixed for a run.
-static const char* PadText(const char* playstation, const char* xbox, const char* nintendo) {
-    static const char* style = std::getenv("THEORDER_GLYPHS");
-    if (!style) return playstation;
-    return !std::strcmp(style, "xbox") ? xbox : !std::strcmp(style, "nintendo") ? nintendo : playstation;
+// Controller button names in the help text: dynamically adapts to the current input
+// (Xbox, PlayStation or Keyboard & Mouse) or falls back to THEORDER_GLYPHS.
+enum class ActiveInput {
+    Default,
+    PlayStation,
+    Xbox,
+    Keyboard,
+};
+static ActiveInput last_active_input = ActiveInput::Default;
+
+static const char* PadText(const char* playstation, const char* xbox, const char* nintendo, const char* kbm = nullptr) {
+    if (last_active_input == ActiveInput::Keyboard && kbm) {
+        return kbm;
+    }
+    if (last_active_input == ActiveInput::Xbox) {
+        return xbox;
+    }
+    if (last_active_input == ActiveInput::PlayStation) {
+        return playstation;
+    }
+    const char* style = std::getenv("THEORDER_GLYPHS");
+    if (style) {
+        if (!std::strcmp(style, "xbox")) return xbox;
+        if (!std::strcmp(style, "nintendo")) return nintendo;
+        if (!std::strcmp(style, "keyboard") && kbm) return kbm;
+    }
+    return playstation;
 }
 
 // The note for the item under the mouse or the gamepad/keyboard focus, shown in the footer.
@@ -432,6 +453,45 @@ void OverlayTab() {
     }
 }
 
+void ControlsTab() {
+    auto& s = PortSettings::Get();
+    ImGui::SeparatorText("Active Input");
+    if (BeginRows("##active_input")) {
+        const char* current_type = "PlayStation Controller";
+        if (last_active_input == ActiveInput::Keyboard) {
+            current_type = "Keyboard & Mouse";
+        } else if (last_active_input == ActiveInput::Xbox) {
+            current_type = "Xbox Controller";
+        }
+        InfoRow("Detected device", current_type);
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Mouse Look");
+    if (BeginRows("##mouse_settings")) {
+        CheckRow("Mouse look (F7)", s.mouse_look, "Use mouse movement to aim and look around.");
+        SliderRow("Sensitivity", s.mouse_sensitivity, 10, 300, "%d%%", "Mouse look sensitivity percentage.");
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Default Controls Reference");
+    if (BeginRows("##controls_ref")) {
+        InfoRow("Shoot / Fire", PadText("R2", "RT", "ZR", "Left Mouse Button"));
+        InfoRow("Aim Weapon", PadText("L2", "LT", "ZL", "Right Mouse Button"));
+        InfoRow("Interact / Reload", PadText("Square", "X", "Y", "E"));
+        InfoRow("Jump / Climb / Cover", PadText("Cross", "A", "B", "Space"));
+        InfoRow("Crouch / Drop", PadText("Circle", "B", "A", "Left Shift"));
+        InfoRow("Melee Attack", PadText("Triangle", "Y", "X", "Q"));
+        InfoRow("Blackwater / Heal", PadText("L1", "LB", "L", "1 / Side Mouse 1"));
+        InfoRow("Throw Grenade", PadText("R1", "RB", "R", "3 / Side Mouse 2"));
+        InfoRow("Sprint", PadText("L3 (Left Stick Click)", "LS", "LS", "Z"));
+        InfoRow("Zoom / Precision Aim", PadText("R3 (Right Stick Click)", "RS", "RS", "C / Middle Click"));
+        InfoRow("Pause Menu", PadText("Options / Touchpad Right", "Menu / View", "+ / -", "Backspace / Esc"));
+        InfoRow("Photo Mode", PadText("Touchpad Left", "View (Select)", "-", "Tab"));
+        ImGui::EndTable();
+    }
+}
+
 // Startup options changed since this launch (applied by "Apply and restart").
 int RestartChanges() {
     const auto& s = PortSettings::Get();
@@ -449,11 +509,10 @@ void Menu() {
                                     std::min(680.0f * base_scale, viewport->WorkSize.y * 0.9f)),
                              ImGuiCond_Appearing);
     bool keep_open = true;
-    // port: the game's own title (param.sfo), not a fixed one.
-    static const std::string heading = [] {
-        const std::string_view title = Common::ElfInfo::Instance().Title();
-        return std::string(title.empty() ? "The Order: 1886" : title) + PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)");
-    }();
+    // port: the game's own title (param.sfo), dynamically formatted with active input prompts.
+    const std::string_view title = Common::ElfInfo::Instance().Title();
+    const std::string heading = std::string(title.empty() ? "The Order: 1886" : title) +
+                                PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)", "  (Insert)");
     if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -472,7 +531,7 @@ void Menu() {
     }
     const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + ImGui::GetTextLineHeightWithSpacing() * 2.0f;
     if (ImGui::BeginTabBar("##tabs")) {
-        static const char* const tabs[TabCount] = {"Image", "Performance", "Overlay"};
+        static const char* const tabs[TabCount] = {"Image", "Performance", "Overlay", "Controls"};
         for (int tab = 0; tab < TabCount; ++tab) {
             const ImGuiTabItemFlags flags = requested_tab == tab ? ImGuiTabItemFlags_SetSelected : 0;
             if (!ImGui::BeginTabItem(tabs[tab], nullptr, flags)) {
@@ -486,7 +545,8 @@ void Menu() {
                 switch (tab) {
                 case 0: ImageTab(); break;
                 case 1: PerformanceTab(); break;
-                default: OverlayTab(); break;
+                case 2: OverlayTab(); break;
+                default: ControlsTab(); break;
                 }
             }
             ImGui::EndChild();
@@ -834,6 +894,9 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        if (down) {
+            last_active_input = ActiveInput::Keyboard;
+        }
         static const bool capture_key = [] {
             const char* env = std::getenv("THEORDER_FRAME_CAPTURE_KEY");
             return env && *env == '1';
@@ -861,6 +924,18 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
         const bool down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+        if (down) {
+            if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gbutton.which)) {
+                const SDL_GamepadType type = SDL_GetGamepadType(pad);
+                if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
+                    last_active_input = ActiveInput::PlayStation;
+                } else {
+                    last_active_input = ActiveInput::Xbox;
+                }
+            } else {
+                last_active_input = ActiveInput::Xbox;
+            }
+        }
         const u8 button = event.gbutton.button;
         // R3+L2 opens the menu: L3+R3 is left to the game.
         if (button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
@@ -879,6 +954,14 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+        if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gaxis.which)) {
+            const SDL_GamepadType type = SDL_GetGamepadType(pad);
+            if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
+                last_active_input = ActiveInput::PlayStation;
+            } else {
+                last_active_input = ActiveInput::Xbox;
+            }
+        }
         if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
             const bool down = event.gaxis.value > 16000;
             if (down && !l2_down && r3_down) {
@@ -900,6 +983,7 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_MOUSE_MOTION: {
+        last_active_input = ActiveInput::Keyboard;
         if (!is_open) {
             return false;
         }
@@ -909,6 +993,9 @@ bool HandleEvent(const SDL_Event& event) {
     }
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP: {
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            last_active_input = ActiveInput::Keyboard;
+        }
         if (!is_open) {
             return false;
         }

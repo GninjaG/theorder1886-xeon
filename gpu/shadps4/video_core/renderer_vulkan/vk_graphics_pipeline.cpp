@@ -480,8 +480,31 @@ GraphicsPipeline::GraphicsPipeline(
     if (pipeline_result == vk::Result::ePipelineCompileRequired && g_pipeline_restore_only) {
         return; // no stored binary: Handle() stays null (GetGraphicsPipeline)
     }
-    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
-               vk::to_string(pipeline_result));
+    if (pipeline_result != vk::Result::eSuccess) {
+        auto [retry_result, retry_pipe] =
+            CreateCachedGraphicsPipeline(device, VK_NULL_HANDLE, pipeline_info, key,
+                                         instance.GetPipelineBinaryGlobalKey(), binary_directory);
+        static std::atomic<u32> logged{0};
+        const u64 key_hash = std::hash<GraphicsPipelineKey>{}(key);
+        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            std::printf("GPU: driver refused graphics pipeline %#llx (%s); %s\n",
+                        static_cast<unsigned long long>(key_hash),
+                        vk::to_string(pipeline_result).c_str(),
+                        retry_result == vk::Result::eSuccess
+                            ? "created without pipeline cache"
+                            : "refused again: draws requiring it will be skipped");
+            std::fflush(stdout);
+        }
+        if (retry_result == vk::Result::eSuccess) {
+            pipeline_result = retry_result;
+            pipe = std::move(retry_pipe);
+        }
+    }
+    if (pipeline_result != vk::Result::eSuccess || !pipe) {
+        LOG_WARNING(Render_Vulkan, "GPU graphics pipeline creation failed: {}", vk::to_string(pipeline_result));
+        g_port_pipeline_total_ns += NsSince(started);
+        return;
+    }
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
     RecordWaveSizes();
@@ -496,10 +519,19 @@ GraphicsPipeline::GraphicsPipeline(
         auto [square_result, square] =
             CreateCachedGraphicsPipeline(device, pipeline_cache, square_info, key,
                                          instance.GetPipelineBinaryGlobalKey(), binary_directory);
-        ASSERT_MSG(square_result == vk::Result::eSuccess,
-                   "Failed to create the squaring pipeline: {}", vk::to_string(square_result));
-        square_pipeline = std::move(square);
-        SetObjectName(device, *square_pipeline, "Graphics Pipeline {} squaring pass", debug_str);
+        if (square_result != vk::Result::eSuccess) {
+            auto [retry_res, retry_sq] =
+                CreateCachedGraphicsPipeline(device, VK_NULL_HANDLE, square_info, key,
+                                             instance.GetPipelineBinaryGlobalKey(), binary_directory);
+            if (retry_res == vk::Result::eSuccess) {
+                square_result = retry_res;
+                square = std::move(retry_sq);
+            }
+        }
+        if (square_result == vk::Result::eSuccess && square) {
+            square_pipeline = std::move(square);
+            SetObjectName(device, *square_pipeline, "Graphics Pipeline {} squaring pass", debug_str);
+        }
     }
     if (face_depth_module) {
         auto face_stages = shader_stages;

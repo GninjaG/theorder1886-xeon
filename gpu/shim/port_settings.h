@@ -24,8 +24,8 @@ inline constexpr int OutputWidths[] = {1280, 1920, 2560, 3840};
 inline constexpr int OutputHeights[] = {720, 1080, 1440, 2160};
 inline constexpr int OutputCount = 4;
 inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
-/// The in-game menu's tabs: Image, Performance, Overlay.
-inline constexpr int MenuTabCount = 3;
+/// The in-game menu's tabs: Image, Performance, Overlay, Controls.
+inline constexpr int MenuTabCount = 4;
 
 struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
