@@ -1252,7 +1252,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     });
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
-        FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);
+        // FEAT-001: (frame,draw_seq) is this draw's stable identity.
+        const u64 frame = FrameCapture::CurrentFrameIndex();
+        const u64 draw_seq = FrameCapture::NextDrawSeq();
+        FrameCapture::Draw(frame, draw_seq, vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices,
+                           num_instances);
         if (const auto& bc = regs.blend_control[0]; bc.enable && regs.color_buffers[0]) {
             char note[128];
             std::snprintf(note, sizeof(note), "\n  blend ps %08x idx %u: src %u dst %u func %u z %u%u",
@@ -1391,6 +1395,15 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
             }
         }
     });
+    if (FrameCapture::Active()) {
+        // FEAT-001: indirect draws also get a (frame,draw_seq) stable identity. Index/instance
+        // counts live in GPU memory, so report 0.
+        const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
+        const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+        const u64 frame = FrameCapture::CurrentFrameIndex();
+        const u64 draw_seq = FrameCapture::NextDrawSeq();
+        FrameCapture::Draw(frame, draw_seq, vs_info.pgm_hash, ps ? ps->pgm_hash : 0, 0, 0);
+    }
     DebugState.IncDrawCall();
 
     ResetBindings(false);
@@ -1500,7 +1513,10 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     const vk::Pipeline handle = pipeline->Handle();
     const u32 dim_x = cs_program.dim_x, dim_y = cs_program.dim_y, dim_z = cs_program.dim_z;
     if (FrameCapture::Active()) {
-        FrameCapture::Dispatch(cs.pgm_hash, dim_x, dim_y, dim_z);
+        // FEAT-001: (frame,dispatch_seq) is this dispatch's stable identity.
+        const u64 frame = FrameCapture::CurrentFrameIndex();
+        const u64 dispatch_seq = FrameCapture::NextDispatchSeq();
+        FrameCapture::Dispatch(frame, dispatch_seq, cs.pgm_hash, dim_x, dim_y, dim_z);
     }
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         if (Scheduler::FullBarriers()) {
@@ -2792,7 +2808,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             image.usage.storage |= is_storage;
             image.usage.texture |= !is_storage;
             if (FrameCapture::Active()) {
-                FrameCapture::Sampled(image.info, is_storage);
+                FrameCapture::Sampled(image.info, image.stable_id, is_storage);
                 static const bool diag_sampled_on = [] {
                     const char* env = std::getenv("THEORDER_DIAG_SAMPLED");
                     return env && *env == '1';
@@ -3441,14 +3457,19 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     }
     if (census_on) {
         std::array<const VideoCore::ImageInfo*, AmdGpu::NUM_COLOR_BUFFERS> colors{};
+        std::array<u64, AmdGpu::NUM_COLOR_BUFFERS> color_ids{}; // FEAT-001: Image::stable_id
         for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
             if (cb_descs[cb].first) {
-                colors[cb] = &texture_cache.GetImage(cb_descs[cb].first).info;
+                const auto& color_image = texture_cache.GetImage(cb_descs[cb].first);
+                colors[cb] = &color_image.info;
+                color_ids[cb] = color_image.stable_id;
                 census.color_samples.push_back(u8(regs.color_buffers[cb].NumSamples()));
             }
         }
-        const auto* depth =
-            db_desc.first ? &texture_cache.GetImage(db_desc.first).info : nullptr;
+        const VideoCore::Image* depth_image =
+            db_desc.first ? &texture_cache.GetImage(db_desc.first) : nullptr;
+        const auto* depth = depth_image ? &depth_image->info : nullptr;
+        const u64 depth_id = depth_image ? depth_image->stable_id : 0;
         census.raster_samples = u8(key.num_samples);
         census.path = PassCensus::ResolveSamplePath(
             census.color_samples, census.depth_samples, depth != nullptr,
@@ -3457,8 +3478,8 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             regs.ps_input_addr.persp_sample_ena || regs.ps_input_addr.linear_sample_ena;
         census.feedback_loop = attachment_feedback_loop;
         census.area = {state.width, state.height};
-        FrameCapture::BeginPass(colors.data(), state.num_color_attachments, depth,
-                                PassCensus::Format(census));
+        FrameCapture::BeginPass(colors.data(), color_ids.data(), state.num_color_attachments, depth,
+                                depth_id, PassCensus::Format(census));
         diag_targets.clear();
         for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
             if (cb_descs[cb].first) {

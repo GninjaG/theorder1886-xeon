@@ -127,6 +127,9 @@ struct Buffer {
     std::span<u8> mapped_data{};
     bool is_coherent{};
     MemoryType mem_type{MemoryType::DeviceLocal};
+    /// Monotonic ID minted at construction, never reused. Carried in the Vulkan debug name so
+    /// every validation/sync message self-identifies (FEAT-001).
+    u64 stable_id{};
     UniqueBuffer buffer;
 };
 

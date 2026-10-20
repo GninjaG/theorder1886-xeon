@@ -181,6 +181,10 @@ public:
     u32 upload_deferred_frames = 0;
     u32 verify_frame = 0;
     u64 image_uid{};
+    /// Monotonic ID minted at construction, never reused (unlike SlotId). Carried in the Vulkan
+    /// debug name so every validation/sync message self-identifies (FEAT-001).
+    u64 stable_id{};
+    u64 creation_frame{};
     /// port: order of the last GPU write, to sync images sharing memory (texture_cache.h).
     u64 alias_generation{};
 

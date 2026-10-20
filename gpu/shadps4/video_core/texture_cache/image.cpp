@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "port_toggles.h"
+#include <atomic>
 #include <ranges>
 #include <memory>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -20,6 +22,9 @@ namespace VideoCore {
 using namespace Vulkan;
 
 Common::IncrementalIdProvider<u64> Image::global_image_uid{};
+
+/// FEAT-001: monotonic image ID minted at construction; never reused.
+static std::atomic<u64> g_next_image_stable_id{1};
 
 static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
                                            const ImageInfo& info) {
@@ -235,11 +240,17 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
     backing->image.Create(image_ci);
 
+    // FEAT-001: mint the stable ID BEFORE SetObjectName so the first validation/sync message
+    // the layer prints for this image already carries '#<stable_id>'.
+    stable_id = g_next_image_stable_id.fetch_add(1, std::memory_order_relaxed);
+    creation_frame = Vulkan::FrameCapture::CurrentFrameIndex();
+
     Vulkan::SetObjectName(instance.GetDevice(), GetImage(),
-                          "Image {}x{}x{} {} {} {:#x}:{:#x} L:{} M:{} S:{}", info.size.width,
-                          info.size.height, info.size.depth, AmdGpu::NameOf(info.tile_mode),
-                          vk::to_string(info.pixel_format), info.guest_address, info.guest_size,
-                          info.resources.layers, info.resources.levels, info.num_samples);
+                          "#{} f{} Image {}x{}x{} {} {} {:#x}:{:#x} L:{} M:{} S:{}", stable_id,
+                          creation_frame, info.size.width, info.size.height, info.size.depth,
+                          AmdGpu::NameOf(info.tile_mode), vk::to_string(info.pixel_format),
+                          info.guest_address, info.guest_size, info.resources.layers,
+                          info.resources.levels, info.num_samples);
 }
 
 Image::~Image() = default;

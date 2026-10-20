@@ -20,11 +20,15 @@ struct Target {
     VAddr address{};
     vk::Format format{};
     u32 width{}, height{};
+    u64 stable_id{}; ///< FEAT-001: Image::stable_id, 0 when unknown
     bool operator==(const Target&) const = default;
 };
 
 struct Entry {
     bool compute{};
+    bool has_seq{}; ///< whether frame/seq below were set by the first draw/dispatch
+    u64 frame{};    ///< (frame, seq) of the first draw/dispatch recorded into this entry
+    u64 seq{};
     std::vector<Target> colors;
     Target depth;
     u32 draws{};
@@ -58,13 +62,17 @@ std::vector<VAddr> display_buffers;
 std::array<std::atomic<VAddr>, 16> display_list{};
 std::atomic<u32> display_count{0};
 
-Target ToTarget(const VideoCore::ImageInfo& info) {
-    return {info.guest_address, info.pixel_format, info.size.width, info.size.height};
+Target ToTarget(const VideoCore::ImageInfo& info, u64 stable_id = 0) {
+    return {info.guest_address, info.pixel_format, info.size.width, info.size.height, stable_id};
 }
 
 std::string Describe(const Target& t) {
     if (!t.address) {
         return "-";
+    }
+    if (t.stable_id) {
+        return std::format("img#{} {:#x} {} {}x{}", t.stable_id, t.address, vk::to_string(t.format),
+                           t.width, t.height);
     }
     return std::format("{:#x} {} {}x{}", t.address, vk::to_string(t.format), t.width, t.height);
 }
@@ -123,10 +131,17 @@ void Write(VAddr presented) {
                  static_cast<unsigned long long>(PortStats::flips.load(std::memory_order_relaxed)));
     u32 index = 0;
     for (const auto& e : entries) {
+        // FEAT-001: (frame,draw_seq) header so each entry links to the stable draw identity.
+        char seq_hdr[48] = "";
+        if (e.has_seq) {
+            std::snprintf(seq_hdr, sizeof(seq_hdr), " (frame %llu seq %llu)",
+                          static_cast<unsigned long long>(e.frame),
+                          static_cast<unsigned long long>(e.seq));
+        }
         if (e.compute) {
-            std::fprintf(f, "\n#%u COMPUTE dispatches %u, cs", index++, e.draws);
+            std::fprintf(f, "\n#%u%s COMPUTE dispatches %u, cs", index++, seq_hdr, e.draws);
         } else {
-            std::fprintf(f, "\n#%u PASS draws %u (indices %llu), vs/ps", index++, e.draws,
+            std::fprintf(f, "\n#%u%s PASS draws %u (indices %llu), vs/ps", index++, seq_hdr, e.draws,
                          static_cast<unsigned long long>(e.indices));
         }
         for (const u64 h : e.shaders) {
@@ -188,7 +203,28 @@ std::string FrameCapture::LastResult() {
     return result;
 }
 
-void FrameCapture::Poll() {}
+void FrameCapture::Poll() {
+    // Reset the per-frame draw/dispatch sequence once at each frame boundary (the flip counter
+    // advancing). GPU thread; Poll runs at every draw/dispatch.
+    static u64 last_frame = ~0ULL;
+    const u64 frame = flips.load(std::memory_order_relaxed);
+    if (frame != last_frame) {
+        last_frame = frame;
+        draw_seq.store(0, std::memory_order_relaxed);
+        dispatch_seq.store(0, std::memory_order_relaxed);
+    }
+}
+
+void FrameCapture::LogSkipStall(u64 frame, u64 draw_seq_value, u64 target_id, u64 vs_hash,
+                                u64 ps_hash, DrawDisposition disposition) {
+    std::printf("frame %llu draw %llu img#%llu vs/ps %016llx %016llx %s\n",
+                static_cast<unsigned long long>(frame),
+                static_cast<unsigned long long>(draw_seq_value),
+                static_cast<unsigned long long>(target_id),
+                static_cast<unsigned long long>(vs_hash),
+                static_cast<unsigned long long>(ps_hash),
+                disposition == DrawDisposition::Skipped ? "SKIPPED" : "STALLED");
+}
 
 bool FrameCapture::IsDisplayBuffer(VAddr address) {
     const u32 count = display_count.load(std::memory_order_acquire);
@@ -216,14 +252,16 @@ void FrameCapture::AddDisplayBuffer(VAddr address) {
     }
 }
 
-void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_colors,
-                             const VideoCore::ImageInfo* depth, std::string census) {
+void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, const u64* color_ids,
+                             u32 num_colors, const VideoCore::ImageInfo* depth, u64 depth_id,
+                             std::string census) {
     std::vector<Target> targets;
     bool display = false;
     {
         std::scoped_lock lk{display_mutex};
         for (u32 i = 0; i < num_colors; ++i) {
-            targets.push_back(colors[i] ? ToTarget(*colors[i]) : Target{});
+            targets.push_back(colors[i] ? ToTarget(*colors[i], color_ids ? color_ids[i] : 0)
+                                        : Target{});
             display |= colors[i] && std::ranges::find(display_buffers, colors[i]->guest_address) !=
                                         display_buffers.end();
         }
@@ -253,7 +291,7 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
         pending_buffers.clear();
         return;
     }
-    const Target d = depth ? ToTarget(*depth) : Target{};
+    const Target d = depth ? ToTarget(*depth, depth_id) : Target{};
     if (pass_open && !entries.empty() && !entries.back().compute &&
         entries.back().colors == targets && entries.back().depth == d) {
         return;
@@ -263,12 +301,18 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
     pass_open = true;
 }
 
-void FrameCapture::Draw(u64 vs_hash, u64 ps_hash, u32 num_indices, u32 num_instances) {
+void FrameCapture::Draw(u64 frame, u64 draw_seq, u64 vs_hash, u64 ps_hash, u32 num_indices,
+                        u32 num_instances) {
     if (state.load(std::memory_order_relaxed) != Recording || entries.empty() ||
         entries.back().compute) {
         return;
     }
     auto& e = entries.back();
+    if (!e.has_seq) {
+        e.has_seq = true;
+        e.frame = frame;
+        e.seq = draw_seq;
+    }
     ++e.draws;
     e.indices += u64(num_indices) * std::max(num_instances, 1u);
     AddShader(e, vs_hash);
@@ -277,7 +321,7 @@ void FrameCapture::Draw(u64 vs_hash, u64 ps_hash, u32 num_indices, u32 num_insta
     AddBuffers(e);
 }
 
-void FrameCapture::Dispatch(u64 cs_hash, u32 x, u32 y, u32 z) {
+void FrameCapture::Dispatch(u64 frame, u64 dispatch_seq, u64 cs_hash, u32 x, u32 y, u32 z) {
     if (state.load(std::memory_order_relaxed) != Recording) {
         pending_sampled.clear();
         pending_buffers.clear();
@@ -287,7 +331,12 @@ void FrameCapture::Dispatch(u64 cs_hash, u32 x, u32 y, u32 z) {
         entries.back().shaders[0] == cs_hash) {
         ++entries.back().draws;
     } else {
-        entries.push_back({.compute = true, .draws = 1, .shaders = {cs_hash}});
+        entries.push_back({.compute = true,
+                           .has_seq = true,
+                           .frame = frame,
+                           .seq = dispatch_seq,
+                           .draws = 1,
+                           .shaders = {cs_hash}});
         entries.back().note = std::format("groups {}x{}x{}", x, y, z);
     }
     AddSampled(entries.back());
@@ -312,9 +361,9 @@ void FrameCapture::Buffer(u64 stage_hash, u32 slot, VAddr address, const void* d
     pending_buffers.push_back(std::move(out));
 }
 
-void FrameCapture::Sampled(const VideoCore::ImageInfo& info, bool storage) {
+void FrameCapture::Sampled(const VideoCore::ImageInfo& info, u64 stable_id, bool storage) {
     if (pending_sampled.size() < 64) {
-        pending_sampled.emplace_back(ToTarget(info), storage);
+        pending_sampled.emplace_back(ToTarget(info, stable_id), storage);
     }
 }
 

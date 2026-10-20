@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <cstdlib>
 #include <numeric>
 #include <string_view>
@@ -16,6 +17,9 @@
 #include <vk_mem_alloc.h>
 
 namespace VideoCore {
+
+/// FEAT-001: monotonic buffer ID minted at construction; never reused.
+static std::atomic<u64> g_next_buffer_stable_id{1};
 
 std::string_view BufferTypeName(MemoryType type) {
     switch (type) {
@@ -180,12 +184,17 @@ Buffer::Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes
     VmaAllocationInfo alloc_info{};
     buffer.Create(buffer_ci, mem_type, &alloc_info);
 
+    // FEAT-001: mint the stable ID BEFORE SetObjectName so the first validation/sync message
+    // the layer prints for this buffer already carries '#<stable_id>'.
+    stable_id = g_next_buffer_stable_id.fetch_add(1, std::memory_order_relaxed);
+
     const auto device = instance.GetDevice();
     if (Handle()) {
         if (!debug_name.empty()) {
-            Vulkan::SetObjectName(device, Handle(), debug_name);
+            Vulkan::SetObjectName(device, Handle(), "#{} {}", stable_id, debug_name);
         } else {
-            Vulkan::SetObjectName(device, Handle(), "Buffer {:#x}:{:#x}", cpu_addr, size_bytes);
+            Vulkan::SetObjectName(device, Handle(), "#{} Buffer {:#x}:{:#x}", stable_id, cpu_addr,
+                                  size_bytes);
         }
     }
 
@@ -223,7 +232,7 @@ StreamBuffer::StreamBuffer(const Vulkan::Instance& instance, Vulkan::Scheduler& 
       non_coherent_atom_size{instance.NonCoherentAtomSize()} {
     ReserveWatches(current_watches, WATCHES_INITIAL_RESERVE);
     ReserveWatches(previous_watches, WATCHES_INITIAL_RESERVE);
-    Vulkan::SetObjectName(instance.GetDevice(), Handle(), "StreamBuffer({}):{:#x}",
+    Vulkan::SetObjectName(instance.GetDevice(), Handle(), "#{} StreamBuffer({}):{:#x}", stable_id,
                           BufferTypeName(mem_type), size_bytes);
 }
 
