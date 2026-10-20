@@ -266,6 +266,7 @@ LdsBarrierMode SelectLdsBarrierMode(const LdsKernelShape& shape, LdsBarrierOverr
         (wave_split && shape.threadgroup_size > GcnSubgroupSize &&
          shape.threadgroup_size % GcnSubgroupSize == 0);
     return eligible ? LdsBarrierMode::Multiwave : LdsBarrierMode::Subgroup;
+}
 
 void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_info,
                              const Profile& profile) {
