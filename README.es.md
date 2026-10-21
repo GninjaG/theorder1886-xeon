@@ -104,7 +104,8 @@ Los mandos (DualSense, Xbox y otros) funcionan con SDL3, junto con el teclado.
 |---|---|
 | WASD | stick izquierdo |
 | Flechas | stick derecho (cámara) y cruceta |
-| Espacio o Enter | Cruz |
+| Espacio | Cruz |
+| Enter | Options |
 | Shift izquierdo o Esc | Círculo |
 | E | Cuadrado |
 | Q | Triángulo |
@@ -117,8 +118,8 @@ Los mandos (DualSense, Xbox y otros) funcionan con SDL3, junto con el teclado.
 | Ratón | cámara; botón izquierdo R2 (disparar), derecho L2 (apuntar), central R3, laterales L1/R1 |
 | F7 | activa/desactiva la cámara con el ratón |
 
-El teclado aún no tiene el botón Options. En mandos sin panel táctil, View (Back) es el clic
-derecho del panel. `THEORDER_KEY_MAP` y `THEORDER_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
+En mandos sin panel táctil, View (Back) es el clic derecho del panel.
+`THEORDER_KEY_MAP` y `THEORDER_PAD_MAP` cambian los botones (`src/runtime_pad.c`).
 
 El menú del port (Insert) tiene las opciones de pantalla, campo de visión, ratón, límite de
 fotogramas y la superposición de rendimiento. El campo de visión (50-200%) cambia al momento; por

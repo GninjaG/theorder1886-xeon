@@ -4,6 +4,8 @@
 #include "../src/runtime_pad.c"
 
 int theordergpu_overlay_captures_input(void) { return 0; }
+/* This map-only executable links runtime_pad.c without the GPU shim. */
+void theordergpu_mouse_take(TheOrderMouse *out) { memset(out,0,sizeof(*out)); }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;
@@ -17,6 +19,21 @@ static uint32_t pressed_by(const ButtonMap *map, int source) {
 }
 
 int main(void) {
+    /* Keyboard defaults: Enter is Options alone, while Space remains Cross. */
+    assert(pressed_by(&key_map,SDL_SCANCODE_RETURN)==BTN_OPTIONS);
+    assert(pressed_by(&key_map,SDL_SCANCODE_SPACE)==BTN_CROSS);
+    assert(pressed_by(&pad_map,SDL_GAMEPAD_BUTTON_START)==BTN_OPTIONS);
+
+    ButtonMap options=key_map;
+    assert(apply_button_map(&options,"options=P",true)==1);
+    assert(pressed_by(&options,SDL_SCANCODE_RETURN)==0);
+    assert(pressed_by(&options,SDL_SCANCODE_P)==BTN_OPTIONS);
+
+    ButtonMap explicit_options=key_map;
+    assert(apply_button_map(&explicit_options,"options=Return",true)==1);
+    assert(pressed_by(&explicit_options,SDL_SCANCODE_RETURN)==BTN_OPTIONS);
+    assert(pressed_by(&explicit_options,SDL_SCANCODE_SPACE)==BTN_CROSS);
+
     ButtonMap keys=key_map;
     assert(apply_button_map(&keys,NULL,true)==0 && apply_button_map(&keys,"",true)==0);
     assert(keys.count==key_map.count);
