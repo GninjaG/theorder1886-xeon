@@ -21,11 +21,12 @@ inline constexpr std::array<int, 5> FpsLimits = {30, 60, 120, 240, 0};
 
 /// Aspect ratios: game patch suffixes ("Aspect Ratio - <name>"); "original" is the game's own
 /// 2.40:1 picture with black bars, the others fill a screen of that shape.
-inline constexpr std::array<std::string_view, 4> Aspects = {"original", "16:9", "16:10", "21:9"};
-inline constexpr std::array<const char*, 4> AspectNames = {"Original (2.40:1, black bars)", "16:9",
-                                                           "16:10", "21:9"};
+inline constexpr std::array<std::string_view, 5> Aspects = {"original", "16:9", "16:10", "21:9", "32:9"};
+inline constexpr std::array<const char*, 5> AspectNames = {"Original (2.40:1, black bars)", "16:9",
+                                                           "16:10", "21:9", "32:9"};
 /// The width / height the patch gives the game's picture (21:9 is 2560x1080's 64:27).
-inline constexpr std::array<float, 4> AspectValues = {2.4f, 16.0f / 9.0f, 1.6f, 64.0f / 27.0f};
+inline constexpr std::array<float, 5> AspectValues = {2.4f, 16.0f / 9.0f, 1.6f, 64.0f / 27.0f,
+                                                       32.0f / 9.0f};
 /// Engine frame rate ceilings: 60 is the game's own, 120 and 240 are frame rate patches.
 inline constexpr std::array<int, 3> EngineFps = {60, 120, 240};
 
