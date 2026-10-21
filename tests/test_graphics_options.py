@@ -65,6 +65,18 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.assertEqual(g.patch_names(['Aspect Ratio - 21:9', 'Skip Intro Logos'], original),
                          ['Skip Intro Logos'])
 
+    def test_ultrawide_startup_selects_the_existing_patch(self):
+        from patches import selected_patches
+        self.ini.write_text('aspect_ratio=32:9\nengine_fps=60\noutput_res=5120x1440\n', encoding='utf-8')
+        options, reverted = g.prepare(self.ini, self.state)
+        self.assertFalse(reverted)
+        self.assertEqual(options['aspect_ratio'], '32:9')
+        names = g.patch_names([], options)
+        self.assertEqual(names, ['Aspect Ratio - 32:9'])
+        patch_file = paths.ROOT / 'patches/TheOrder1886-Orbis.xml'
+        self.assertEqual(selected_patches(patch_file, '01.02', ';'.join(names)), names)
+        self.assertEqual(g.read_ini(self.ini)['output_res'], '5120x1440')
+
     def test_applied_engine_fps(self):
         # The engine runs above 60 only with a frame rate patch in the applied list.
         self.assertEqual(g.applied_engine_fps(['Skip Intro Logos', 'Frame Rate Patch - 120 FPS']), 240)

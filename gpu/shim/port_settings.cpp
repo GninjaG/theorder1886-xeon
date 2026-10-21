@@ -284,7 +284,7 @@ void Save() {
                  PortGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
-                 PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, 3)].data(),
+                 PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, int(PortGraphics::Aspects.size()) - 1)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nanisotropy=%d\n", v.fov.load(),

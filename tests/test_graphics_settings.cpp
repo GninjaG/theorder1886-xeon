@@ -10,6 +10,15 @@
 
 namespace G = PortGraphics;
 
+static void SetEnv(const char* name, const char* value) {
+#ifdef _WIN32
+    const int result = _putenv_s(name, value);
+#else
+    const int result = value[0] ? setenv(name, value, 1) : unsetenv(name);
+#endif
+    assert(result == 0);
+}
+
 static std::string Read(const char* path) {
     std::ifstream in(path);
     std::stringstream s;
@@ -20,7 +29,10 @@ static std::string Read(const char* path) {
 int main() {
     assert(G::ParseDisplayMode("borderless") == G::Borderless && G::ParseDisplayMode("bogus") == G::Windowed);
     assert(G::ParseFpsLimit(240) == 240 && G::ParseFpsLimit(75) == 0);
-    assert(G::ParseAspect("16:10") == 2 && G::ParseAspect("32:9") == 0);
+    assert(G::ParseAspect("16:10") == 2 && G::ParseAspect("21:9") == 3);
+    assert(G::ParseAspect("32:9") == 4 && G::ParseAspect("4:3") == 0);
+    assert(G::Aspects.size() == 5 && G::AspectNames.size() == 5 && G::AspectValues.size() == 5);
+    assert(G::Aspects[4] == "32:9" && G::AspectValues[4] == 32.0f / 9.0f);
     // The picture an aspect ratio patch leaves in the 1920x1080 display buffer (measured in dumps).
     const auto wide = G::PictureRect(1920, 1080, G::AspectValues[3]);
     assert(wide.x == 0 && wide.y == 135 && wide.w == 1920 && wide.h == 810);
@@ -30,6 +42,17 @@ int main() {
     assert(original.y == 140 && original.h == 800);
     const auto full = G::PictureRect(1920, 1080, G::AspectValues[1]);
     assert(full.x == 0 && full.y == 0 && full.w == 1920 && full.h == 1080);
+    const auto ultrawide = G::PictureRect(1920, 1080, G::AspectValues[4]);
+    assert(ultrawide.x == 0 && ultrawide.y == 270 && ultrawide.w == 1920 && ultrawide.h == 540);
+    const auto full_ultrawide = G::PictureRect(5120, 1440, G::AspectValues[4]);
+    assert(full_ultrawide.x == 0 && full_ultrawide.y == 0 &&
+           full_ultrawide.w == 5120 && full_ultrawide.h == 1440);
+    assert(PortSettings::OutputCount == 5 && PortSettings::OutputDefault == 1);
+    assert(PortSettings::OutputWidths[0] == 1280 && PortSettings::OutputHeights[0] == 720);
+    assert(PortSettings::OutputWidths[1] == 1920 && PortSettings::OutputHeights[1] == 1080);
+    assert(PortSettings::OutputWidths[2] == 2560 && PortSettings::OutputHeights[2] == 1440);
+    assert(PortSettings::OutputWidths[3] == 3840 && PortSettings::OutputHeights[3] == 2160);
+    assert(PortSettings::OutputWidths[4] == 5120 && PortSettings::OutputHeights[4] == 1440);
     assert(G::ParseEngineFps(240) == 240 && G::ParseEngineFps(90) == 120);
     assert(G::ParseFramesQueued(2) == 2 && G::ParseFramesQueued(0) == 0 && G::ParseFramesQueued(5) == 1);
     assert(G::ParseRcasStrength(100) == 100 && G::ParseRcasStrength(101) == 75 && G::ParseRcasStrength(-1) == 75);
@@ -49,24 +72,25 @@ int main() {
                "aspect_ratio=16:10\nengine_fps=240\ndeferred_readback=0\nstale_readback=1\n"
                "fsr1=1\nrcas=0\nrcas_strength=40\nframes_queued=2\n";
     }
-    _putenv_s("THEORDER_CONFIG", path);
-    _putenv_s("THEORDER_ASYNC_SHADERS", "");
+    SetEnv("THEORDER_CONFIG", path);
+    SetEnv("THEORDER_ASYNC_SHADERS", "");
     auto& v = PortSettings::Get();
     PortSettings::Load();
+    assert(v.output_res == PortSettings::OutputDefault);
     assert(v.display_mode == G::Borderless && !v.vsync && v.fps_limit == 240 && !v.async_shaders);
     assert(v.aspect == 2 && v.engine_fps == 240 && !v.deferred_readback && v.stale_readback);
     // FSR 1 left the menus in 2.2.0: a saved fsr1=1 (or THEORDER_FSR1) no longer turns it on.
     assert(!v.fsr1 && !v.rcas && v.rcas_strength == 40 && v.frames_queued == 2);
-    _putenv_s("THEORDER_FSR1", "1");
+    SetEnv("THEORDER_FSR1", "1");
     PortSettings::Load();
     assert(!v.fsr1);
-    _putenv_s("THEORDER_FSR1", "");
+    SetEnv("THEORDER_FSR1", "");
     assert(!PortSettings::GraphicsNeedRestart());
     assert(v.applied_engine_fps == 240);  // no THEORDER_ENGINE_FPS: the configured rate
-    _putenv_s("THEORDER_ENGINE_FPS", "60");    // run.py: the frame rate patch did not apply
+    SetEnv("THEORDER_ENGINE_FPS", "60");    // run.py: the frame rate patch did not apply
     PortSettings::Load();
     assert(v.engine_fps == 240 && v.applied_engine_fps == 60 && !PortSettings::GraphicsNeedRestart());
-    _putenv_s("THEORDER_ENGINE_FPS", "");
+    SetEnv("THEORDER_ENGINE_FPS", "");
     v.engine_fps = 120;
     assert(PortSettings::GraphicsNeedRestart());
     v.fps_limit = 60;  // live: no restart because of it
@@ -78,16 +102,37 @@ int main() {
     for (const char* line : {"display_mode=borderless\n", "vsync=0\n", "fps_limit=60\n", "async_shaders=0\n",
                              "aspect_ratio=16:10\n", "engine_fps=240\n", "deferred_readback=0\n",
                              "stale_readback=1\n", "fsr1=0\n", "rcas=0\n", "rcas_strength=40\n",
-                             "frames_queued=2\n"}) {
+                             "frames_queued=2\n", "output_res=1920x1080\n"}) {
         assert(saved.find(line) != std::string::npos);
     }
 
     {
         std::ofstream out(path);
-        out << "display_mode=huge\nfps_limit=7\naspect_ratio=32:9\nengine_fps=1\n"
+        out << "aspect_ratio=32:9\noutput_res=5120x1440\n";
+    }
+    PortSettings::Load();
+    assert(v.aspect == 4 && v.startup_aspect == 4);
+    assert(v.output_res == 4 && v.startup_output_res == 4);
+    assert(!PortSettings::GraphicsNeedRestart());
+    v.aspect = 1;
+    assert(PortSettings::GraphicsNeedRestart());
+    v.aspect = 4;
+    assert(!PortSettings::GraphicsNeedRestart());
+    PortSettings::Save();
+    const std::string saved_ultrawide = Read(path);
+    assert(saved_ultrawide.find("aspect_ratio=32:9\n") != std::string::npos);
+    assert(saved_ultrawide.find("output_res=5120x1440\n") != std::string::npos);
+    v.aspect = 0;
+    v.output_res = PortSettings::OutputDefault;
+    PortSettings::Load();
+    assert(v.aspect == 4 && v.startup_aspect == 4 && v.output_res == 4 && v.startup_output_res == 4);
+
+    {
+        std::ofstream out(path);
+        out << "display_mode=huge\nfps_limit=7\naspect_ratio=4:3\nengine_fps=1\n"
                "rcas_strength=250\nframes_queued=9\n";
     }
-    _putenv_s("THEORDER_ASYNC_SHADERS", "1");  // the environment still wins at start
+    SetEnv("THEORDER_ASYNC_SHADERS", "1");  // the environment still wins at start
     v.async_shaders = false;
     PortSettings::Load();
     assert(v.display_mode == G::Windowed && v.fps_limit == 0 && v.aspect == 0 && v.engine_fps == 120);
