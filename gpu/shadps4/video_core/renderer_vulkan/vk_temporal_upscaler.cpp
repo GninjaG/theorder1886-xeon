@@ -297,6 +297,9 @@ bool TemporalUpscaler::OnFrameStart() {
     const bool active = Active();
     const bool jitter_on = active && settings.jitter && !PortToggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
+    // RecordDlss switches to FSR 3.1 on failure. A new DLSS request is an explicit retry,
+    // including when it arrives before the fallback has rendered a frame.
+    if (upscaler == PortSettings::UpscalerDlss) dlss_failed = false;
     const int output = settings.output_res.load();
     const bool output_changed = !scaled_session && applied_output != output;
     if (output_changed) {
