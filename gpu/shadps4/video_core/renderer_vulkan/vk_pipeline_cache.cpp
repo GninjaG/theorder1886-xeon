@@ -78,7 +78,6 @@ struct AsyncGraphicsCompilation {
     std::array<const Shader::Info*, MaxShaderStages> live_infos;
     GraphicsPipeline::SerializationSupport data;
     std::unique_ptr<GraphicsPipeline> pipeline;
-    bool failure_logged = false;
 };
 
 // port: a compute pipeline built on a compiler thread. Its driver compile took ~180 ms on the GPU
@@ -746,10 +745,19 @@ void PipelineCache::PublishGraphics(bool wait) {
         }
         auto result = build->job.Poll();
         if (!result) {
-            if (build->job.Failed() && !build->failure_logged) {
+            if (build->job.Failed()) {
+                // A warm-up result may have won this key while the job was in flight.
+                const auto ready = graphics_pipelines.find(it.key());
+                if (ready == graphics_pipelines.end() || !ready->second || ready->second->Failed()) {
+                    failed_graphics.insert(it.key());
+                }
                 LOG_ERROR(Render_Vulkan, "port: pipeline {:#x} compilation failed: {}",
                           std::hash<GraphicsPipelineKey>{}(it.key()), build->job.Error());
-                build->failure_logged = true;
+                if (last_lookup_pending && last_pending_key == it.key()) {
+                    last_lookup_pending = false;
+                }
+                it = pending_graphics.erase(it);
+                continue;
             }
             ++it;
             continue;
@@ -774,23 +782,33 @@ const GraphicsPipeline* PipelineCache::WaitGraphics(const GraphicsPipelineKey& k
     }
     auto build = it.value();
     build->job.Wait(); // exactly one job.Wait(); ~130-250 ms worst case, bounded to this key.
+    if (last_lookup_pending && last_pending_key == key) {
+        last_lookup_pending = false;
+    }
     const auto result = build->job.Poll();
     if (!result) {
-        if (build->job.Failed() && !build->failure_logged) {
+        const auto ready = graphics_pipelines.find(key);
+        const auto* pipeline = ready != graphics_pipelines.end() && ready->second &&
+                                       !ready->second->Failed()
+                                   ? ready->second.get() : nullptr;
+        if (build->job.Failed()) {
+            if (!pipeline) {
+                failed_graphics.insert(key);
+            }
             LOG_ERROR(Render_Vulkan, "port: pipeline {:#x} compilation failed: {}",
                       std::hash<GraphicsPipelineKey>{}(key), build->job.Error());
-            build->failure_logged = true;
         }
         pending_graphics.erase(it);
-        return nullptr;
+        return pipeline;
     }
     build->pipeline->PublishStages(build->live_infos);
     RegisterPipelineData(key, std::hash<GraphicsPipelineKey>{}(key), build->data);
-    auto* pl = build->pipeline.get();
-    graphics_pipelines.emplace(key, std::move(build->pipeline));
+    // Warm-up may already have published this key. Return the cache's winner, since
+    // emplace can discard the pipeline owned by this completed on-demand build.
+    const auto published = graphics_pipelines.emplace(key, std::move(build->pipeline)).first;
     ++num_new_pipelines;
     pending_graphics.erase(it);
-    return pl;
+    return published->second && !published->second->Failed() ? published->second.get() : nullptr;
 }
 
 void PipelineCache::PublishCompute(bool wait) {
@@ -891,7 +909,8 @@ bool PipelineCache::PrepareGraphicsPipeline(PipelineSelection& worker_sel) {
 
 const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& prepared) {
     if (prepared.state.load(std::memory_order_acquire) != PreparedDraw::Ready ||
-        prepared.reg_checksum != liverpool->gfx_reg_checksum) {
+        prepared.reg_checksum != liverpool->gfx_reg_checksum ||
+        failed_graphics.contains(prepared.key)) {
         return nullptr;
     }
     // Same registers; the stage programs and their flattened user data (which also covers
@@ -919,7 +938,8 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         }
     }
     const auto it = graphics_pipelines.find(prepared.key);
-    return it != graphics_pipelines.end() && !it->second->Failed() ? it->second.get() : nullptr;
+    return it != graphics_pipelines.end() && it->second && !it->second->Failed()
+               ? it->second.get() : nullptr;
 }
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params,
@@ -947,23 +967,20 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             flag = false;
         }
     } sync_reset{sync_compile};
-    if (sync_compile) {
-        // Queued in the background earlier: waited for, not compiled twice.
-        if (const auto pending = pending_graphics.find(sel.graphics_key);
-            pending != pending_graphics.end()) {
-            pending.value()->job.Wait();
-            PublishGraphics();
-            if (const auto found = graphics_pipelines.find(sel.graphics_key);
-                found != graphics_pipelines.end()) {
-                return found->second->Failed() ? nullptr : found->second.get();
-            }
-        }
-    }
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
             ++g_port_pending_draws;
         }
         return nullptr;
+    }
+    // Keep only the key after an exceptional build: its snapshots can be freed, but neither
+    // an async retry nor a synchronous/known-binary restore may recreate it this session.
+    if (failed_graphics.contains(sel.graphics_key)) {
+        return nullptr;
+    }
+    if (sync_compile && pending_graphics.contains(sel.graphics_key)) {
+        // Refresh first: the previous selection may belong to a different draw.
+        return WaitGraphics(sel.graphics_key);
     }
     // port: a pipeline an earlier session built (its key is stored) comes back from the
     // pipeline binary cache in 1-2 ms: built here, its draws are not skipped meanwhile. Skipped

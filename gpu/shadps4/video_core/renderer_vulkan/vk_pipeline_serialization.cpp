@@ -1650,10 +1650,12 @@ void PipelineCache::PumpWarmUp() {
     };
 
     // Built pipelines: the first one ready for a key wins (the game may have compiled it).
+    // A build already in flight when on-demand compilation failed must not revive that key.
     for (auto& built : warm.built.Take(64)) {
         const bool kept =
             built.graphics
-                ? PublishFirst(graphics_pipelines, built.graphics_key, std::move(built.graphics))
+                ? !failed_graphics.contains(built.graphics_key) &&
+                      PublishFirst(graphics_pipelines, built.graphics_key, std::move(built.graphics))
                 : PublishFirst(compute_pipelines, built.compute_key, std::move(built.compute));
         warm.loaded += kept;
         warm.done.fetch_add(1, std::memory_order_relaxed);
@@ -1679,7 +1681,8 @@ void PipelineCache::PumpWarmUp() {
     for (auto& entry : warm.read.Take(32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
-                          : graphics_pipelines.contains(entry.graphics_key)) {
+                          : graphics_pipelines.contains(entry.graphics_key) ||
+                                failed_graphics.contains(entry.graphics_key)) {
             static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
             if (log && !entry.compute) {
                 std::printf("Warm-up skipped g_%#018llx: the game has it\n",
