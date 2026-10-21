@@ -3,6 +3,7 @@ import queue
 import struct
 import sys
 import unittest
+from unittest import mock
 
 from paths import ROOT
 sys.path.insert(0, str(ROOT / 'launcher'))
@@ -108,11 +109,15 @@ class ControlMapTest(unittest.TestCase):
         self.assertEqual(launcher.game_environment({**settings, 'parallel_warmup': False})['THEORDER_PARALLEL_WARMUP'], '0')
         self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_BACKGROUND_WARMUP'], '0')
 
-    def test_temporal_upscaler_stays_off_with_a_saved_2_1_8_switch(self):
-        # 2.1.8 showed the experimental switch; a player who turned it on must not keep it on now that it is hidden.
-        for saved in (True, False, None):
-            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
-            self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
+    def test_temporal_upscaler_stays_off_with_saved_or_inherited_choices(self):
+        # The old switch and a saved theorder.ini provider have no visible off control now.
+        with mock.patch.dict(os.environ, {'THEORDER_UPSCALER': 'fsr4',
+                                          'THEORDER_EXPERIMENTAL_UPSCALER': '1'}):
+            for saved in (True, False, None):
+                env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
+                self.assertEqual(env['THEORDER_UPSCALER'], 'off')
+                self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
+            self.assertEqual(os.environ['THEORDER_UPSCALER'], 'fsr4')
 
     def test_settings_keys_kept(self):
         # The redesign hides some options (player name) but keeps every saved setting working.

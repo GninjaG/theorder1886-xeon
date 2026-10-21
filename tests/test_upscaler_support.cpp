@@ -64,6 +64,20 @@ int main() {
             }
         }
     }
+    // The launcher parks temporal upscaling with THEORDER_UPSCALER=off even when an older
+    // settings file still requests a provider; output resolution remains independently active.
+    {
+        FILE* config = std::fopen(path, "w");
+        assert(config);
+        std::fprintf(config, "upscaler=fsr4\npreset=3\noutput_res=3840x2160\n");
+        std::fclose(config);
+        setenv("THEORDER_UPSCALER", "off", 1);
+        Load();
+        assert(s.upscaler == UpscalerOff && s.startup_upscaler == UpscalerOff);
+        assert(s.output_res == 3 && OutputWidths[s.output_res] == 3840 &&
+               OutputHeights[s.output_res] == 2160);
+        unsetenv("THEORDER_UPSCALER");
+    }
     s.startup_preset = Quality;
     s.startup_upscaler = UpscalerFsr3;
     s.upscaler = UpscalerFsr3;

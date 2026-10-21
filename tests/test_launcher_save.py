@@ -161,14 +161,15 @@ class SaveButtonTest(LauncherOverTemporaryFiles):
 
 class HiddenUpscalingTest(LauncherOverTemporaryFiles):
     INI = ('upscaler=fsr4\npreset=3\nfsr1=1\nsharpen=1\nsharpness=0.73\n'
-           'rcas=1\nrcas_strength=42\nobject_motion=0\noutput_res=2560x1440\n')
+           'rcas=1\nrcas_strength=42\nobject_motion=0\noutput_res=3440x1440\n')
 
     def test_hidden_settings_are_preserved_without_migration(self):
         before, _lines = launcher.load_ini()
         for key in ('upscaler', 'preset', 'fsr1', 'sharpen', 'sharpness', 'rcas',
-                    'rcas_strength', 'object_motion', 'output_res', 'live_resolution',
+                    'rcas_strength', 'object_motion', 'live_resolution',
                     'experimental_upscaler'):
             self.assertNotIn(key, self.app.vars)
+        self.assertEqual(self.app.vars['output_res'].get(), '3440x1440')
         self.assertEqual(self.save_state(), 'disabled')
         self.app.var('vsync', 'ini').set(False)
         self.app.save()
@@ -181,6 +182,15 @@ class HiddenUpscalingTest(LauncherOverTemporaryFiles):
         self.assertNotIn('upscaler', self.app.vars)
         self.assertEqual(launcher.load_ini()[0]['upscaler'], 'fsr4')
 
+    def test_native_output_selection_saves_without_reactivating_upscaling(self):
+        self.app.var('output_res', 'ini').set('3840x2160')
+        self.assertEqual(self.save_state(), 'normal')
+        self.app.save()
+        saved, _lines = launcher.load_ini()
+        self.assertEqual(saved['output_res'], '3840x2160')
+        self.assertEqual(saved['upscaler'], 'fsr4')
+        self.assertEqual(launcher.game_environment(self.app.app)['THEORDER_UPSCALER'], 'off')
+
 
 @unittest.skipUnless(sys.platform == 'win32' and tk, 'needs Windows and Tk')
 class EverySettingSavesTest(LauncherOverTemporaryFiles):
@@ -189,9 +199,9 @@ class EverySettingSavesTest(LauncherOverTemporaryFiles):
         self.options = {}
         original = launcher.Launcher.choice
 
-        def spy(app, parent, key, store, options, width=30, var=None):
+        def spy(app, parent, key, store, options, width=30, var=None, preserve_unknown=False):
             self.options[key or 'upscale_mode'] = [value for value, _text in options]
-            return original(app, parent, key, store, options, width, var)
+            return original(app, parent, key, store, options, width, var, preserve_unknown)
         self.patches = [mock.patch.object(launcher.Launcher, 'choice', spy),
                         mock.patch.object(launcher.Launcher, 'check_update', lambda app, manual=False: None)]
         for patch in self.patches:
