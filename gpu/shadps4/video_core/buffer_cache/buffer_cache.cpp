@@ -1156,8 +1156,12 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
 bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size) {
     if (const auto meta = texture_cache.GetMetaInfo(device_addr)) {
         if (meta->type == TextureCache::MetaType::HTile) {
-            runtime.FillBuffer(arena, arena->Offset(device_addr), size,
-                               *texture_cache.HtileReadValue(device_addr));
+            const auto value = texture_cache.HtileReadValue(device_addr);
+            if (!value) {
+                // Shader-written HTILE already lives in the arena; preserve its encoded words.
+                return false;
+            }
+            runtime.FillBuffer(arena, arena->Offset(device_addr), size, *value);
             return true;
         } else if (meta->type == TextureCache::MetaType::CMask) {
             const auto expanded_value = CmaskColorExpandedValue(meta->num_samples);
