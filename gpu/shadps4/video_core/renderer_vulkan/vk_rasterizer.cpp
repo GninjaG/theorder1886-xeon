@@ -2859,21 +2859,22 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     for (u32 binding_index = 0; binding_index < image_bindings.size(); ++binding_index) {
         auto& [image_id, desc_ptr] = image_bindings[binding_index];
         auto* memo_entry = image_binding_entries[binding_index];
-        const auto& desc = *desc_ptr;
-        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
+        const bool is_storage = desc_ptr->type == VideoCore::TextureCache::BindingType::Storage;
         if (!image_id) {
             image_infos.emplace_back(VK_NULL_HANDLE, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         } else {
             if (auto& old_image = texture_cache.GetImage(image_id);
                 old_image.binding.needs_rebind) {
                 old_image.binding = {};
-                auto& rebind_desc = image_desc_storage.emplace_back(desc);
+                auto& rebind_desc = image_desc_storage.emplace_back(*desc_ptr);
                 desc_ptr = &rebind_desc;
                 image_id = texture_cache.FindImage(rebind_desc);
                 memo_entry = nullptr;
                 set_ok = false;
             }
 
+            // FindImage may remap this binding into a replacement image's mip or layer.
+            const auto& desc = *desc_ptr;
             bound_images.emplace_back(image_id);
 
             auto& image = texture_cache.GetImage(image_id);
