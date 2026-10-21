@@ -9,6 +9,16 @@
 
 namespace Vulkan {
 
+/// Classify only the current target's effective color equation for the additive-clear heuristic.
+[[nodiscard]] constexpr bool IsAdditiveColorTarget(const AmdGpu::BlendControl& blend,
+                                                  const bool blend_bypass) {
+    using Factor = AmdGpu::BlendControl::BlendFactor;
+    using Function = AmdGpu::BlendControl::BlendFunc;
+    return blend.enable && !blend_bypass && blend.color_func == Function::Add &&
+           blend.color_dst_factor == Factor::One &&
+           (blend.color_src_factor == Factor::One || blend.color_src_factor == Factor::SrcAlpha);
+}
+
 struct BlendEquation {
     AmdGpu::BlendControl::BlendFactor src_factor;
     AmdGpu::BlendControl::BlendFunc function;

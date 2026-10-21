@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// GNM scaled MIN/MAX blend rewrite (vk_blend_rewrite.h). No game, Vulkan device or window required.
+// Color-blend classification and GNM MIN/MAX rewrite. No game, Vulkan device or window required.
+#include <array>
 #include <cassert>
 #include <cstdio>
 
@@ -15,7 +16,56 @@ static BlendRewriteResult Rewrite(BlendEquation& eq, Nf format = Nf::Unorm,
     return RewriteScaledMinMaxBlend(eq, format, channel);
 }
 
+// The same matrix can exercise the rasterizer expression in a standalone call-site proof.
+template <typename Classify>
+static void TestAdditiveTargetClassification(Classify classify) {
+    std::array<AmdGpu::BlendControl, 8> blends{};
+    bool ok = true;
+    const auto check = [&](const char* name, unsigned cb, bool bypass, bool expected) {
+        if (classify(blends, cb, bypass) != expected) {
+            std::fprintf(stderr, "additive classification failed: %s\n", name);
+            ok = false;
+        }
+    };
+    const auto additive = [](F source, Fn function = Fn::Add) {
+        AmdGpu::BlendControl blend{};
+        blend.enable = 1;
+        blend.color_src_factor = source;
+        blend.color_dst_factor = F::One;
+        blend.color_func = function;
+        return blend;
+    };
+    for (const auto source : {F::One, F::SrcAlpha}) {
+        blends[0] = additive(source);
+        check("ADD accepts supported source", 0, false, true);
+        check("blend bypass rejects ADD", 0, true, false);
+        blends[0].enable = 0;
+        check("disabled blending rejects ADD", 0, false, false);
+        blends[0] = additive(source);
+        blends[0].color_dst_factor = F::Zero;
+        check("destination must be One", 0, false, false);
+        for (const auto function : {Fn::Subtract, Fn::ReverseSubtract, Fn::Min, Fn::Max}) {
+            blends[0] = additive(source, function);
+            check("non-ADD rejects supported source", 0, false, false);
+        }
+    }
+    blends[0] = additive(F::SrcColor);
+    check("unsupported source rejects ADD", 0, false, false);
+
+    blends[0] = additive(F::One);
+    blends[1] = {};
+    check("MRT0 additive", 0, false, true);
+    check("opaque MRT1 independent of additive MRT0", 1, false, false);
+    std::swap(blends[0], blends[1]);
+    check("MRT1 additive independent of opaque MRT0", 1, false, true);
+    check("current MRT1 bypass", 1, true, false);
+    assert(ok);
+}
+
 int main() {
+    TestAdditiveTargetClassification([](const auto& blends, unsigned cb, bool bypass) {
+        return IsAdditiveColorTarget(blends[cb], bypass);
+    });
     // Not MIN/MAX, or MIN/MAX with unit factors: untouched.
     {
         BlendEquation eq{F::SrcAlpha, Fn::Add, F::OneMinusSrcAlpha};

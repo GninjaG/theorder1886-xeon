@@ -22,6 +22,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/vk_blend_rewrite.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
@@ -3310,12 +3311,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
                                       image->info.size.height <= 400 &&
                                       !(image->info.size.width == 1 && image->info.size.height == 1);
         const bool is_add_blend =
-            regs.blend_control[0].enable &&
-            regs.blend_control[0].color_dst_factor == AmdGpu::BlendControl::BlendFactor::One &&
-            (regs.blend_control[0].color_src_factor == AmdGpu::BlendControl::BlendFactor::One ||
-             (regs.blend_control[0].color_src_factor ==
-                  AmdGpu::BlendControl::BlendFactor::SrcAlpha &&
-              regs.blend_control[0].color_func == AmdGpu::BlendControl::BlendFunc::Add));
+            IsAdditiveColorTarget(regs.blend_control[cb], col_buf.info.blend_bypass);
         const bool is_add_1920 = is_add_blend && image->info.size.width == 1920 &&
                                  col_buf.GetNumberFmt() == AmdGpu::NumberFormat::Float;
         if (texture_cache.IsMetaCleared(col_buf.CmaskAddress(), slice)) {
