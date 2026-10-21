@@ -1725,16 +1725,28 @@ void TextureCache::RefreshImage(Image& image) {
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
                                      AmdGpu::BorderColorBuffer border_color_base,
                                      const bool is_depth, float extra_lod_bias) {
+    // The S# holds an index into a mutable guest table. Snapshot the effective custom color
+    // once so the cache key and the Vulkan sampler always describe the same RGBA value.
+    std::optional<std::array<float, 4>> custom_border_color;
+    if (sharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+        instance.IsCustomBorderColorSupported()) {
+        const auto colors = border_color_base.Address<const std::array<float, 4>*>();
+        custom_border_color = colors[sharp.border_color_ptr.Value()];
+    }
     // Compare and plain uses of one S# need separate samplers; so do extra LOD biases.
-    const u64 hash = HashCombine(HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth),
-                                 u64(std::bit_cast<u32>(extra_lod_bias)));
+    u64 hash = HashCombine(HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth),
+                           u64(std::bit_cast<u32>(extra_lod_bias)));
+    if (custom_border_color) {
+        hash = HashCombine(hash, XXH3_64bits(custom_border_color->data(),
+                                          sizeof(*custom_border_color)));
+    }
 
     // port: the draw-preparation workers ask for samplers concurrently.
     std::scoped_lock lock{samplers_mutex};
     const auto [it, new_sampler] = samplers.try_emplace(hash);
     if (new_sampler) {
         it->second =
-            slot_samplers.Insert(instance, sharp, border_color_base, is_depth, extra_lod_bias);
+            slot_samplers.Insert(instance, sharp, custom_border_color, is_depth, extra_lod_bias);
         Sampler& sampler = slot_samplers[it->second];
         sampler.hash = hash;
         sampler_lru_cache.Insert(sampler, gc_tick);
