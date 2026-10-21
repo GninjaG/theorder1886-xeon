@@ -956,7 +956,7 @@ bool Rasterizer::FilterDrawPasses() const {
     return !(mode == Mode::Disable && (depth_copy || stencil_copy));
 }
 
-bool Rasterizer::TargetsVisibleSceneAttachment() const {
+bool Rasterizer::TargetsVisibleSceneAttachment(u32 mrt_mask) const {
     // port (FEAT-004 Class C): a visible scene draw renders into a large on-screen color target.
     // Stalling (~130-250 ms) is only worth it for those; tiny/offscreen targets (UI glyph atlas,
     // small shadow tile, staging surface) skip for a frame or two with no user-visible pop.
@@ -965,8 +965,13 @@ bool Rasterizer::TargetsVisibleSceneAttachment() const {
     constexpr u32 MinSide = 256;
     constexpr u64 MinArea = u64(MinSide) * MinSide;
     const auto& regs = Regs();
+    using Mode = AmdGpu::ColorControl::OperationMode;
+    if (regs.color_control.mode == Mode::Disable) {
+        return false;
+    }
     for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
-        if (!regs.color_buffers[cb]) {
+        if (!regs.color_buffers[cb] || !regs.color_target_mask.GetMask(cb) ||
+            (mrt_mask & (1 << cb)) == 0) {
             continue;
         }
         const auto extent = CbExtent(cb);
@@ -994,7 +999,7 @@ const GraphicsPipeline* Rasterizer::ResolvePendingGraphics(const GraphicsPipelin
         const u64 vs_hash = key.stage_hashes[0];
         const u64 ps_hash = key.stage_hashes[4];
         const u64 frame = FrameCapture::CurrentFrameIndex();
-        if (TargetsVisibleSceneAttachment()) {
+        if (TargetsVisibleSceneAttachment(key.mrt_mask)) {
             // Stall this one visible draw on exactly this one compile instead of dropping it.
             if (const auto* ready = pipeline_cache.WaitGraphics(key)) {
                 // Never silent: a stalled draw is logged, then proceeds (DrawRecord mints its own
