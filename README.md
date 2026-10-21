@@ -101,7 +101,8 @@ Controllers (DualSense, Xbox and others) work through SDL3, together with the ke
 |---|---|
 | WASD | left stick |
 | Arrows | right stick (camera) and d-pad |
-| Space or Enter | Cross |
+| Space | Cross |
+| Enter | Options |
 | Left Shift or Esc | Circle |
 | E | Square |
 | Q | Triangle |
@@ -114,8 +115,8 @@ Controllers (DualSense, Xbox and others) work through SDL3, together with the ke
 | Mouse | camera; left button R2 (fire), right L2 (aim), middle R3, side buttons L1/R1 |
 | F7 | mouse look on/off |
 
-The keyboard has no Options button yet. On a controller without a touchpad, View (Back) is the
-right touchpad click. `THEORDER_KEY_MAP` and `THEORDER_PAD_MAP` change the buttons (`src/runtime_pad.c`).
+On a controller without a touchpad, View (Back) is the right touchpad click.
+`THEORDER_KEY_MAP` and `THEORDER_PAD_MAP` change the buttons (`src/runtime_pad.c`).
 
 The port's menu (Insert) holds the display, field of view, mouse, frame limit and performance
 overlay settings. The field of view (50-200%) changes live; above 100% shows more on every side.

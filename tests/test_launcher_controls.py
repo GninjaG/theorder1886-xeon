@@ -26,6 +26,18 @@ BASE_SFO = sfo_bytes(TITLE_ID='CUSA00035', APP_VER='01.00')
 
 
 class ControlMapTest(unittest.TestCase):
+    def test_options_and_cross_keyboard_defaults(self):
+        rows = {button: key for button, key, _pad in launcher.CONTROLS}
+        self.assertEqual(rows['options'], 'Return')
+        self.assertEqual(rows['cross'], 'Space')
+        defaults = {button: key for button, key, _pad in launcher.CONTROLS if key}
+        self.assertEqual(launcher.control_changes(defaults, 'key'), {})
+        self.assertEqual(launcher.control_map({'key': launcher.control_changes(defaults, 'key')}, 'key'), '')
+
+    def test_custom_options_reaches_game_environment(self):
+        settings = {**launcher.APP_DEFAULTS, 'controls': {'key': {'options': 'P'}}}
+        self.assertEqual(launcher.game_environment(settings)['THEORDER_KEY_MAP'], 'options=P')
+
     def test_no_cheat_settings(self):
         # God of War III's cheats are gone: neither the launcher nor the game knows their keys.
         self.assertFalse([k for k in launcher.INI_DEFAULTS if k.startswith('cheat_')])
