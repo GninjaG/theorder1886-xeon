@@ -15,7 +15,7 @@ let
   assetDirs = [ "scripts" "patches" "fsr4_shaders" "launcher" ] ++ lib.optional fsr411 "fsr4_411";
   # Only what the package needs (the tree also holds builds, profiles and captures).
   wanted = [
-    "run.sh" "out" "out/theorder-probe" "out/theorder-gpu-capabilities" "out/gpu" "out/gpu/libtheordergpu.so"
+    "run.sh" "run.py" "out" "out/theorder-probe" "out/theorder-gpu-capabilities" "out/gpu" "out/gpu/libtheordergpu.so"
   ] ++ assetDirs;
   src = builtins.path {
     name = "theorder-src";
@@ -77,7 +77,7 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
     d=$out/share/theorder
     mkdir -p $d/bin $out/bin
-    cp run.sh $d/
+    cp run.sh run.py $d/
     cp -r scripts patches fsr4_shaders launcher $d/
     # FSR 4.1.1 models only with THEORDER_PACKAGE_FSR411=1 (see above); otherwise run.sh finds them in
     # the data directory (~/.local/share/theorder/fsr4_411).
