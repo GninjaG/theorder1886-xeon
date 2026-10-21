@@ -339,6 +339,10 @@ PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('B
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
            ('2560x1440', ('2560 × 1440',)), ('3440x1440', ('3440 × 1440 (21:9 Ultrawide)',)),
            ('3840x2160', ('3840 × 2160 (4K)',)), ('5120x1440', ('5120 × 1440 (32:9 Super Ultrawide)',))]
+# The renderer's live host-target selector supports these four 16:9 sizes. Keep OUTPUTS intact
+# for the separate aspect-ratio work; its ultrawide sizes are not accepted by port_settings.cpp.
+NATIVE_OUTPUTS = [option for option in OUTPUTS
+                  if option[0] in ('1280x720', '1920x1080', '2560x1440', '3840x2160')]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
 # The PS4 system language ids (sceSystemServiceParamGetInt LANG): the game shows the ones its
@@ -692,9 +696,10 @@ def game_environment(s):
     env = dict(os.environ)
     env['THEORDER_GAME_DIR'] = s['game_dir']
     env.pop('THEORDER_PATCH_DIR', None)
-    # Temporal upscaling is parked (build_graphics): a switch saved on by 2.1.8 has no control left to
-    # turn it off, so it is ignored until the upscaler section comes back.
-    env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'
+    # Temporal upscaling is parked (build_graphics). This is the override PortSettings::Load
+    # reads, so an inherited value or a saved upscaler=fsr3/fsr4 cannot turn it back on.
+    env['THEORDER_UPSCALER'] = 'off'
+    env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'  # legacy launcher switch
     if s.get('update_dir'):
         env['THEORDER_PATCH_DIR'] = s['update_dir']
     if not WINDOWS:
@@ -1005,20 +1010,27 @@ class Launcher:
             self.vars[key] = v
         return self.vars[key]
 
-    def choice(self, parent, key, store, options, width=30, var=None):
+    def choice(self, parent, key, store, options, width=30, var=None, preserve_unknown=False):
         """A combobox over (value, (english, russian)) pairs, kept in sync with its variable."""
         var = var if var is not None else self.var(key, store)
         values = [v for v, _t in options]
         box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width)
         box.setting_key = key
-        if var.get() not in values:
+        if var.get() not in values and not preserve_unknown:
             var.set(values[0])
 
         def show(*_args):
             current = var.get()
-            box.current(values.index(current) if current in values else 0)
+            if preserve_unknown and current not in values:
+                box.set(_('{} (saved; unavailable)',
+                          '{} (сохранено; недоступно)').format(current))
+            else:
+                box.current(values.index(current) if current in values else 0)
         show()
-        box.bind('<<ComboboxSelected>>', lambda _e: var.set(values[box.current()]))
+        def select(_event):
+            if box.current() >= 0:
+                var.set(values[box.current()])
+        box.bind('<<ComboboxSelected>>', select)
         var.trace_add('write', show)
         return box
 
@@ -1109,7 +1121,7 @@ class Launcher:
 
     TAB_KEYS = {
         'home': ['display_mode', 'fps_limit', 'engine_fps', 'aspect_ratio'],
-        'graphics': ['display_mode', 'vsync', 'aspect_ratio', 'anisotropy', 'hdr', 'show_fps'],
+        'graphics': ['display_mode', 'vsync', 'output_res', 'aspect_ratio', 'anisotropy', 'hdr', 'show_fps'],
         'performance': ['fps_limit', 'frames_queued', 'engine_fps', 'pipeline_binary_cache', 'background_warmup', 'async_shaders', 'parallel_warmup', 'gpu_id', 'stream_memory', 'stale_readback', 'deferred_readback', 'draw_pipe', 'readbacks', 'no_msaa'],
         'game': ['language', 'mods_enabled', 'pad_style'],
         'advanced': ['ui_language', 'close_on_play', 'check_updates', 'vk_validation', 'frame_capture_key', 'perf_diag', 'frame_stats', 'gpu_profile', 'desktop_integration', 'gamemode', 'mangohud'],
@@ -1353,15 +1365,17 @@ class Launcher:
         # self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
         #          _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
         #            'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
-        # self.row(f, _('Output resolution', 'Разрешение вывода'), self.choice(f, 'output_res', 'ini', OUTPUTS),
-        #          _('What the upscaler produces; the HUD is drawn at this size too.',
-        #            'Что выдаёт апскейлер; интерфейс рисуется в этом же размере.'), key='output_res')
         # self.row(f, _('Live resolution changes', 'Смена разрешения на лету'), self.choice(f, 'live_resolution', 'ini', LIVE),
         #          _('Off: outputs other than 1080p are set by a patch at start (fastest). On: change in-game without restart.',
         #            'Выкл.: быстрее. Вкл.: смена на лету без перезапуска.'), key='live_resolution')
         # self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
         #            _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
         #              'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
+        self.section(f, _('Native output resolution (experimental)', 'Разрешение вывода без апскейлинга (экспериментально)'))
+        self.row(f, _('Output resolution', 'Разрешение вывода'),
+                 self.choice(f, 'output_res', 'ini', NATIVE_OUTPUTS, preserve_unknown=True),
+                 _('With upscaling off, the 3D scene and HUD use this output size. 4K costs more GPU time and memory; some game post-processing may stay at its original resolution.',
+                   'Без апскейлинга 3D-сцена и интерфейс используют это разрешение. 4K требует больше ресурсов видеокарты и памяти; часть постобработки игры может остаться в исходном разрешении.'))
         self.add_tab_reset_bar(f, 'graphics')
 
     def build_display(self, f):
