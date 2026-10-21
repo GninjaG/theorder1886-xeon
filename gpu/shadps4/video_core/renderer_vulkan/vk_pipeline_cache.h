@@ -279,6 +279,8 @@ private:
     /// port: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
     BackgroundWarmup* background = nullptr;
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<AsyncGraphicsCompilation>> pending_graphics;
+    /// port: exceptional graphics builds are terminal for this session; retain no snapshots.
+    std::unordered_set<GraphicsPipelineKey> failed_graphics;
     tsl::robin_map<ComputePipelineKey, std::shared_ptr<AsyncComputeCompilation>> pending_compute;
     /// port: compute pipelines whose asynchronous build failed: built on the GPU thread instead.
     std::unordered_set<u64> sync_compute_keys;
