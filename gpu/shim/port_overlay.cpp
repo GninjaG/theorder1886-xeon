@@ -470,7 +470,7 @@ void ControlsTab() {
     ImGui::SeparatorText("Mouse Look");
     if (BeginRows("##mouse_settings")) {
         CheckRow("Mouse look (F7)", s.mouse_look, "Use mouse movement to aim and look around.");
-        SliderRow("Sensitivity", s.mouse_sensitivity, 10, 300, "%d%%", "Mouse look sensitivity percentage.");
+        SliderRow("Sensitivity", s.mouse_sensitivity, 10, 400, "%d%%", "Mouse look sensitivity percentage.");
         ImGui::EndTable();
     }
 
