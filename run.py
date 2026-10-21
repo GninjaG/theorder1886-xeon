@@ -8,6 +8,7 @@ Extra arguments go to the game probe.
 The in-game "Apply and restart" runs this script again through THEORDER_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
+import json
 import os
 from pathlib import Path
 import shlex
