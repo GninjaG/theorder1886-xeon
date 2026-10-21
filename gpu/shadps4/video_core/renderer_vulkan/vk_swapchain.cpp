@@ -307,6 +307,9 @@ void Swapchain::RefreshSemaphores() {
         SetObjectName(device, image_acquired[i], "Swapchain Semaphore: image_acquired {}", i);
         SetObjectName(device, present_ready[i], "Swapchain Semaphore: present_ready {}", i);
     }
+    // The old indices may exceed the image count after a surface change.
+    frame_index = 0;
+    image_index = 0;
 }
 
 void Swapchain::SetupImages() {

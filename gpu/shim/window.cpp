@@ -79,6 +79,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
         PortSettings::Get().display_mode = PortGraphics::Borderless;
     }
     ApplyDisplayMode(PortSettings::Get().display_mode);
+    is_minimized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0;
     // port: the game has no mouse; the in-game menu draws its own cursor (PortOverlay::SetOpen).
     SDL_HideCursor();
     int w = 0, h = 0;
@@ -191,6 +192,13 @@ bool WindowSDL::PollEvents() {
             }
         }
         switch (event.type) {
+        case SDL_EVENT_WINDOW_MINIMIZED:
+            is_minimized = true;
+            break;
+        case SDL_EVENT_WINDOW_RESTORED:
+        case SDL_EVENT_WINDOW_MAXIMIZED:
+            is_minimized = false;
+            break;
         case SDL_EVENT_KEY_DOWN:
             if (event.key.key == SDLK_F7 && !event.key.repeat) {
                 auto& s = PortSettings::Get();

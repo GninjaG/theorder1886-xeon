@@ -682,7 +682,7 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
 }
 
 void Presenter::PresentLoadingFrame() {
-    if (window.GetWidth() == 0 || window.GetHeight() == 0) {
+    if (window.IsMinimized() || window.GetWidth() == 0 || window.GetHeight() == 0) {
         return;
     }
     swapchain.UpdateVsync();
@@ -748,9 +748,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     };
 
-    // port: a minimized window has no pixels on Windows (0x0); keep the swapchain and skip
-    // presenting until the window is restored.
-    if (window.GetWidth() == 0 || window.GetHeight() == 0) {
+    // Keep the swapchain while minimized. Some window systems retain its last pixel size.
+    if (window.IsMinimized() || window.GetWidth() == 0 || window.GetHeight() == 0) {
         free_frame();
         return;
     }
@@ -900,7 +899,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Present to swapchain.
     {
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
-        if (!swapchain.Present() && window.GetWidth() != 0 && window.GetHeight() != 0) {
+        if (!swapchain.Present() && !window.IsMinimized() && window.GetWidth() != 0 &&
+            window.GetHeight() != 0) {
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }
     }
