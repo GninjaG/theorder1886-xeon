@@ -2,6 +2,37 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Actual 900p output and accumulated-cache repeat
+
+- **Implemented:** `gpu\shim\port_settings.h`, `port_overlay.cpp` and
+  `launcher\port_launcher_win.py` now offer 1600x900 through the same persistent
+  setting and existing target allocation path. Appended index 5 instead of
+  renumbering the diagnostic preset-file interface. Regression tests in
+  `test_graphics_settings.cpp` / `test_launcher_upscale.py` were red before the
+  implementation and green afterward.
+- **Runtime:** four isolated frontend runs exited 0 with no reported guest fault.
+  Actual raw output captures are 1600x900/5,760,000 BGRA bytes. Native uses
+  1600x900 scene raster; configured FSR Quality uses 1066x600. The original guest
+  UI buffer stays 1920x1080. Live 900p -> 1080p -> 900p changes scene raster
+  without restart; the window/presentation extent stays separate.
+  `UPSCALING_FRAMEGEN.md` records exact evidence and limitations.
+- **DLSS limitation verified:** selecting DLSS logs the missing optional bridge
+  and NVIDIA DLLs, then falls back to FSR 3.1. No DLSS execution or image-quality
+  claim follows. No Frame Generation toggle was added.
+- **Cache follow-up:** `out\checkpoint-20261022\repeat.json` uses the accumulated
+  QTE profile, 175.810 captured seconds, 1,142 binary hits/62 compiled, P99
+  18.327 ms and worst 640.655 ms. Four spaced captures show differing cinematic
+  scenes including a close-up of the guard; free movement remains unverified.
+  This is not a matched before/after improvement.
+- **Validation:** full build, all 45 C/C++ suites and Python suite pass; actual
+  renderer config and launcher persistence covered. Original saves/game data
+  and pre-existing FSR submodule changes remain preserved.
+- **Still open:** recurrent specialization/compile stalls, equivalent-version
+  gameplay comparisons, memory allocation/soak investigation, native camera and
+  mixed-input menu, temporal provider gameplay quality, Frame Generation and
+  multi-vendor graphics validation. Next: pin a controllable scene and collect
+  exact repeated shader/driver identities, not more unmatched FPS summaries.
+
 ## 2026-10-22: Prologue stall reproduction and reliable scripted input
 
 - **Runtime evidence:** copying the existing save into an isolated profile and

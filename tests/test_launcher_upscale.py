@@ -52,9 +52,9 @@ class UpscalerSettingsTest(unittest.TestCase):
                          [('upscaler', 'ini'), ('preset', 'ini'), ('output_res', 'ini')])
         self.assertTrue(page.preserve_unknown)
         self.assertEqual([value for value, _label in page.choices[2][2]],
-                         ['1280x720', '1920x1080', '2560x1440', '3840x2160'])
+                         ['1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160'])
         self.assertEqual([value for value, _label in launcher.OUTPUTS],
-                         ['1280x720', '1920x1080', '2560x1440', '3440x1440',
+                         ['1280x720', '1600x900', '1920x1080', '2560x1440', '3440x1440',
                           '3840x2160', '5120x1440'])
         self.assertIn('post-processing', page.rows[2][2])
 
@@ -66,9 +66,9 @@ class UpscalerSettingsTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {'THEORDER_CONFIG': str(config)}):
                 initial, lines = launcher.load_ini()
                 self.assertEqual(initial['output_res'], '1920x1080')
-                launcher.save_ini({'output_res': '3840x2160'}, lines)
+                launcher.save_ini({'output_res': '1600x900'}, lines)
                 saved, _lines = launcher.load_ini()
-                self.assertEqual(saved['output_res'], '3840x2160')
+                self.assertEqual(saved['output_res'], '1600x900')
                 self.assertEqual(saved['upscaler'], 'fsr4')
                 self.assertEqual(saved['preset'], '3')
                 self.assertEqual(saved['external_runtime_key'], 'keep')
@@ -113,8 +113,8 @@ class UpscalerSettingsTest(unittest.TestCase):
             self.assertEqual(saved.get(), '3440x1440')
             self.assertEqual(box.current(), -1)
             self.assertIn('3440x1440', box.label)
-            self.assertEqual(len(box.values), 4)
-            box.current(3)
+            self.assertEqual(len(box.values), 5)
+            box.current(4)
             box.on_select(None)
             self.assertEqual(saved.get(), '3840x2160')
 

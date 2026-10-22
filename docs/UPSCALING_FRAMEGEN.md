@@ -11,15 +11,47 @@ of successful GPU execution, HUD correctness or image quality in gameplay.
 | Feature / hardware | This checkpoint |
 | --- | --- |
 | NVIDIA RTX 5060 Laptop, normal title-menu presentation | Observed and captured |
-| DLSS / FSR quality modes, motion vectors, exposure, ghosting | NOT TESTED end to end |
+| DLSS / FSR quality modes, motion vectors, exposure, ghosting | Gameplay quality NOT TESTED end to end; see 900p checks below |
 | Native output 720p/1440p/4K/ultrawide | Existing support preserved; NOT TESTED visually here |
 | AMD / Intel rendering and temporal providers | NOT TESTED |
 | Frame Generation | Not implemented or advertised as active |
 
 Resolution meanings must stay separate: guest scene/internal targets, temporal
 input, temporal output/UI, window and swapchain extent. Do not infer internal
-resolution from window size. Current settings do not enumerate 1600x900; adding
-it requires keeping launcher, settings, targets and tests consistent.
+resolution from window size.
+
+## 1600x900 output checkpoint
+
+Added 900p to the launcher's output list, in-game selector and renderer dimensions.
+Existing numeric output indices remain unchanged; 900p is appended as index 5
+(diagnostic `THEORDER_PRESET_FILE` uses those indices). INI persistence uses
+`output_res=1600x900`, shared by launcher and renderer.
+
+On the RTX 5060 Laptop, isolated title-menu runs capture actual 1600x900
+post-process output images (5,760,000 bytes of BGRA), not just selected settings.
+The guest display buffer remains 1920x1080; the temporal/UI host path and final
+presentation image must not be confused with that guest buffer.
+
+Local manifests under `out\checkpoint-20261022`:
+
+| Evidence | Actual observation |
+| --- | --- |
+| `900p.json`, 75 s | 1600x900 output capture; FSR 3.1 selected, Quality scene raster 1066x600, half targets 533x300; original UI coordinates 1920x1080 |
+| `900p-providers.json`, Native 65 s | 1600x900 output capture; scene raster 1600x900, half targets 800x450; FSR logged off |
+| Same manifest, DLSS requested 65 s | Explicit missing `port_dlss.dll` / `nvngx_dlss.dll` warning, fallback to FSR 3.1, 1600x900 output capture; NOT a DLSS execution |
+| `900p-live.json`, 85 s | Live 900p -> 1080p -> 900p selection changes scene raster 1066x600 -> 1280x720 -> 1066x600, with no restart or reported guest fault |
+
+All four runs exited 0. The live test's final post-process capture stays at the
+900p window extent while the configured temporal/scene output changes: it is not
+evidence that the swapchain/window automatically resizes with the selector.
+These frontend captures do not validate temporal dispatch quality, HUD/subtitles
+in combat, ghosting, or motion/depth correctness. No new provider capability is
+claimed. `packaging\windows\build_dlss.sh` requires an NVIDIA SDK checkout and
+MSVC to produce the absent optional bridge; the missing bridge was not fabricated.
+
+Validation: renderer config test rejected 900p before the change and now preserves
+it through load/save. Launcher tests cover choice and persistence without changing
+the saved provider/preset. Full build and 45 C/C++ suites plus Python pass.
 
 Frame Generation is a separate presentation integration, not an upscaler enum.
 Prerequisites still include verified motion/depth inputs, HUD separation,

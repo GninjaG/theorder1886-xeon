@@ -24,6 +24,12 @@ dark transitional image, not evidence of free movement or successful QTE complet
 It uses the accumulated extended-run cache/save copy, so it is not an input-fix
 performance A/B.
 
+`repeat.json` subsequently uses the accumulated QTE profile: 10,195 intervals
+over 175.810 s, 57.989 mean FPS, P95/P99 17.737/18.327 ms, worst 640.655 ms,
+1,142 binary hits/62 compiled. Four spaced captures show different prologue
+cinematic positions, including the guard close-up. This is not free movement,
+an equivalent-version benchmark or a before/after optimization result.
+
 These are diagnostic runs, not an optimization before/after. All exited 0 without
 reported guest faults. Inputs are scheduled from launcher start, so compilation
 changes scene progress at a given wall time; do not compare the rows as equivalent

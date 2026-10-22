@@ -47,7 +47,7 @@ int main() {
     const auto full_ultrawide = G::PictureRect(5120, 1440, G::AspectValues[4]);
     assert(full_ultrawide.x == 0 && full_ultrawide.y == 0 &&
            full_ultrawide.w == 5120 && full_ultrawide.h == 1440);
-    assert(PortSettings::OutputCount == 5 && PortSettings::OutputDefault == 1);
+    assert(PortSettings::OutputCount == 6 && PortSettings::OutputDefault == 1);
     assert(PortSettings::OutputWidths[0] == 1280 && PortSettings::OutputHeights[0] == 720);
     assert(PortSettings::OutputWidths[1] == 1920 && PortSettings::OutputHeights[1] == 1080);
     assert(PortSettings::OutputWidths[2] == 2560 && PortSettings::OutputHeights[2] == 1440);
@@ -126,6 +126,16 @@ int main() {
     v.output_res = PortSettings::OutputDefault;
     PortSettings::Load();
     assert(v.aspect == 4 && v.startup_aspect == 4 && v.output_res == 4 && v.startup_output_res == 4);
+
+    {
+        std::ofstream out(path);
+        out << "output_res=1600x900\n";
+    }
+    PortSettings::Load();
+    assert(PortSettings::OutputWidths[v.output_res] == 1600 &&
+           PortSettings::OutputHeights[v.output_res] == 900);
+    PortSettings::Save();
+    assert(Read(path).find("output_res=1600x900\n") != std::string::npos);
 
     {
         std::ofstream out(path);

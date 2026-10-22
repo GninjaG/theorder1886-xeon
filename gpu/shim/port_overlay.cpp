@@ -322,11 +322,11 @@ void ImageTab() {
     ImGui::SeparatorText("Resolution & Upscaling");
     if (BeginRows("##upscaling")) {
         static const char* const res_labels[] = {
-            "1280 x 720 (720p)", "1920 x 1080 (1080p)", "2560 x 1440 (1440p)",
+            "1280 x 720 (720p)", "1600 x 900 (900p)", "1920 x 1080 (1080p)", "2560 x 1440 (1440p)",
             "3840 x 2160 (4K)", "5120 x 1440 (32:9 Super Ultrawide)"
         };
-        static const int res_values[] = {0, 1, 2, 3, 4};
-        ChoiceRow("Output resolution", s.output_res, res_labels, res_values, 5,
+        static const int res_values[] = {0, 5, 1, 2, 3, 4};
+        ChoiceRow("Output resolution", s.output_res, res_labels, res_values, PortSettings::OutputCount,
                   "Output render and presentation target size.");
 
         static const char* const upscaler_labels[] = {

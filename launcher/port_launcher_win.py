@@ -339,13 +339,13 @@ UPSCALERS = [('dlss', ('DLSS (NVIDIA RTX)', 'DLSS (NVIDIA RTX)')),
              ('off', ('Off (Native resolution)', 'Выключен (нативное разрешение)'))]
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
-OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
+OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1600x900', ('1600 × 900',)),
+           ('1920x1080', ('1920 × 1080',)),
            ('2560x1440', ('2560 × 1440',)), ('3440x1440', ('3440 × 1440 (21:9 Ultrawide)',)),
            ('3840x2160', ('3840 × 2160 (4K)',)), ('5120x1440', ('5120 × 1440 (32:9 Super Ultrawide)',))]
-# The renderer's live host-target selector supports these four 16:9 sizes. Keep OUTPUTS intact
-# for the separate aspect-ratio work; its ultrawide sizes are not accepted by port_settings.cpp.
+# Offer the five 16:9 sizes here; keep the separate ultrawide/aspect choices in OUTPUTS.
 NATIVE_OUTPUTS = [option for option in OUTPUTS
-                  if option[0] in ('1280x720', '1920x1080', '2560x1440', '3840x2160')]
+                  if option[0] in ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
 # The PS4 system language ids (sceSystemServiceParamGetInt LANG): the game shows the ones its
