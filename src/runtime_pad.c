@@ -64,12 +64,18 @@ static int initialized, opened, sdl_ready;
 static SDL_Gamepad *gamepad;
 static size_t reads;
 static uint8_t connected_count;
+static uint32_t captured_buttons;
+static uint8_t captured_sticks;
 
 static uint64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (uint64_t)t.tv_sec*1000000u+(uint64_t)t.tv_nsec/1000u; }
 static uint8_t axis(int16_t v) { int x=(v+32768)>>8; return (uint8_t)(x<0 ? 0 : x>255 ? 255 : x); }
 static uint8_t trigger(int16_t v) { int x=v>>7; return (uint8_t)(x<0 ? 0 : x>255 ? 255 : x); }
 static uint16_t touch_axis(float v, int max) {
     return (uint16_t)(v<=0.0f ? 0 : v>=1.0f ? max : (int)(v*max+0.5f));
+}
+static bool stick_active(uint8_t value) {
+    const int delta=(int)value-128;
+    return delta < -5 || delta > 5;
 }
 
 /* A click without a touch surface (Back/View, Tab, Backspace, the pad file) is played like a
@@ -289,7 +295,6 @@ static void sample_host(PadData *d) {
     d->connected=1; d->connected_count=connected_count ? connected_count : 1;
     d->timestamp=now_us();
     SDL_Gamepad *g=current_gamepad();
-    if (theordergpu_overlay_captures_input()) return; /* settings menu open: neutral input */
     const bool *k=SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL;
     load_button_maps();
     if (g) {
@@ -436,16 +441,31 @@ static void replay_sample(PadData *d) {
     d->left_x=s->axes[0]; d->left_y=s->axes[1]; d->right_x=s->axes[2]; d->right_y=s->axes[3];
     d->l2=s->l2; d->r2=s->r2;
 }
-/* After the menu or the text dialog closes, buttons and sticks still held stay hidden
- * until released: the game would take them as a new press or sudden camera jerk. */
-static int hold_after_capture;
+/* Inputs held while the menu is open stay hidden after closing, independently by control. */
 static void sample(PadData *d) {
     sample_host(d);
     if (theordergpu_overlay_captures_input()) {
-        hold_after_capture = 1;
+        captured_buttons=d->buttons;
+        const uint8_t axes[4]={d->left_x,d->left_y,d->right_x,d->right_y};
+        captured_sticks=0;
+        for (int i=0;i<4;++i) if (stick_active(axes[i])) captured_sticks|=(uint8_t)(1u<<i);
         click.side = -1;
-        
+        d->buttons=0;
+        d->left_x=d->left_y=d->right_x=d->right_y=128;
+        d->l2=d->r2=0;
+        d->touch_count=0;
         return;
+    }
+    captured_buttons &= d->buttons;
+    d->buttons &= ~captured_buttons;
+    if (captured_buttons & BTN_L2) d->l2=0;
+    if (captured_buttons & BTN_R2) d->r2=0;
+    uint8_t *axes[4]={&d->left_x,&d->left_y,&d->right_x,&d->right_y};
+    for (int i=0;i<4;++i) {
+        const uint8_t bit=(uint8_t)(1u<<i);
+        if (!(captured_sticks & bit)) continue;
+        if (!stick_active(*axes[i])) captured_sticks &= (uint8_t)~bit;
+        *axes[i]=128;
     }
     record_sample(d); /* the click sources as they are: a replay plays them again */
     read_inject();
@@ -453,20 +473,8 @@ static void sample(PadData *d) {
     d->buttons|=injected.buttons;
     if (injected.buttons & BTN_L2) d->l2=255;
     if (injected.buttons & BTN_R2) d->r2=255;
-    uint8_t *axes[4]={&d->left_x,&d->left_y,&d->right_x,&d->right_y};
     for (int i=0;i<4;++i) if (injected.stick[i]>=0) *axes[i]=(uint8_t)injected.stick[i];
     play_click(d);
-    if (hold_after_capture) {
-        const bool sticks_active = (d->left_x != 128 || d->left_y != 128 ||
-                                    d->right_x != 128 || d->right_y != 128);
-        if (d->buttons || sticks_active) {
-            d->buttons = 0;
-            d->left_x = d->left_y = d->right_x = d->right_y = 128;
-            d->l2 = d->r2 = 0;
-        } else {
-            hold_after_capture = 0;
-        }
-    }
 }
 
 static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }

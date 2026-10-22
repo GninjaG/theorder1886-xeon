@@ -141,42 +141,10 @@ int main(void) {
     mouse_to_stick(1.0f, 1.0f, 1.0f, 2.0f, &mx1, &my1);
     assert(my1 > mx1);
 
-    /* Validation of hold_after_capture neutralizing analog sticks when overlay closes */
-    PadData test_pad;
-    memset(&test_pad, 0, sizeof(test_pad));
-    test_pad.left_x = 255;
-    test_pad.right_y = 200;
-    hold_after_capture = 1;
+    /* Small resting-axis noise is not treated as a held stick after capture. */
+    assert(!stick_active(123) && !stick_active(133));
+    assert(stick_active(122) && stick_active(134));
 
-    if (hold_after_capture) {
-        const bool sticks_active = (test_pad.left_x != 128 || test_pad.left_y != 128 ||
-                                    test_pad.right_x != 128 || test_pad.right_y != 128);
-        if (test_pad.buttons || sticks_active) {
-            test_pad.buttons = 0;
-            test_pad.left_x = test_pad.left_y = test_pad.right_x = test_pad.right_y = 128;
-            test_pad.l2 = test_pad.r2 = 0;
-        } else {
-            hold_after_capture = 0;
-        }
-    }
-    assert(test_pad.left_x == 128 && test_pad.right_y == 128);
-    assert(hold_after_capture == 1);
-
-    test_pad.left_x = 128;
-    test_pad.right_y = 128;
-    if (hold_after_capture) {
-        const bool sticks_active = (test_pad.left_x != 128 || test_pad.left_y != 128 ||
-                                    test_pad.right_x != 128 || test_pad.right_y != 128);
-        if (test_pad.buttons || sticks_active) {
-            test_pad.buttons = 0;
-            test_pad.left_x = test_pad.left_y = test_pad.right_x = test_pad.right_y = 128;
-            test_pad.l2 = test_pad.r2 = 0;
-        } else {
-            hold_after_capture = 0;
-        }
-    }
-    assert(hold_after_capture == 0);
-
-    puts("PASS: pad and key maps, mouse deadzone bypass & hold after capture");
+    puts("PASS: pad and key maps, mouse deadzone bypass & capture deadzone");
     return 0;
 }

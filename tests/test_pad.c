@@ -7,7 +7,14 @@
 #endif
 
 static int capture;
+static void check_pad(int condition, const char *message) {
+    if (!condition) {
+        fprintf(stderr,"FAIL: %s\n",message);
+        exit(4);
+    }
+}
 int theordergpu_overlay_captures_input(void) { return capture; }
+void theordergpu_mouse_take(TheOrderMouse *out) { memset(out,0,sizeof(*out)); }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;
@@ -141,8 +148,15 @@ int main(void) {
     capture=1;
     data=read_pad();
     assert(data.touch_count==0 && data.buttons==0);
+    assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,false,0,0,0));
+    assert(SDL_SetJoystickVirtualTouchpad(joystick,0,1,false,0,0,0));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,false));
+    pump();
+    data=read_pad();
+    assert(data.touch_count==0 && data.buttons==0);
     capture=0;
     /* The click without a finger is played as a left click. */
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,true));
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,false,0,0,0));
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,1,false,0,0,0));
     pump();
@@ -184,6 +198,70 @@ int main(void) {
     usleep(220000);
     data=read_pad();
     assert(data.buttons==0 && data.touch_count==0);
+
+    /* A slight resting stick offset after closing the overlay must not block digital input. */
+    capture=1;
+    check_pad(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFTX,256),
+              "set captured virtual stick");
+    pump();
+    check_pad(axis(SDL_GetGamepadAxis(gamepad,SDL_GAMEPAD_AXIS_LEFTX))==129,
+              "captured virtual stick maps to one-count drift");
+    data=read_pad();
+    check_pad(data.buttons==0 && data.left_x==128,
+              "overlay capture returns neutral guest input");
+    capture=0;
+    check_pad(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_SOUTH,true),
+              "press button after closing menu");
+    pump();
+    data=read_pad();
+    check_pad((data.buttons & BTN_CROSS) && data.left_x==129,
+              "post-menu button passes despite one-count stick drift");
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_SOUTH,false));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFTX,0));
+    pump();
+
+    /* A button already held while the menu is open stays suppressed, independently of others. */
+    capture=1;
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_SOUTH,true));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFT_TRIGGER,32767));
+    pump();
+    data=read_pad();
+    check_pad(data.buttons==0 && data.l2==0,"held button and trigger remain hidden while menu is open");
+    capture=0;
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_EAST,true));
+    pump();
+    data=read_pad();
+    check_pad(!(data.buttons & BTN_CROSS) && (data.buttons & BTN_CIRCLE) &&
+                  !(data.buttons & BTN_L2) && data.l2==0,
+              "only controls held in menu are suppressed after closing");
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_SOUTH,false));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFT_TRIGGER,0));
+    pump();
+    data=read_pad();
+    check_pad(!(data.buttons & (BTN_CROSS|BTN_L2)) && (data.buttons & BTN_CIRCLE) && data.l2==0,
+              "released held controls clear suppression independently");
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_EAST,false));
+    pump();
+
+    capture=1;
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFTX,16384));
+    pump();
+    data=read_pad();
+    capture=0;
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_SOUTH,true));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTX,16384));
+    pump();
+    data=read_pad();
+    check_pad(data.left_x==128 && data.right_x==192 && (data.buttons & BTN_CROSS),
+              "held stick is suppressed without blocking fresh stick and button input");
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFTX,0));
+    pump();
+    data=read_pad();
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_LEFTX,16384));
+    pump();
+    data=read_pad();
+    check_pad(data.left_x==192 && (data.buttons & BTN_CROSS),
+              "a released captured stick responds again without reconnecting");
     SDL_CloseJoystick(joystick);
     if (gamepad) SDL_CloseGamepad(gamepad);
     gamepad=NULL;

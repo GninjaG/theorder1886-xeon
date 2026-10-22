@@ -57,7 +57,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.6-rc.1'
+VERSION = '0.7.7'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
@@ -857,7 +857,7 @@ class Launcher:
             threading.Thread(target=self.check_update, daemon=True).start()
 
     def check_version_migration(self):
-        """Performs automatic cache cleanup and settings migration when upgrading between versions.
+        """Performs settings migration when upgrading between versions.
         Ensures 100% portable mode by unconditionally purging any legacy AppData directories."""
         # 1. Unconditionally remove legacy AppData folders if present (portable mode guarantee)
         if WINDOWS:
@@ -874,18 +874,9 @@ class Launcher:
 
         last_version = self.app.get('last_version', '')
         if last_version != VERSION:
-            # 2. Clean stale shader and pipeline cache in user/cache and user/shader on version upgrade
-            user_dir = Path(self.app.get('user_dir') or (DATA_DIR / 'user'))
-            for c_name in ('cache', 'shader'):
-                cache_dir = user_dir / c_name
-                if cache_dir.is_dir():
-                    try:
-                        shutil.rmtree(cache_dir, ignore_errors=True)
-                        print(f'Launcher: cleared stale cache at {cache_dir} on upgrade ({last_version or "legacy"} -> {VERSION})', flush=True)
-                    except Exception as e:
-                        print(f'Launcher: failed to clean cache at {cache_dir}: {e}', flush=True)
-
-            # 3. Migrate legacy order1886.ini if it exists
+            # Shader and pipeline caches carry their own compatibility versions.
+            # Keep them on launcher upgrades, including any legacy nested user files.
+            # 2. Migrate legacy order1886.ini if it exists
             legacy_ini = DATA_DIR / 'order1886.ini'
             target_ini = DATA_DIR / 'theorder.ini'
             if legacy_ini.is_file() and not target_ini.is_file():
@@ -901,7 +892,7 @@ class Launcher:
                 except Exception:
                     pass
 
-            # 4. Update last_version
+            # 3. Update last_version
             self.app['last_version'] = VERSION
             try:
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -2673,7 +2664,7 @@ def latest_release():
                                                             'User-Agent': 'theorder1886-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
         release = json.load(response)
-    version = '.'.join(re.findall(r'\d+', release['tag_name']))
+    version = release['tag_name'].removeprefix('windows-v')
     url = next((asset['browser_download_url'] for asset in release.get('assets', [])
                 if asset.get('name', '').lower().endswith('.zip')), None)
     return version, url, release.get('html_url') or RELEASES_PAGE

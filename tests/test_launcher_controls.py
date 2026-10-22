@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import queue
 import struct
@@ -545,6 +547,27 @@ class GpuChoiceTest(unittest.TestCase):
 
 
 class SettingsFileMigrationTest(unittest.TestCase):
+    def test_version_upgrade_preserves_user_cache_and_nested_saves(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            user = folder / 'user'
+            files = [user / 'cache' / 'CUSA00035' / 'pipeline.bin',
+                     user / 'cache' / 'savedata_backups' / 'save.bin',
+                     user / 'shader' / 'shader.spv', user / 'savedata' / 'save.bin']
+            for path in files:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'keep')
+            app = object.__new__(launcher.Launcher)
+            app.app = {'last_version': '0.7.6-rc.1', 'user_dir': str(user)}
+            with mock.patch.multiple(launcher, WINDOWS=False, DATA_DIR=folder,
+                                     CONFIG_DIR=folder, CONFIG_FILE=folder / 'settings.json'):
+                app.check_version_migration()
+            self.assertEqual(app.app['last_version'], launcher.VERSION)
+            for path in files:
+                self.assertEqual(path.read_bytes(), b'keep')
+
     def test_gow3_ini_moves_to_theorder_ini_once(self):
         import tempfile
         from pathlib import Path
@@ -561,11 +584,23 @@ class SettingsFileMigrationTest(unittest.TestCase):
 
 
 class ReleaseVersionTest(unittest.TestCase):
+    def test_latest_release_preserves_candidate_version(self):
+        for version in ('0.7.6-rc.1', '0.7.6-rc.2', '0.7.6'):
+            with self.subTest(version=version):
+                payload = {'tag_name': f'windows-v{version}', 'assets': [
+                    {'name': 'theorder1886-windows.zip', 'browser_download_url': 'https://example.test/release.zip'}]}
+                response = io.BytesIO(json.dumps(payload).encode())
+                with mock.patch.object(launcher.urllib.request, 'urlopen', return_value=response):
+                    actual, url, _ = launcher.latest_release()
+                self.assertEqual(actual, version)
+                self.assertEqual(launcher.version_tuple(actual), launcher.version_tuple(version))
+                self.assertEqual(url, 'https://example.test/release.zip')
+
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.7.6-rc.1')
-        self.assertGreater(launcher.version_tuple('windows-v0.7.6'), launcher.version_tuple(launcher.VERSION))
-        self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v0.7.5'))
-        self.assertGreater(launcher.version_tuple('windows-v0.7.6-rc.2'), launcher.version_tuple(launcher.VERSION))
+        self.assertEqual(launcher.VERSION, '0.7.7')
+        self.assertGreater(launcher.version_tuple('windows-v0.7.6'), launcher.version_tuple('0.7.6-rc.1'))
+        self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v0.7.6-rc.1'))
+        self.assertGreater(launcher.version_tuple('windows-v0.7.6-rc.2'), launcher.version_tuple('0.7.6-rc.1'))
         self.assertIn('theorder1886-port', launcher.RELEASES_API)
 
     def test_game_languages_are_the_ps4_ids(self):
