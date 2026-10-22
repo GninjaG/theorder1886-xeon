@@ -46,6 +46,25 @@ No wave/LDS/barrier translation changes were justified by this menu-only workloa
 
 ## Next correctness gate
 
+Copied-save prologue runs now expose the stall in an actual rendered scene:
+`prologue.json`, `prologue-warm.json`, `nohot.json`, `extended.json` under
+`out\checkpoint-20261022`. In the extended trace 90 of 93 intervals over 100 ms
+also contain over 50 ms of compilation wait. Binary totals were 801 hits,
+230 compiled/saved and zero reported rejections/errors. Full timing and scene
+caveats are in `PERFORMANCE_BASELINE.md`.
+
+Disabling only `THEORDER_HOT_WARMUP` against the same initial warm profile did not
+eliminate new specializations (124 binary compilations versus 121 with it enabled).
+This does not support removing the warmup as a fix. Permutation logging identifies
+changing image types, integer formats, FMask and sRGB in material/lighting shaders;
+ignoring these fields would risk incorrect SPIR-V and is not justified.
+
+For the first warm profile, shader `0xad441fb1` has 94 cached SPIR-V files but
+60 distinct byte contents; `0x8c8a4817` has 99/63 and `0x804aeead` has 203/178.
+There is some redundant translation, but most variants are not byte-identical.
+This is a diagnosis target, not a license to merge resource-dependent pipeline keys.
+No cache invalidation, specialization or compile-worker policy changed here.
+
 Identify why the repeatedly encountered combinations were not already warmed,
 using the exact pipeline key, specialization metadata and captured scene.
 Catalog only reconstructible combinations; do not guess resource-dependent keys.

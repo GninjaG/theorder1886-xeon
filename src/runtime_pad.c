@@ -17,7 +17,6 @@
 #include <pthread.h>
 #include <time.h>
 #include <SDL3/SDL.h>
-#include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
 #define ERR_INVALID_HANDLE ((int32_t)0x80920003)
@@ -338,7 +337,8 @@ static struct { uint32_t buttons; int stick[4]; } injected={0,{-1,-1,-1,-1}};
 static int replay_armed;      /* 1 while a THEORDER_PAD_REPLAY recording plays, 2 once it ended */
 static uint64_t replay_start; /* 0: (re)start at the next sample */
 static void read_inject(void) {
-    static const char *path; static int checked; static uint64_t last_check; static struct timespec mtime;
+    static const char *path; static int checked; static uint64_t last_check;
+    static SDL_PathInfo previous; static bool have_stamp;
     if (!checked) {
         path=getenv("THEORDER_PAD_FILE");
         if (!path || !*path) path=getenv("THEORDER_PAD_FILE");
@@ -348,16 +348,9 @@ static void read_inject(void) {
     uint64_t now=now_us();
     if (now-last_check<20000) return;
     last_check=now;
-    struct stat st;
-    if (stat(path,&st)!=0) return;
-#ifdef _WIN32
-    /* Whole-second mtimes: the size tells two edits within a second apart. */
-    if (st.st_mtime==mtime.tv_sec && st.st_size==mtime.tv_nsec) return;
-    mtime=(struct timespec){st.st_mtime,(long)st.st_size};
-#else
-    if (st.st_mtim.tv_sec==mtime.tv_sec && st.st_mtim.tv_nsec==mtime.tv_nsec) return;
-    mtime=st.st_mtim;
-#endif
+    SDL_PathInfo current;
+    if (!SDL_GetPathInfo(path,&current)) return;
+    if (have_stamp && current.modify_time==previous.modify_time && current.size==previous.size) return;
     FILE *f=fopen(path,"r");
     if (!f) return;
     static const char *sticks[]={"lx=","ly=","rx=","ry="};
@@ -370,6 +363,8 @@ static void read_inject(void) {
         for (int i=0;i<4;++i) if (!strncmp(token,sticks[i],3)) { int v=atoi(token+3); injected.stick[i]=v<0 ? 0 : v>255 ? 255 : v; }
     }
     fclose(f);
+    previous=current;
+    have_stamp=true;
     printf("Runtime: pad file: buttons 0x%x sticks %d %d %d %d\n",injected.buttons,
            injected.stick[0],injected.stick[1],injected.stick[2],injected.stick[3]);
 }

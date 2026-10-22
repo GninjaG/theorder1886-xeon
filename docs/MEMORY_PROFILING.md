@@ -40,6 +40,19 @@ Linux private commit remains unavailable through this helper.
 
 These are different quantities, not components of a single sum. They neither
 explain nor disprove the user's approximately 11 GB gameplay observation.
+
+The subsequent 300-second isolated prologue run (`extended.json`) reached the
+first Triangle QTE. Observed maxima: private commit 8,045.28 MiB, Working Set
+5,822.41 MiB, renderer VMA allocations 2,444.96 MiB, adapter-wide usage
+3,091.71 MiB. These are sampled maxima, not simultaneous components or proof of
+a leak. It is a different workload from the menu above, not a before/after
+memory reduction. Process-dedicated VRAM remains unavailable.
+
+The subsequent rebuilt-runtime 330-second run (`qte.json`) peaks at
+8,656.93 MiB private commit and 6,414.86 MiB Working Set. It also carries more
+accumulated cache data and attempts additional QTE input; the difference is not
+an isolated allocation regression or evidence of a leak.
+
 Before/after gameplay allocation profiles, leak classification and a 30-60 minute
 soak remain NOT TESTED. No guest allocation limits or texture eviction policies
 were changed without that evidence.

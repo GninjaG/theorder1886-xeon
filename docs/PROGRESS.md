@@ -2,6 +2,49 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Prologue stall reproduction and reliable scripted input
+
+- **Runtime evidence:** copying the existing save into an isolated profile and
+  applying the Cross sequence in `PERFORMANCE_BASELINE.md` reaches the rendered
+  prologue, not just the frontend. The 130 s capture shows the handcuff cinematic;
+  the 300 s capture shows the first Triangle QTE. Free movement, combat and
+  deterministic camera replay are not established by those captures.
+- **Measured stalls:** `out\checkpoint-20261022\extended.json` captures 297.517 s,
+  mean 52.794 FPS, P95/P99 17.798/20.153 ms, worst frame 1,373.935 ms.
+  Of 93 intervals over 100 ms, 90 also contain over 50 ms of synchronous compile
+  wait. Frame 12,294 has 1,363.117 ms of compile wait. A good P99 alone therefore
+  does not establish smoothness. This is new scene evidence, not an optimization.
+- **Cache diagnosis:** real binary hits persist (801 hits/230 compiled in the
+  longer run). Turning off only hot-list warmup against the same initial warm
+  template did not eliminate new permutations: 124 binary compilations versus
+  121 with it enabled. No warmup, shader-specialization or essential-draw
+  correctness policy was removed. Image-dependent variation and redundant
+  SPIR-V are recorded in `SHADER_CACHE_OPTIMIZATION.md`; root cause remains open.
+- **Real prerequisite fix:** Windows scripted pad injection missed equal-size
+  edits within one second because it used coarse `stat` mtime and size.
+  `src\runtime_pad.c` now uses SDL's high-resolution path metadata at the same
+  20 ms cadence. `tests\test_pad_map.c` exercises the actual read path with
+  controlled file timestamps: `cross -> right -> release`. Observed red:
+  `0x4000 -> 0x4000 -> 0`; green: `0x4000 -> 0x20 -> 0`.
+  This is not a native-mouse or Insert-menu fix.
+- **Memory:** the longer prologue peaks at 8,045.28 MiB private commit versus
+  5,822.41 MiB Working Set. VMA and adapter totals remain separate; no 11 GB
+  explanation, reduction or leak verdict follows from this five-minute run.
+- **Validation:** rebuilt successfully and ran all 45 C/C++ suites plus the
+  Python suite without failure. The rebuilt runtime subsequently ran 330 s:
+  `qte.json`, exit 0, 18,540 logged flips, 18,440 CSV intervals, 1,051 binary
+  hits/119 compiled, no reported guest fault. Triangle transitions and a stick
+  override were logged; the final capture is dark/transitional and does not
+  establish free movement or QTE success. P95/P99 17.735/18.305 ms, worst
+  991.303 ms; this is NOT an input-fix speedup A/B.
+  The original FSR submodule modifications still match the preserved backup.
+  Original saves/game data were not edited by these isolated runs.
+- **Resume:** finish a repeatable Triangle-QTE/movement route, pin equivalent
+  scene intervals, then compare repeated warm-cache specialization/driver keys.
+  Do not treat faster cinematic progress as a measured gameplay speedup.
+  Version bisection, prolonged memory profiling, native camera, mixed-input UI,
+  temporal/output-resolution validation and Frame Generation remain open.
+
 ## 2026-10-22: Master consolidation and measured instrumentation checkpoint
 
 - **Consolidation complete:** active `optimization/advanced-v0.7.7` was 33 commits

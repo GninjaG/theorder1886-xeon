@@ -1,5 +1,58 @@
 # Performance baseline
 
+## Prologue evidence after the instrumentation checkpoint
+
+Source: `9bd9ae7` for the first four runs; `qte.json` includes the scripted-input
+fix described in `INPUT_IMPROVEMENTS.md`. Same host/game as below. Isolated profiles copy the existing
+save with `--user-template user`; the original save is not used as a writable
+runtime directory. The 130-second capture confirms the rendered handcuff scene.
+The 300-second capture confirms the first Triangle QTE, not free movement/combat.
+
+Local manifests under `out\checkpoint-20261022`:
+
+| Manifest | Captured seconds | Mean FPS | P95 / P99 ms | Worst ms | Compile wait s | Binary hits / compiled |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `prologue.json` (cold port cache) | 126.465 | 36.998 | 18.066 / 313.817 | 5,300.484 | 47.331 | 163 / 472 |
+| `prologue-warm.json` | 126.961 | 50.031 | 17.806 / 32.801 | 1,359.461 | 19.120 | 639 / 121 |
+| `nohot.json` (same warm source, hot-list warmup disabled) | 127.907 | 47.269 | 17.892 / 97.901 | 3,067.849 | 18.513 | 594 / 124 |
+| `extended.json` (300 s, later QTE) | 297.517 | 52.794 | 17.798 / 20.153 | 1,373.935 | 36.640 | 801 / 230 |
+| `qte.json` (330 s, Triangle attempts, rebuilt runtime) | 326.264 | 56.519 | 17.735 / 18.305 | 991.303 | 18.425 | 1,051 / 119 |
+
+The last run confirms the rebuilt runtime still boots/renders and receives
+Triangle presses/releases plus a left-stick override. Its 310 s capture is a
+dark transitional image, not evidence of free movement or successful QTE completion.
+It uses the accumulated extended-run cache/save copy, so it is not an input-fix
+performance A/B.
+
+These are diagnostic runs, not an optimization before/after. All exited 0 without
+reported guest faults. Inputs are scheduled from launcher start, so compilation
+changes scene progress at a given wall time; do not compare the rows as equivalent
+gameplay. The "cold" label refers to the isolated port cache, not the OS/driver
+cache; within-run binary reuse can still produce hits.
+
+In the cold trace, 79 of 82 intervals over 100 ms also contain over 50 ms of
+synchronous compilation wait. In the extended trace it is 90 of 93. Extended
+frame 12,294 lasts 1,373.935 ms, including 1,363.117 ms of compilation wait.
+This is direct evidence for visible compilation stalls, not evidence that every
+stutter has that cause. A whole-trace P99 near 20 ms does not exclude second-long
+outliers. No visible-draw waits were removed.
+
+The captured 130-second route is reproducible with the existing harness:
+
+```powershell
+python tools\batch_runs.py --runs 1 --secs 130 --frame-trace `
+  --scene isolated-existing-prologue-save --cache-state cold `
+  --profile-root out\prologue-cold --user-template user `
+  --manifest out\prologue-cold.json --report-dir out\prologue-cold-report `
+  --cond prologue=THEORDER_PERF_LOG=1 `
+  --pad "24:cross:0.5 28:cross:0.5 32:cross:0.5 40:cross:0.5 50:cross:0.5 60:cross:0.5 70:cross:0.5 80:cross:0.5 90:cross:0.5" `
+  --frame-dump-at 110 --capture-dir out\prologue-cold-captures
+```
+
+Use the resulting isolated profile as the warm template, with a different output
+root. Save progression and final scene must be checked before accepting a matched
+comparison. The controller remained connected; physical input was not isolated.
+
 ## 2026-10-22 checkpoint: measured title-menu workload, not gameplay
 
 The previous version of this document contained combat FPS, memory and improvement

@@ -2,6 +2,9 @@
 #define _GNU_SOURCE
 #include <assert.h>
 #include "../src/runtime_pad.c"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 int theordergpu_overlay_captures_input(void) { return 0; }
 /* This map-only executable links runtime_pad.c without the GPU shim. */
@@ -18,7 +21,53 @@ static uint32_t pressed_by(const ButtonMap *map, int source) {
     return ps;
 }
 
+#ifdef _WIN32
+static void write_pad_file(const char *path, const char *tokens, uint64_t ticks) {
+    FILE *file=fopen(path,"w");
+    assert(file && fputs(tokens,file)>=0);
+    assert(fclose(file)==0);
+    HANDLE handle=CreateFileA(path,FILE_WRITE_ATTRIBUTES,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
+    assert(handle!=INVALID_HANDLE_VALUE);
+    FILETIME stamp={(DWORD)ticks,(DWORD)(ticks>>32)};
+    assert(SetFileTime(handle,NULL,NULL,&stamp));
+    assert(CloseHandle(handle));
+}
+
+static void test_same_second_pad_edits(void) {
+    char directory[MAX_PATH], path[MAX_PATH];
+    assert(GetTempPathA(sizeof(directory),directory));
+    assert(GetTempFileNameA(directory,"pad",0,path));
+    FILETIME stamp;
+    GetSystemTimeAsFileTime(&stamp);
+    uint64_t ticks=((uint64_t)stamp.dwHighDateTime<<32)|stamp.dwLowDateTime;
+    ticks-=ticks%10000000;
+    assert(_putenv_s("THEORDER_PAD_FILE",path)==0);
+    write_pad_file(path,"cross",ticks+10000);
+    SDL_Delay(25);
+    read_inject();
+    uint32_t first=injected.buttons;
+    write_pad_file(path,"right",ticks+20000);
+    SDL_Delay(25);
+    read_inject();
+    uint32_t second=injected.buttons;
+    write_pad_file(path,"",ticks+30000);
+    SDL_Delay(25);
+    read_inject();
+    uint32_t released=injected.buttons;
+    assert(DeleteFileA(path));
+    assert(_putenv_s("THEORDER_PAD_FILE","")==0);
+    printf("pad edits: first=0x%x second=0x%x released=0x%x\n",first,second,released);
+    fflush(stdout);
+    assert(first==BTN_CROSS);
+    assert(second==BTN_RIGHT);
+    assert(released==0);
+}
+#endif
+
 int main(void) {
+#ifdef _WIN32
+    test_same_second_pad_edits();
+#endif
     /* Keyboard defaults: Enter is Options alone, while Space remains Cross. */
     assert(pressed_by(&key_map,SDL_SCANCODE_RETURN)==BTN_OPTIONS);
     assert(pressed_by(&key_map,SDL_SCANCODE_SPACE)==BTN_CROSS);
