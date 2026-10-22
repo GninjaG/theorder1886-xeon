@@ -9,7 +9,7 @@ tests=(mp3 videodec services pad-map audio-downmix cpu-check isa-emulate isa-stu
        pipeline-binary-cache pipeline-binary-initialization motion-history motion-shader buffer-addr64 buffer-inline png-decode
        aliasing blend-rewrite depth-stencil-state async-compiler warmup-inbox wave-stats pass-census
        frame-capture lighting-test-knob amd-paths no-msaa async-pipeline-cache async-fetch-snapshot
-       ui-composition upscaler-support perf-overlay readback-queue wait-diagnostics
+       ui-composition upscaler-support perf-overlay overlay-input readback-queue wait-diagnostics
        graphics-settings readback-sources page-state scene-resolution taa-shader camera-motion dma-barriers
        renderpass-barrier shader-resource format-remap multiwave-barriers)
 declare -A args=([isa-stub]=tests/data/isa_fixture.bin)

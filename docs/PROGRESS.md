@@ -2,6 +2,30 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Reproduced and fixed stuck menu input
+
+- **Root cause:** ImGui retains key/gamepad/mouse presses across menu close,
+  while releases during gameplay are not forwarded. Opening again can resume
+  repeat/drag. Pending events also outlive their intended menu session.
+- **Fix:** `port_overlay.cpp::SetOpen` clears processed input, incoming events
+  and active widget at actual open-state transitions. No gameplay mapping,
+  virtual-stick curve or sensitivity changes.
+- **Red/green:** new `tests\test_overlay_input.cpp` exercises the actual
+  `HandleEvent` and ImGui input processor: close, release while closed,
+  reopen. Before: `keyboard=1 mouse=1 gamepad=1`; after: all zero.
+  Also covers pending events, fresh mixed input, Insert and both R3+L2 orders.
+  The test includes the implementation (like `test_pad_map.c`) so no
+  test-only production initialization API or Vulkan/guest instance is needed.
+- **Validation:** full build, 46 C/C++ suites and Python pass.
+  `out\checkpoint-20261022\overlay-input.json`: isolated 70 s runtime,
+  exit 0, 3,300 flips, no reported guest fault. HWND-scoped Windows messages
+  were posted for the reproduction, but output dumps are pre-overlay; no
+  physical-input/visual-menu claim. See `INPUT_IMPROVEMENTS.md`.
+- **Remaining:** native mouse is still nonlinear virtual-stick input, not
+  1:1 or proven FPS independent. Broader physical mixed-input interaction,
+  recurrent compilation stalls, gameplay/soak memory profiling, actual
+  DLSS/Frame Generation and AMD/Intel graphics remain unvalidated.
+
 ## 2026-10-22: Real process GPU memory, separate from adapter totals
 
 - **Implemented:** `port_gpu_process_memory.h` reads WDDM PDH dedicated/shared

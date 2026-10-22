@@ -441,6 +441,15 @@ target_compile_options(perf-overlay-test PRIVATE -UNDEBUG)
 if(WIN32)
     target_link_libraries(perf-overlay-test PRIVATE psapi)
 endif()
+add_executable(overlay-input-test EXCLUDE_FROM_ALL ../tests/test_overlay_input.cpp
+    ../tests/test_gpu_runtime_stubs.cpp)
+target_include_directories(overlay-input-test PRIVATE shim shadps4 third_party/gcn/include
+    third_party/imgui third_party/imgui/backends)
+target_compile_options(overlay-input-test PRIVATE -UNDEBUG -fPIC -fvisibility=hidden
+    -fvisibility-inlines-hidden)
+target_compile_definitions(overlay-input-test PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+    THEORDER_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
+target_link_libraries(overlay-input-test PRIVATE theordergpu PkgConfig::SDL3)
 add_executable(readback-queue-test EXCLUDE_FROM_ALL ../tests/test_readback_queue.cpp)
 target_include_directories(readback-queue-test PRIVATE shadps4)
 target_compile_options(readback-queue-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

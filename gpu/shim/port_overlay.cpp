@@ -88,7 +88,14 @@ void SetOpen(bool value) {
     if (menu_open.exchange(value) == value) {
         return;
     }
-    ImGui::GetIO().MouseDrawCursor = value;
+    ImGuiIO& io = ImGui::GetIO();
+    // Releases while closed are not forwarded to ImGui. Retire both processed
+    // and queued presses so reopening cannot resume a key repeat or mouse drag.
+    io.ClearEventsQueue();
+    io.ClearInputKeys();
+    io.ClearInputMouse();
+    ImGui::ClearActiveID();
+    io.MouseDrawCursor = value;
     if (value) {
         requested_tab = PortSettings::Get().menu_tab;
     }
