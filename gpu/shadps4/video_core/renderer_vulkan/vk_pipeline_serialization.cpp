@@ -1654,7 +1654,7 @@ void PipelineCache::PumpWarmUp() {
     for (auto& built : warm.built.Take(64)) {
         const bool kept =
             built.graphics
-                ? !failed_graphics.contains(built.graphics_key) &&
+                ? (failed_graphics.empty() || !failed_graphics.contains(built.graphics_key)) &&
                       PublishFirst(graphics_pipelines, built.graphics_key, std::move(built.graphics))
                 : PublishFirst(compute_pipelines, built.compute_key, std::move(built.compute));
         warm.loaded += kept;
@@ -1682,7 +1682,7 @@ void PipelineCache::PumpWarmUp() {
         warm.read_queue_ns += ElapsedNs(entry.queued);
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key) ||
-                                failed_graphics.contains(entry.graphics_key)) {
+                                (!failed_graphics.empty() && failed_graphics.contains(entry.graphics_key))) {
             static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
             if (log && !entry.compute) {
                 std::printf("Warm-up skipped g_%#018llx: the game has it\n",

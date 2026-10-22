@@ -44,6 +44,8 @@ typedef struct {
     float dx, dy, sensitivity;
     uint32_t buttons;
     int captured;
+    float sens_y;
+    int invert_y;
 } TheOrderMouse;
 void theordergpu_mouse_take(TheOrderMouse *out);
 /* Number of symbols registered by the vendored libraries (diagnostics). */

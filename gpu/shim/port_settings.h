@@ -63,6 +63,8 @@ struct Values {
     /// Mouse look (F7 toggles it) and its speed in percent.
     std::atomic<bool> mouse_look{true};
     std::atomic<int> mouse_sensitivity{100};
+    std::atomic<int> mouse_sensitivity_y{100};
+    std::atomic<bool> mouse_invert_y{false};
     /// Field of view in percent of the game's (tangent of the half angle); live.
     std::atomic<int> fov{100};
     /// Anisotropic filtering forced on mipmapped textures: 0 as the game asks, else 2..16.

@@ -910,7 +910,7 @@ bool PipelineCache::PrepareGraphicsPipeline(PipelineSelection& worker_sel) {
 const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& prepared) {
     if (prepared.state.load(std::memory_order_acquire) != PreparedDraw::Ready ||
         prepared.reg_checksum != liverpool->gfx_reg_checksum ||
-        failed_graphics.contains(prepared.key)) {
+        (!failed_graphics.empty() && failed_graphics.contains(prepared.key))) {
         return nullptr;
     }
     // Same registers; the stage programs and their flattened user data (which also covers
@@ -975,7 +975,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     }
     // Keep only the key after an exceptional build: its snapshots can be freed, but neither
     // an async retry nor a synchronous/known-binary restore may recreate it this session.
-    if (failed_graphics.contains(sel.graphics_key)) {
+    if (!failed_graphics.empty() && failed_graphics.contains(sel.graphics_key)) {
         return nullptr;
     }
     if (sync_compile && pending_graphics.contains(sel.graphics_key)) {

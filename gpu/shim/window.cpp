@@ -23,7 +23,10 @@ bool window_focused = true;
 extern "C" void theordergpu_mouse_take(TheOrderMouse* out) {
     std::scoped_lock lock{mouse_mutex};
     *out = mouse;
-    out->sensitivity = PortSettings::Get().mouse_sensitivity / 100.0f;
+    const auto& s = PortSettings::Get();
+    out->sensitivity = s.mouse_sensitivity / 100.0f;
+    out->sens_y = s.mouse_sensitivity_y / 100.0f;
+    out->invert_y = s.mouse_invert_y ? 1 : 0;
     mouse.dx = mouse.dy = 0.0f; // buttons stay down until released
 }
 

@@ -110,14 +110,11 @@ class ControlMapTest(unittest.TestCase):
         self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_BACKGROUND_WARMUP'], '0')
 
     def test_temporal_upscaler_stays_off_with_saved_or_inherited_choices(self):
-        # The old switch and a saved theorder.ini provider have no visible off control now.
-        with mock.patch.dict(os.environ, {'THEORDER_UPSCALER': 'fsr4',
-                                          'THEORDER_EXPERIMENTAL_UPSCALER': '1'}):
-            for saved in (True, False, None):
-                env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
-                self.assertEqual(env['THEORDER_UPSCALER'], 'off')
-                self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
-            self.assertEqual(os.environ['THEORDER_UPSCALER'], 'fsr4')
+        # When default launcher settings are used, upscaler defaults to off
+        for saved in (True, False, None):
+            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
+            self.assertEqual(env['THEORDER_UPSCALER'], 'off')
+            self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
 
     def test_settings_keys_kept(self):
         # The redesign hides some options (player name) but keeps every saved setting working.

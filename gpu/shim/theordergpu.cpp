@@ -270,7 +270,12 @@ extern "C" int theordergpu_init(const TheOrderGpuConfig *config) {
 #endif
   Core::Emulator::FillElfInfo(*config);
   const std::string title = config->title ? config->title : "The Order: 1886";
-  const s32 width = config->width, height = config->height;
+  const auto& s = PortSettings::Get();
+  s32 width = config->width, height = config->height;
+  if (s.output_res >= 0 && s.output_res < PortSettings::OutputCount) {
+    width = PortSettings::OutputWidths[s.output_res];
+    height = PortSettings::OutputHeights[s.output_res];
+  }
   g_window_thread = std::thread([title, width, height] {
     Common::SetCurrentThreadName("port:window");
     auto *window = new Frontend::WindowSDL(width, height, title.c_str());

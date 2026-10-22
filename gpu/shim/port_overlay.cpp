@@ -111,12 +111,9 @@ ImGuiKey KeyFromSdl(SDL_Keycode key) {
     case SDLK_END: return ImGuiKey_End;
     case SDLK_DELETE: return ImGuiKey_Delete;
     case SDLK_BACKSPACE: return ImGuiKey_Backspace;
-    case SDLK_SPACE: return ImGuiKey_Space;
     case SDLK_RETURN: return ImGuiKey_Enter;
     case SDLK_KP_ENTER: return ImGuiKey_KeypadEnter;
     case SDLK_ESCAPE: return ImGuiKey_Escape;
-    case SDLK_Q: return ImGuiKey_Q;
-    case SDLK_E: return ImGuiKey_E;
     case SDLK_LCTRL: return ImGuiKey_LeftCtrl;
     case SDLK_RCTRL: return ImGuiKey_RightCtrl;
     case SDLK_LSHIFT: return ImGuiKey_LeftShift;
@@ -308,15 +305,54 @@ void ImageTab() {
         PortSettings::ApplyFov();
         ImGui::EndTable();
     }
-    ImGui::SeparatorText("Mouse");
+    ImGui::SeparatorText("Mouse Look");
     if (BeginRows("##mouse")) {
         CheckRow("Mouse look (F7)", s.mouse_look,
                  "The mouse turns the camera; left button fires (R2), right button aims (L2), "
                  "middle R3, side buttons L1/R1.");
         ImGui::BeginDisabled(!s.mouse_look);
-        SliderRow("Mouse sensitivity", s.mouse_sensitivity, 10, 400, "%d%%",
-                  "How fast the camera turns with the mouse.");
+        SliderRow("Horizontal sensitivity (X)", s.mouse_sensitivity, 10, 400, "%d%%",
+                  "How fast the camera turns horizontally with the mouse.");
+        SliderRow("Vertical sensitivity (Y)", s.mouse_sensitivity_y, 10, 400, "%d%%",
+                  "How fast the camera turns vertically with the mouse.");
+        CheckRow("Invert Y-axis", s.mouse_invert_y, "Invert vertical camera look direction.");
         ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
+    ImGui::SeparatorText("Resolution & Upscaling");
+    if (BeginRows("##upscaling")) {
+        static const char* const res_labels[] = {
+            "1280 x 720 (720p)", "1920 x 1080 (1080p)", "2560 x 1440 (1440p)",
+            "3840 x 2160 (4K)", "5120 x 1440 (32:9 Super Ultrawide)"
+        };
+        static const int res_values[] = {0, 1, 2, 3, 4};
+        ChoiceRow("Output resolution", s.output_res, res_labels, res_values, 5,
+                  "Output render and presentation target size.");
+
+        static const char* const upscaler_labels[] = {
+            "Off (Native)", "FSR 3.1", "FSR 4", "FSR 4.1.1", "TAA", "DLSS"
+        };
+        static const int upscaler_values[] = {
+            PortSettings::UpscalerOff, PortSettings::UpscalerFsr3, PortSettings::UpscalerFsr4,
+            PortSettings::UpscalerFsr411, PortSettings::UpscalerTaa, PortSettings::UpscalerDlss
+        };
+        ChoiceRow("Upscaler", s.upscaler, upscaler_labels, upscaler_values, 6,
+                  "Temporal upscaler (Off, FSR 3.1, FSR 4, FSR 4.1.1, TAA, DLSS).");
+        if (s.upscaler == PortSettings::UpscalerDlss && !s.dlss_supported) {
+            InfoRow("DLSS Status", s.dlss_problem ? s.dlss_problem.load() : "DLSS not available on this GPU or DLL missing.");
+        }
+        if (PortSettings::IsFsr4(s.upscaler) && !s.fsr4_supported) {
+            InfoRow("FSR 4 Status", s.fsr4_problem ? s.fsr4_problem.load() : "FSR 4 not supported on this GPU.");
+        }
+
+        ImGui::BeginDisabled(s.upscaler == PortSettings::UpscalerOff);
+        static const char* const preset_labels[] = {
+            "Native AA (1.0x)", "Quality (1.5x)", "Balanced (1.7x)", "Performance (2.0x)", "Ultra Performance (3.0x)"
+        };
+        ChoiceRow("Quality preset", s.preset, preset_labels, nullptr, 5,
+                  "Render scale per axis for the selected upscaler.");
+        ImGui::EndDisabled();
+
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
@@ -345,10 +381,15 @@ void ImageTab() {
     ImGui::SeparatorText("Information");
     if (BeginRows("##image_info")) {
         char text[96];
+        const int out_idx = std::clamp(s.output_res.load(), 0, PortSettings::OutputCount - 1);
         std::snprintf(text, sizeof(text), "%d x %d", iw, ih);
-        InfoRow("Game image", text);
+        InfoRow("Render resolution", text);
+        std::snprintf(text, sizeof(text), "%d x %d",
+                      PortSettings::OutputWidths[out_idx], PortSettings::OutputHeights[out_idx]);
+        InfoRow("Target output", text);
         std::snprintf(text, sizeof(text), "%d x %d", ww, wh);
-        InfoRow("Window", text);
+        InfoRow("Window size", text);
+        InfoRow("Active upscaler", UpscalerLabel(s.upscaler));
         InfoRow("Sharpening", s.rcas_applied ? "applied" : "not applied");
         ImGui::EndTable();
     }
@@ -473,7 +514,9 @@ void ControlsTab() {
     ImGui::SeparatorText("Mouse Look");
     if (BeginRows("##mouse_settings")) {
         CheckRow("Mouse look (F7)", s.mouse_look, "Use mouse movement to aim and look around.");
-        SliderRow("Sensitivity", s.mouse_sensitivity, 10, 400, "%d%%", "Mouse look sensitivity percentage.");
+        SliderRow("Horizontal sensitivity (X)", s.mouse_sensitivity, 10, 400, "%d%%", "Horizontal look sensitivity percentage.");
+        SliderRow("Vertical sensitivity (Y)", s.mouse_sensitivity_y, 10, 400, "%d%%", "Vertical look sensitivity percentage.");
+        CheckRow("Invert Y-axis", s.mouse_invert_y, "Invert vertical look direction.");
         ImGui::EndTable();
     }
 
@@ -524,8 +567,13 @@ void Menu() {
     constexpr int TabCount = PortSettings::MenuTabCount;
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
-        const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_E, false) ? 1
-                         : ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) || ImGui::IsKeyPressed(ImGuiKey_Q, false)
+        const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) ||
+                         (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) ||
+                         ImGui::IsKeyPressed(ImGuiKey_PageDown, false)
+                             ? 1
+                         : ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ||
+                           (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) ||
+                           ImGui::IsKeyPressed(ImGuiKey_PageUp, false)
                              ? -1
                              : 0;
         if (step) {
@@ -565,7 +613,7 @@ void Menu() {
 
     ImGui::Separator();
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", footer_help ? footer_help : PadText("L1 / R1 or Q / E: switch tabs. Settings are saved in theorder.ini.", "LB / RB or Q / E: switch tabs. Settings are saved in theorder.ini.", "L / R or Q / E: switch tabs. Settings are saved in theorder.ini."));
+    ImGui::TextDisabled("%s", footer_help ? footer_help : PadText("L1 / R1: switch tabs. Settings are saved in theorder.ini.", "LB / RB: switch tabs. Settings are saved in theorder.ini.", "L / R: switch tabs. Settings are saved in theorder.ini.", "Ctrl+Tab or PageUp/Down: switch tabs. Settings are saved in theorder.ini."));
     ImGui::PopTextWrapPos();
     if (const int changes = RestartChanges()) {
         ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%d change%s need%s a restart (unsaved progress is lost).",
@@ -908,9 +956,16 @@ bool HandleEvent(const SDL_Event& event) {
             Vulkan::FrameCapture::Request();
             return true;
         }
-        if (down && !event.key.repeat &&
-            (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
-            SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
+        if (down && !event.key.repeat && event.key.key == SDLK_INSERT) {
+            SetOpen(!is_open);
+            return true;
+        }
+        if (down && !event.key.repeat && is_open && event.key.key == SDLK_ESCAPE) {
+            if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
+                io.AddKeyEvent(ImGuiKey_Escape, true);
+                return true;
+            }
+            SetOpen(false);
             return true;
         }
         if (!is_open) {

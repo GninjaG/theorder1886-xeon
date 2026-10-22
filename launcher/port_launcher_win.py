@@ -331,9 +331,12 @@ def control_map(controls, kind):
     return ','.join(f'{button}={chosen[button].strip()}' for button, _key, _pad in CONTROLS
                     if button in chosen and not set(chosen[button]) & set(',='))
 
-UPSCALERS = [('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеокарта)')),
-             ('taa', ('TAA (native resolution anti-aliasing)', 'TAA (нативное сглаживание)')),
-             ('off', ('Off', 'Выключен'))]
+UPSCALERS = [('dlss', ('DLSS (NVIDIA RTX)', 'DLSS (NVIDIA RTX)')),
+             ('fsr3', ('FSR 3.1 (all GPUs)', 'FSR 3.1 (любая видеокарта)')),
+             ('fsr4', ('FSR 4', 'FSR 4')),
+             ('fsr411', ('FSR 4.1.1', 'FSR 4.1.1')),
+             ('taa', ('TAA', 'TAA')),
+             ('off', ('Off (Native resolution)', 'Выключен (нативное разрешение)'))]
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
@@ -696,9 +699,8 @@ def game_environment(s):
     env = dict(os.environ)
     env['THEORDER_GAME_DIR'] = s['game_dir']
     env.pop('THEORDER_PATCH_DIR', None)
-    # Temporal upscaling is parked (build_graphics). This is the override PortSettings::Load
-    # reads, so an inherited value or a saved upscaler=fsr3/fsr4 cannot turn it back on.
-    env['THEORDER_UPSCALER'] = 'off'
+    upscaler_choice = s.get('upscaler', 'off')
+    env['THEORDER_UPSCALER'] = upscaler_choice
     env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'  # legacy launcher switch
     if s.get('update_dir'):
         env['THEORDER_PATCH_DIR'] = s['update_dir']
@@ -1357,21 +1359,14 @@ class Launcher:
         """Window and overlay controls; temporal upscaling stays commented out."""
         f = self.scrolled_page('graphics', _('Graphics', 'Графика'), _('How the game appears on your screen.'))
         self.build_display(f)
-        # Temporal upscaling is parked until its image quality is validated.
-        # self.section(f, _('Upscaling (FSR / TAA)', 'Апскейлинг'))
-        # self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
-        #          _('FSR 3.1 or TAA anti-aliasing. Renders at lower resolution and scales up to output for higher FPS.',
-        #            'FSR 3.1 или TAA. Рендерит в меньшем разрешении для повышения FPS.'), key='upscaler')
-        # self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
-        #          _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
-        #            'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
-        # self.row(f, _('Live resolution changes', 'Смена разрешения на лету'), self.choice(f, 'live_resolution', 'ini', LIVE),
-        #          _('Off: outputs other than 1080p are set by a patch at start (fastest). On: change in-game without restart.',
-        #            'Выкл.: быстрее. Вкл.: смена на лету без перезапуска.'), key='live_resolution')
-        # self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
-        #            _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
-        #              'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
-        self.section(f, _('Native output resolution (experimental)', 'Разрешение вывода без апскейлинга (экспериментально)'))
+        self.section(f, _('Upscaling (DLSS / FSR / TAA)', 'Апскейлинг'))
+        self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
+                 _('DLSS (NVIDIA RTX), FSR 3.1, FSR 4 or TAA. Renders at lower resolution and scales up to output for higher FPS.',
+                   'DLSS, FSR 3.1, FSR 4 или TAA. Рендерит в меньшем разрешении для повышения FPS.'), key='upscaler')
+        self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
+                 _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
+                   'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
+        self.section(f, _('Output resolution', 'Разрешение вывода'))
         self.row(f, _('Output resolution', 'Разрешение вывода'),
                  self.choice(f, 'output_res', 'ini', NATIVE_OUTPUTS, preserve_unknown=True),
                  _('With upscaling off, the 3D scene and HUD use this output size. 4K costs more GPU time and memory; some game post-processing may stay at its original resolution.',

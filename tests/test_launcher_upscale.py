@@ -13,7 +13,7 @@ import port_launcher_win as launcher
 
 class UpscalerSettingsTest(unittest.TestCase):
     def test_remaining_choices_have_no_spatial_upscaler(self):
-        self.assertEqual([value for value, _text in launcher.UPSCALERS], ['fsr3', 'taa', 'off'])
+        self.assertEqual([value for value, _text in launcher.UPSCALERS], ['dlss', 'fsr3', 'fsr4', 'fsr411', 'taa', 'off'])
 
     def test_removed_controls_do_not_supply_defaults_to_save(self):
         for key in ('fsr1', 'sharpen', 'sharpness', 'rcas', 'rcas_strength'):
@@ -49,14 +49,14 @@ class UpscalerSettingsTest(unittest.TestCase):
         with mock.patch.object(launcher, 'LANG', 'en'):
             launcher.Launcher.build_graphics(page)
         self.assertEqual([(key, store) for key, store, _options in page.choices],
-                         [('output_res', 'ini')])
+                         [('upscaler', 'ini'), ('preset', 'ini'), ('output_res', 'ini')])
         self.assertTrue(page.preserve_unknown)
-        self.assertEqual([value for value, _label in page.choices[0][2]],
+        self.assertEqual([value for value, _label in page.choices[2][2]],
                          ['1280x720', '1920x1080', '2560x1440', '3840x2160'])
         self.assertEqual([value for value, _label in launcher.OUTPUTS],
                          ['1280x720', '1920x1080', '2560x1440', '3440x1440',
                           '3840x2160', '5120x1440'])
-        self.assertIn('post-processing', page.rows[0][2])
+        self.assertIn('post-processing', page.rows[2][2])
 
     def test_output_choice_round_trips_without_changing_saved_upscaler(self):
         with tempfile.TemporaryDirectory() as folder:

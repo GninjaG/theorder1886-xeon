@@ -316,6 +316,12 @@ bool TemporalUpscaler::OnFrameStart() {
         scheduler.Finish();
         fsr4 = std::make_unique<Fsr4Upscaler>(instance, scheduler);
         if (PortSettings::IsFsr4(upscaler)) PortSettings::Get().fsr4_problem = nullptr;
+        if (upscaler == PortSettings::UpscalerDlss) {
+            dlss_failed = false;
+            if (Dlss* dlss = Dlss::Get()) {
+                dlss->ReleaseFeature();
+            }
+        }
     }
     if (applied_upscaler != upscaler) fsr4_failed = false; // retry after a menu change
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.

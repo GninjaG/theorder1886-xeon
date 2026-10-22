@@ -105,6 +105,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mouse_look = i != 0;
     } else if (key == "mouse_sensitivity") {
         v.mouse_sensitivity = std::clamp(i, 10, 400);
+    } else if (key == "mouse_sensitivity_y") {
+        v.mouse_sensitivity_y = std::clamp(i, 10, 400);
+    } else if (key == "mouse_invert_y") {
+        v.mouse_invert_y = i != 0;
     } else if (key == "fov") {
         v.fov = std::clamp(i, 50, 200);
     } else if (key == "anisotropy") {
@@ -287,8 +291,9 @@ void Save() {
                  PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, int(PortGraphics::Aspects.size()) - 1)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
-    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nanisotropy=%d\n", v.fov.load(),
-                 int(v.mouse_look.load()), v.mouse_sensitivity.load(), v.anisotropy.load());
+    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nmouse_sensitivity_y=%d\nmouse_invert_y=%d\nanisotropy=%d\n",
+                 v.fov.load(), int(v.mouse_look.load()), v.mouse_sensitivity.load(),
+                 v.mouse_sensitivity_y.load(), int(v.mouse_invert_y.load()), v.anisotropy.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

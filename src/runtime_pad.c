@@ -212,38 +212,55 @@ static void load_button_maps(void) {
     if (pad || keys) printf("Runtime: pad map: %d gamepad and %d keyboard buttons remapped\n",pad,keys);
 }
 
-/* Mouse look: the motion turns the right stick, with the bloodborne_pc port's response
- * (runtime_pad.c mouse_to_axis, after shadPS4's EmulateJoystick): the delta scaled to a 33 ms
- * window (no frame rate dependence), magnitude * speed plus a small push faded in for slow moves,
- * capped at full deflection and eased over ~25 ms. */
-static double mouse_stick_x, mouse_stick_y;
-static uint64_t mouse_sample_us;
-static void mouse_to_stick(float dx, float dy, float speed, int *out_x, int *out_y) {
-    const uint64_t now=now_us();
-    double dt_ms=mouse_sample_us ? (double)(now-mouse_sample_us)/1000.0 : 33.0;
-    if (dt_ms<1.0) dt_ms=1.0;
-    if (dt_ms>100.0) dt_ms=100.0;
-    mouse_sample_us=now;
-    const double sdx=dx*(33.0/dt_ms), sdy=dy*(33.0/dt_ms), magnitude=sqrt(sdx*sdx+sdy*sdy);
-    double target_x=0.0, target_y=0.0;
-    if (magnitude>=0.01) {
-        double v=magnitude*speed+0.125*128.0*(magnitude<1.0 ? magnitude : 1.0);
-        if (v>128.0) v=128.0;
-        const double angle=atan2(sdy,sdx);
-        target_x=cos(angle)*v;
-        target_y=sin(angle)*v;
+/* Mouse look: direct, responsive 1:1 camera response with game deadzone compensation.
+ * - Compensates the engine's ~24-unit inner deadzone immediately on any mouse motion.
+ * - No sluggish 25ms exponential low-pass filter; stops immediately when mouse stops.
+ * - Impulse preservation: fast mouse swipes that exceed maximum stick tilt (127)
+ *   spread the turning momentum over consecutive frames so fast flicks turn the camera cleanly.
+ * - Independent X and Y sensitivity scaling, and optional invert Y. */
+static double mouse_impulse_x, mouse_impulse_y;
+static void mouse_to_stick(float dx, float dy, float speed_x, float speed_y, int *out_x, int *out_y) {
+    const double DEADZONE = 24.0;
+    const double MAX_DEFLECTION = 127.0;
+
+    double vx = (double)dx * (double)speed_x * 4.0 + mouse_impulse_x;
+    double vy = (double)dy * (double)speed_y * 4.0 + mouse_impulse_y;
+    mouse_impulse_x = 0.0;
+    mouse_impulse_y = 0.0;
+
+    double mag = sqrt(vx * vx + vy * vy);
+    if (mag < 0.001) {
+        *out_x = 0;
+        *out_y = 0;
+        return;
     }
-    const double alpha=1.0-exp(-dt_ms/25.0);
-    mouse_stick_x+=(target_x-mouse_stick_x)*alpha;
-    mouse_stick_y+=(target_y-mouse_stick_y)*alpha;
-    *out_x=(int)lround(mouse_stick_x);
-    *out_y=(int)lround(mouse_stick_y);
+
+    double dir_x = vx / mag;
+    double dir_y = vy / mag;
+
+    if (mag > (MAX_DEFLECTION - DEADZONE)) {
+        double excess = mag - (MAX_DEFLECTION - DEADZONE);
+        mouse_impulse_x = dir_x * excess * 0.75;
+        mouse_impulse_y = dir_y * excess * 0.75;
+        if (fabs(mouse_impulse_x) < 0.5) mouse_impulse_x = 0.0;
+        if (fabs(mouse_impulse_y) < 0.5) mouse_impulse_y = 0.0;
+        mag = MAX_DEFLECTION - DEADZONE;
+    }
+
+    double stick_mag = DEADZONE + mag;
+    if (stick_mag > MAX_DEFLECTION) stick_mag = MAX_DEFLECTION;
+
+    *out_x = (int)lround(dir_x * stick_mag);
+    *out_y = (int)lround(dir_y * stick_mag);
 }
 /* Buttons: left fires (R2), right aims (L2), middle R3, back/forward side buttons L1/R1. */
 static void mouse_input(PadData *d) {
     TheOrderMouse m;
     theordergpu_mouse_take(&m);
-    if (!m.captured) { mouse_sample_us=0; mouse_stick_x=mouse_stick_y=0.0; return; }
+    if (!m.captured) {
+        mouse_impulse_x = mouse_impulse_y = 0.0;
+        return;
+    }
     static const struct { uint32_t mask, ps; } buttons[]={
         {SDL_BUTTON_LMASK,BTN_R2}, {SDL_BUTTON_RMASK,BTN_L2}, {SDL_BUTTON_MMASK,BTN_R3},
         {SDL_BUTTON_X1MASK,BTN_L1}, {SDL_BUTTON_X2MASK,BTN_R1}};
@@ -252,7 +269,9 @@ static void mouse_input(PadData *d) {
     if (d->buttons & BTN_L2) d->l2=255;
     if (d->buttons & BTN_R2) d->r2=255;
     int mx=0, my=0;
-    mouse_to_stick(m.dx,m.dy,m.sensitivity,&mx,&my);
+    float mdy = m.invert_y ? -m.dy : m.dy;
+    float sy = m.sens_y > 0.0f ? m.sens_y : m.sensitivity;
+    mouse_to_stick(m.dx, mdy, m.sensitivity, sy, &mx, &my);
     const int x=d->right_x-128+mx, y=d->right_y-128+my;
     d->right_x=(uint8_t)(128+(x<-128 ? -128 : x>127 ? 127 : x));
     d->right_y=(uint8_t)(128+(y<-128 ? -128 : y>127 ? 127 : y));
@@ -419,12 +438,17 @@ static void replay_sample(PadData *d) {
     d->left_x=s->axes[0]; d->left_y=s->axes[1]; d->right_x=s->axes[2]; d->right_y=s->axes[3];
     d->l2=s->l2; d->r2=s->r2;
 }
-/* After the menu or the text dialog closes, buttons still held (the Cross that accepted a
- * name) stay hidden until released: the game would take them as a new press. */
+/* After the menu or the text dialog closes, buttons and sticks still held stay hidden
+ * until released: the game would take them as a new press or sudden camera jerk. */
 static int hold_after_capture;
 static void sample(PadData *d) {
     sample_host(d);
-    if (theordergpu_overlay_captures_input()) { hold_after_capture=1; click.side=-1; return; }
+    if (theordergpu_overlay_captures_input()) {
+        hold_after_capture = 1;
+        click.side = -1;
+        mouse_impulse_x = mouse_impulse_y = 0.0;
+        return;
+    }
     record_sample(d); /* the click sources as they are: a replay plays them again */
     read_inject();
     replay_sample(d);
@@ -435,8 +459,15 @@ static void sample(PadData *d) {
     for (int i=0;i<4;++i) if (injected.stick[i]>=0) *axes[i]=(uint8_t)injected.stick[i];
     play_click(d);
     if (hold_after_capture) {
-        if (d->buttons) d->buttons=0;
-        else hold_after_capture=0;
+        const bool sticks_active = (d->left_x != 128 || d->left_y != 128 ||
+                                    d->right_x != 128 || d->right_y != 128);
+        if (d->buttons || sticks_active) {
+            d->buttons = 0;
+            d->left_x = d->left_y = d->right_x = d->right_y = 128;
+            d->l2 = d->r2 = 0;
+        } else {
+            hold_after_capture = 0;
+        }
     }
 }
 
