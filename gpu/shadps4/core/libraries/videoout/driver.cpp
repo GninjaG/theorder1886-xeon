@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 #include <chrono>
@@ -47,6 +48,63 @@ extern std::atomic<u32> g_port_fallback_dispatches;
 } // namespace Vulkan
 
 namespace Libraries::VideoOut {
+
+namespace {
+class FrameTrace {
+public:
+    FrameTrace() {
+        const char* path = std::getenv("THEORDER_FRAME_CSV");
+        if (!path || !*path) {
+            return;
+        }
+        file = std::fopen(path, "w");
+        if (!file) {
+            std::perror("Frame trace: cannot open output");
+            return;
+        }
+        std::setvbuf(file, buffer.data(), _IOFBF, buffer.size());
+        std::fprintf(file, "frame,frame_ms,compile_wait_ns,readback_wait_ns,gpu_tick_wait_ns,recorder_wait_ns,"
+                           "host_copy_wait_ns,translate_ns,spirv_ns,driver_ns,"
+                           "image_upload_bytes,buffer_upload_bytes\n");
+    }
+    ~FrameTrace() {
+        if (file && std::fclose(file) != 0) {
+            std::perror("Frame trace: close failed");
+        }
+    }
+    void Write(u64 frame, double ms, u64 compile_wait, const u64* current, const u64* previous,
+               u64 images, u64 buffers) {
+        if (!file) {
+            return;
+        }
+        if (std::fprintf(file, "%llu,%.6f,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
+                         (unsigned long long)frame, ms, (unsigned long long)compile_wait,
+                         (unsigned long long)(current[0] - previous[0]),
+                         (unsigned long long)(current[1] - previous[1]),
+                         (unsigned long long)(current[2] - previous[2]),
+                         (unsigned long long)(current[3] - previous[3]),
+                         (unsigned long long)(current[7] - previous[7]),
+                         (unsigned long long)(current[8] - previous[8]),
+                         (unsigned long long)(current[9] - previous[9]),
+                         (unsigned long long)images, (unsigned long long)buffers) < 0) {
+            Fail();
+        }
+    }
+    void Flush() {
+        if (file && std::fflush(file) != 0) {
+            Fail();
+        }
+    }
+private:
+    void Fail() {
+        std::perror("Frame trace: write failed; capture stopped");
+        std::fclose(file);
+        file = nullptr;
+    }
+    std::array<char, 65536> buffer{};
+    std::FILE* file = nullptr;
+};
+} // namespace
 
 constexpr static bool Is32BppPixelFormat(PixelFormat format) {
     switch (format) {
@@ -347,6 +405,7 @@ void VideoOutDriver::Flip(const Request& req) {
                   twf = PortStats::t_write_faults.load();
         // port: every frame over 40 ms after the first, at most 10 per 5 s window.
         static bool primed = false;
+        const bool had_interval = primed;
         static u32 stalls_shown = 0;
         const bool stall = primed && frame_ms > 40.0 && stalls_shown < 10;
         stalls_shown += stall;
@@ -354,11 +413,21 @@ void VideoOutDriver::Flip(const Request& req) {
         // Waits and work inside the long frame (window counters are reset every 5 s, so the
         // previous values are reset with them).
         static u64 last_wait[10];
+        static u64 last_compile_wait;
+        const u64 compile_wait = Vulkan::g_port_compile_wait_ns.load();
         const u64 wait_now[10] = {PortStats::t_readback_wait.load(), PortStats::tick_wait_ns.load(),
                                  PortStats::sync_recording_ns.load(), PortStats::host_copies_wait_ns.load(),
                                  u64(Vulkan::g_port_compile_ns.load()), u64(Vulkan::g_port_compiles.load()),
                                  PortStats::t_gc.load(), Vulkan::g_port_translate_ns.load(),
                                  Vulkan::g_port_emit_ns.load(), Vulkan::g_port_pipeline_driver_ns.load()};
+        const u64 image_bytes = PortStats::image_upload_bytes.load();
+        const u64 buffer_bytes = PortStats::buffer_upload_bytes.load();
+        static FrameTrace trace;
+        if (had_interval) {
+            trace.Write(flip_count, frame_ms, compile_wait - last_compile_wait, wait_now, last_wait,
+                        image_bytes - last_image_bytes, buffer_bytes - last_buffer_bytes);
+        }
+        last_compile_wait = compile_wait;
         if (stall) {
             std::printf("Stall: %.1f ms frame; waits: readback %.1f ms, GPU ticks %.1f ms, "
                         "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms (translate "
@@ -418,8 +487,6 @@ void VideoOutDriver::Flip(const Request& req) {
         }
 #endif
         const u64 images = PortStats::images_registered.load();
-        const u64 image_bytes = PortStats::image_upload_bytes.load();
-        const u64 buffer_bytes = PortStats::buffer_upload_bytes.load();
         if (stall) {
             std::printf("       GPU thread on CPU %.1f ms; %llu images registered, "
                         "%.1f MB image uploads, %.1f MB buffer uploads\n",
@@ -491,6 +558,7 @@ void VideoOutDriver::Flip(const Request& req) {
             const double capture_ms = Vulkan::g_port_capture_ns.exchange(0) / 1e6;
             const double async_ms = Vulkan::g_port_async_ns.exchange(0) / 1e6;
             const double wait_ms = Vulkan::g_port_compile_wait_ns.exchange(0) / 1e6;
+            last_compile_wait = 0;
             const double snapshot_ms = Vulkan::g_port_snapshot_ns.exchange(0) / 1e6;
             const double guest_wait_ms = Vulkan::g_port_guest_wait_ns.exchange(0) / 1e6;
             const u32 pending_draws = Vulkan::g_port_pending_draws.exchange(0);
@@ -544,6 +612,7 @@ void VideoOutDriver::Flip(const Request& req) {
                         frames ? double(PortStats::scene_draws.exchange(0)) / frames : 0.0);
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
+            trace.Flush();
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
             if (intervals.size() > 2) {
                 std::vector<double> sorted = intervals;
@@ -561,6 +630,10 @@ void VideoOutDriver::Flip(const Request& req) {
                             "%u frames over 1.5x median\n",
                             median, std::sqrt(std::max(0.0, sq / intervals.size() - mean * mean)),
                             sorted[std::min(sorted.size() - 1, sorted.size() * 99 / 100)], spikes);
+                std::printf("Frame pacing detail: %zu samples, p95 %.2f ms, %.2f stutters/min "
+                            "(over 1.5x window median)\n", intervals.size(),
+                            sorted[std::min(sorted.size() - 1, sorted.size() * 95 / 100)],
+                            spikes * 60.0 / window);
             }
             intervals.clear();
             window_start = now;

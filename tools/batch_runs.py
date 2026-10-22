@@ -242,6 +242,8 @@ def play_pad(script: str, pad_file: Path, stop: threading.Event):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--runs', type=int, default=8)
+    parser.add_argument('--frame-trace', action='store_true',
+                        help='capture buffered per-frame CSV and true whole-trace P95/P99')
     parser.add_argument('--secs', type=int, default=40)
     parser.add_argument('--cond', action='append', default=[], help='LABEL=VAR=VALUE,...')
     parser.add_argument('--setting', action='append', default=[], help='global run INI setting KEY=VALUE')
@@ -416,6 +418,9 @@ def main():
                     shutil.copy2(source_path, run_ini)
             _apply_ini_settings(run_ini, ini_settings[label])
             env['THEORDER_CONFIG'] = str(run_ini)
+            frame_trace_path = run_data_dir / 'frames.csv' if args.frame_trace else None
+            if frame_trace_path:
+                env['THEORDER_FRAME_CSV'] = str(frame_trace_path)
             effective_graphics = _configure_run_environment(env, run_profile, run_ini)
             if args.validation:
                 env.setdefault('THEORDER_VK_VALIDATION', '1')
@@ -512,6 +517,14 @@ def main():
                 game['cusa_expected'] = args.cusa
             if args.game_version:
                 game['version_expected'] = args.game_version
+            frame_trace, frame_trace_error = None, None
+            if frame_trace_path:
+                try:
+                    with frame_trace_path.open(encoding='ascii', newline='') as stream:
+                        frame_trace = regression_report.parse_frame_trace(stream)
+                except (OSError, ValueError) as error:
+                    frame_trace_error = str(error)
+                    print(f'WARNING: frame trace unavailable: {error}', flush=True)
             record = {
                 'run_id': run_id, 'condition': label, 'iteration': i + 1,
                 'scene': args.scene, 'issue_ids': args.issue,
@@ -531,6 +544,9 @@ def main():
                 'game_identity_check': game_identity,
                 'fault_stack': fault,
                 'visual': visual,
+                'frame_trace_path': _stored_path(frame_trace_path),
+                'frame_trace': frame_trace,
+                'frame_trace_error': frame_trace_error,
             }
             manifest['runs'].append(record)
     print('summary:')

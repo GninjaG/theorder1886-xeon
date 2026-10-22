@@ -51,6 +51,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.overlay_layout = i == 1 ? 1 : 0;
         return;
     }
+    if (key == "overlay_advanced") {
+        v.overlay_advanced = i != 0;
+        return;
+    }
     if (key == "menu_tab") {
         v.menu_tab = i >= 0 && i < MenuTabCount ? i : 0;
         return;
@@ -275,11 +279,12 @@ void Save() {
     std::fprintf(file,
                  "overlay_fps=%d\noverlay_frametime=%d\noverlay_upscaler=%d\noverlay_gpu=%d\n"
                  "overlay_cpu=%d\noverlay_ram=%d\noverlay_vram=%d\noverlay_scale=%d\noverlay_corner=%d\n"
-                 "overlay_opacity=%d\noverlay_layout=%d\nmenu_tab=%d\n",
+                 "overlay_opacity=%d\noverlay_layout=%d\nmenu_tab=%d\noverlay_advanced=%d\n",
                  int(v.overlay_items >> 0 & 1), int(v.overlay_items >> 1 & 1), int(v.overlay_items >> 2 & 1),
                  int(v.overlay_items >> 3 & 1), int(v.overlay_items >> 4 & 1), int(v.overlay_items >> 5 & 1),
                  int(v.overlay_items >> 6 & 1), v.overlay_scale.load(), v.overlay_corner.load(),
-                 v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
+                 v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load(),
+                 int(v.overlay_advanced.load()));
     std::fprintf(file,
                  "display_mode=%s\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"

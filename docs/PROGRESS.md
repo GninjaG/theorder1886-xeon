@@ -2,6 +2,68 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Master consolidation and measured instrumentation checkpoint
+
+- **Consolidation complete:** active `optimization/advanced-v0.7.7` was 33 commits
+  ahead of `origin/master`, with no divergent remote commits. Built successfully;
+  45 C/C++ suites and the Python suite passed before and after fast-forwarding
+  master from `10e44b4` to `1fb2c3e`; normal push verified equal local/remote hashes.
+- **Protection:** local and remote `backup/active-20261022-1112` and
+  `backup/master-20261022-1112` preserve both tips. Verified full-history bundles:
+  `out\pre-consolidation-20261022.bundle` (SHA256
+  `2873e697763fc8b8c3a23f7fa1f3bcaff9bfae629abd8fc4dfe46721dab89ac0`)
+  and `out\fsr-local-20261022.bundle` (SHA256
+  `39039df511f9ee41c4e36721c2a82c5ca960a47d8ad3babefd81b7abbd7233be`).
+  The FSR submodule's six pre-existing modified files remain untouched; its
+  snapshot is also `backup/local-20261022-1112` inside that submodule.
+- **Cleanup:** deleted 18 fully merged local branches using `git branch -d`.
+  Kept `integration/prs-conservative`: six merge commits are not ancestors of
+  master even though `git cherry` found no unique non-merge patch.
+  Kept all backup refs/tags/releases. Fifteen open collaborator PRs (#48-#62)
+  were inspected and their branches were not removed. Origin had only master
+  and our backup branches after push; fetch/prune removed no needed work.
+- **Real fixes:** process RAM is now private commit rather than Working Set;
+  advanced overlay separates residency/peak/VMA allocations from adapter totals.
+  Monotonic wall time backs process CPU sampling. Unknown PDH GPU counters remain
+  unavailable rather than a fabricated zero. Private Linux virtual size is no
+  longer mislabeled as commit. Settings persist advanced mode.
+- **Instrumentation:** `--frame-trace` captures buffered per-flip CSV, with waits,
+  translation/driver work and uploads. The harness computes whole-trace P95/P99,
+  time-weighted average FPS and explicit stutters/min, preserves unknown process
+  samples and separates adapter scope. Cache counters are sampled cumulatively.
+- **Environment fix:** native `run.py` initially exited `0xC000007B` because a
+  copied SDL DLL prevented CLANG64 dependency-path setup. Development probes now
+  configure that path even with SDL present; packaged DLL selection stays unchanged.
+  CPU-probe loader failures now report their actual exit code.
+- **Evidence:** a 65 s run reached 3,720 logged flips and 13 process samples,
+  exit 0. The final display capture shows the title menu, NOT gameplay.
+  Private commit peaked at 4,679.61 MiB, Working Set at 3,230.66 MiB. The
+  approximately 11 GB gameplay report is still unclassified.
+  A 40 s cold/warm experiment recorded a 1,880.082 ms warm-cache frame with
+  1,377.143 ms aggregate driver work and visible-pipeline waits. No FPS gain or
+  stutter elimination is claimed. Full values: `PERFORMANCE_BASELINE.md`.
+- **Reference:** inspected GPL-declared compiler/precompile/readback/resource paths
+  from `HayatoG/iss_pc` at `cde38afd3220fbdc79321eb18a57861469ec02a1`;
+  no implementation copied. Details: `SHADER_CACHE_OPTIMIZATION.md`.
+- **Validation:** overlay-label test demonstrated red before the fix and green
+  after, including a Windows reserve-versus-commit check. Harness tests cover
+  raw-frame percentiles, invalid rows, process/adapter separation and cumulative
+  cache counters. Development DLL-path test demonstrated the startup regression.
+  Final build and all 45 C/C++ suites passed; Python ran 311 tests with 37 skips
+  and no failures. A subsequent normal-PowerShell 90 s run exited 0 with 5,220
+  logged flips, valid raw-frame CSV and cache counters; the final capture remained
+  in the frontend, so it is not a gameplay or combat validation.
+  The final 25 s instrumentation run (`out\checkpoint-20261022\wait.json`) exited
+  0, logged 1,320 flips and captured 1,114 intervals. Previously uncounted visible
+  pipeline waits now contribute to telemetry: 400.853 ms total synchronous
+  compilation wait in the captured intervals, 146.128 ms maximum in one interval.
+- **Still open:** verified gameplay replay for v0.7.5/v0.7.6 comparison and
+  compilation-stall attribution; 30-60 minute gameplay memory soak; native camera
+  integration (the current conversion still emits a virtual stick); physical
+  mixed-input menu testing; temporal-provider/output-resolution visual validation;
+  Frame Generation presentation integration; combat/AMD/Intel regression evidence.
+  No saves or original game files were modified by these isolated runs.
+
 ## 2026-10-20: Flicker/popping/black-polygon RCA — Classes A/B/C fixed, D/E/F gated HYPOTHESIS (#29, #30, #39)
 
 Root-cause work on `investigate/flicker-rca` for the v0.7.5 flicker reports that users said

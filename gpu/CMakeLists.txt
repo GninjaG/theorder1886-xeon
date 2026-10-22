@@ -435,9 +435,12 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
-    shim/port_settings.cpp)
+    shim/port_settings.cpp shim/port_process_memory.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)
 target_compile_options(perf-overlay-test PRIVATE -UNDEBUG)
+if(WIN32)
+    target_link_libraries(perf-overlay-test PRIVATE psapi)
+endif()
 add_executable(readback-queue-test EXCLUDE_FROM_ALL ../tests/test_readback_queue.cpp)
 target_include_directories(readback-queue-test PRIVATE shadps4)
 target_compile_options(readback-queue-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

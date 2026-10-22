@@ -989,7 +989,10 @@ const GraphicsPipeline* PipelineCache::WaitGraphics(const GraphicsPipelineKey& k
         return nullptr;
     }
     auto build = it.value();
-    build->job.Wait(); // exactly one job.Wait(); ~130-250 ms worst case, bounded to this key.
+    {
+        PhaseTimer waiting{g_port_compile_wait_ns};
+        build->job.Wait();
+    }
     if (last_lookup_pending && last_pending_key == key) {
         last_lookup_pending = false;
     }
@@ -1098,6 +1101,7 @@ void PipelineCache::SeedWorkerCaches() {
 }
 
 void PipelineCache::ReportCompilerStats() {
+    ReportPipelineBinaryCache();
     if (compiler) {
         std::printf("Compiler stats: capture queue %zu, compile queue %zu; queue waits: capture "
                     "%.1f ms, compile %.1f ms; pools retained %zu, reused %u\n",

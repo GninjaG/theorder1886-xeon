@@ -1,5 +1,6 @@
 """Parse batch-run evidence and produce conservative visual/performance reports."""
 import hashlib
+import csv
 import html
 import json
 import math
@@ -19,8 +20,17 @@ FRAME_PACING = re.compile(
     r'(\d+) frames over 1\.5x median'
 )
 MEMORY = re.compile(
-    r'Memory: VRAM (\d+) MiB; textures (\d+) \((\d+) MiB\), .*?'
+    r'Memory: (?:VRAM|GPU adapter) (\d+) MiB; textures (\d+) \((\d+) MiB\), .*?'
     r'process (\d+) MiB committed, (\d+) MiB in RAM'
+)
+PROCESS_METRICS = re.compile(
+    r'Process metrics: CPU (-?[\d.]+)%; private (-?[\d.]+) MiB; working set (-?[\d.]+) MiB; '
+    r'peak working set (-?[\d.]+) MiB; Vulkan allocations (-?[\d.]+) MiB; '
+    r'GPU adapter (-?[\d.]+) MiB; adapter budget (-?[\d.]+) MiB'
+)
+PIPELINE_CACHE = re.compile(
+    r'Pipeline binary cache: (\d+) hits, (\d+) compiled, (\d+) rejected, (\d+) saved, '
+    r'(\d+) cache errors'
 )
 GAME_IDENTITY = re.compile(
     r'Patches: (CUSA\d+) (\d{2}\.\d{2}), eboot\.bin sha256 ([0-9a-fA-F]{64})'
@@ -62,6 +72,40 @@ def verify_game_identity(observed, expected_cusa=None, expected_version=None):
     return {'status': status, 'checks': checks}
 
 
+def parse_frame_trace(stream):
+    """Summarize actual guest flip intervals, not percentiles of window percentiles."""
+    reader = csv.DictReader(stream)
+    if not reader.fieldnames or not {'frame', 'frame_ms'}.issubset(reader.fieldnames):
+        raise ValueError('frame trace requires frame and frame_ms columns')
+    intervals = []
+    previous = 0
+    for row in reader:
+        try:
+            frame, ms = int(row['frame']), float(row['frame_ms'])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f'invalid frame trace row {reader.line_num}') from error
+        if frame <= previous or not math.isfinite(ms) or ms <= 0:
+            raise ValueError(f'invalid frame trace row {reader.line_num}')
+        previous = frame
+        intervals.append(ms)
+    duration_ms = sum(intervals)
+    median = percentile(intervals, 50)
+    stutters = sum(ms > 1.5 * median for ms in intervals) if intervals else 0
+    return {
+        'samples': len(intervals),
+        'duration_seconds': duration_ms / 1000,
+        'fps_mean': len(intervals) * 1000 / duration_ms if duration_ms else None,
+        'fps_median': 1000 / median if median else None,
+        'frame_median_ms': median,
+        'frame_p95_ms': percentile(intervals, 95),
+        'frame_p99_ms': percentile(intervals, 99),
+        'worst_frame_ms': max(intervals, default=None),
+        'stutters': stutters,
+        'stutters_per_minute': stutters * 60000 / duration_ms if duration_ms else None,
+        'stutter_definition': 'frame_ms > 1.5 * whole-trace median',
+    }
+
+
 def parse_log(text, seconds):
     """Extract only measurements actually printed by the current runtime."""
     frame_stats = []
@@ -93,6 +137,22 @@ def parse_log(text, seconds):
         }
         for match in MEMORY.finditer(text)
     ]
+    process_fields = ('cpu_percent', 'private_mib', 'working_set_mib', 'peak_working_set_mib',
+                      'renderer_allocated_mib', 'adapter_used_mib', 'adapter_budget_mib')
+    process_metrics = [
+        {key: float(value) if float(value) >= 0 else None
+         for key, value in zip(process_fields, match.groups())}
+        for match in PROCESS_METRICS.finditer(text)
+    ]
+    pipeline_cache = [
+        dict(zip(('hits', 'compiled', 'rejected', 'saved', 'errors'), map(int, match.groups())))
+        for match in PIPELINE_CACHE.finditer(text)
+    ]
+    def maximum(field, legacy=None):
+        values = [item[field] for item in process_metrics if item[field] is not None]
+        if legacy:
+            values.extend(item[legacy] for item in memory)
+        return max(values, default=None)
     identity = GAME_IDENTITY.search(text)
     gpu = GPU_LINE.search(text)
     driver = DRIVER_LINE.search(text)
@@ -112,6 +172,8 @@ def parse_log(text, seconds):
         'frame_stats': frame_stats,
         'frame_pacing': pacing,
         'memory_samples': memory,
+        'process_metrics': process_metrics,
+        'pipeline_binary_cache': pipeline_cache[-1] if pipeline_cache else None,
         'stall_frame_ms': stall_ms,
         'validation_vuids': vuids,
         'validation_messages': validation_lines,
@@ -128,9 +190,14 @@ def parse_log(text, seconds):
             'window_p95_of_frame_p99_ms': percentile([item['p99_ms'] for item in pacing], 95),
             'window_p99_of_frame_p99_ms': percentile([item['p99_ms'] for item in pacing], 99),
             'frame_p99_samples': len(pacing),
-            'vram_used_mib_max': max((item['vram_used_mib'] for item in memory), default=None),
-            'process_committed_mib_max': max((item['process_committed_mib'] for item in memory), default=None),
-            'process_ram_mib_max': max((item['process_ram_mib'] for item in memory), default=None),
+            # Legacy key retained for older manifest consumers; this is adapter-wide usage.
+            'vram_used_mib_max': maximum('adapter_used_mib', 'vram_used_mib'),
+            'adapter_used_mib_max': maximum('adapter_used_mib', 'vram_used_mib'),
+            'renderer_allocated_mib_max': maximum('renderer_allocated_mib'),
+            'process_committed_mib_max': maximum('private_mib', 'process_committed_mib'),
+            'process_ram_mib_max': maximum('working_set_mib', 'process_ram_mib'),
+            'process_cpu_percent_median': percentile(
+                [item['cpu_percent'] for item in process_metrics], 50),
         },
     }
 
@@ -453,7 +520,7 @@ def render_markdown(manifest, report_dir=None):
         f"- Reference: `{manifest.get('reference', {}).get('source', 'none')}`; "
         f"{manifest.get('reference', {}).get('status', 'no reference')}", '',
         '## Condition summaries', '',
-        '| Condition | Runs | Failures | FPS median | Max worst frame (ms) | Window p95 of frame p99 (ms) | Window p99 of frame p99 (ms) | Max VRAM (MiB) | Max process RAM (MiB) |',
+        '| Condition | Runs | Failures | FPS median | Max worst frame (ms) | Window p95 of frame p99 (ms) | Window p99 of frame p99 (ms) | Max adapter usage (MiB) | Max process working set (MiB) |',
         '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     ]
     for label in labels:
@@ -505,11 +572,24 @@ def render_markdown(manifest, report_dir=None):
             f"- Expected identity check: `{run.get('game_identity_check', {}).get('status', 'not specified')}`",
             f"- FPS median: {_format(summary.get('fps_median'))}; worst frame max: "
             f"{_format(summary.get('worst_frame_ms_max'))} ms; p99 samples: "
-            f"{summary.get('frame_p99_samples', 0)}; max VRAM: {_format(summary.get('vram_used_mib_max'), 0)} MiB; "
-            f"max RAM: {_format(summary.get('process_ram_mib_max'), 0)} MiB; faults: {metrics.get('fault_count', 0)}; "
+            f"{summary.get('frame_p99_samples', 0)}; max adapter usage: {_format(summary.get('vram_used_mib_max'), 0)} MiB; "
+            f"max working set: {_format(summary.get('process_ram_mib_max'), 0)} MiB; "
+            f"max private commit: {_format(summary.get('process_committed_mib_max'), 0)} MiB; "
+            f"max Vulkan allocations: {_format(summary.get('renderer_allocated_mib_max'), 0)} MiB; "
+            f"faults: {metrics.get('fault_count', 0)}; "
             f"VUIDs: {', '.join(metrics.get('validation_vuids', [])) or 'none recorded'}",
             f"- Log: `{run.get('log_path', 'not recorded')}`; captures: `{run.get('capture_dir', 'none')}`",
         ]
+        trace = run.get('frame_trace')
+        if run.get('frame_trace_error'):
+            lines.append(f"- Frame trace unavailable: {run['frame_trace_error']}")
+        if trace:
+            lines.append(
+                f"- Raw guest frames: {trace['samples']}; mean FPS: {_format(trace['fps_mean'])}; "
+                f"P95/P99: {_format(trace['frame_p95_ms'])}/{_format(trace['frame_p99_ms'])} ms; "
+                f"stutters/min: {_format(trace['stutters_per_minute'])} "
+                f"(>1.5x whole-trace median). CSV: `{run.get('frame_trace_path')}`. "
+                "Captured intervals exclude startup before the first flip and may omit the unflushed tail.")
         visual = run.get('visual') or {}
         if visual:
             lines.append(f"- Visual comparison: `{visual.get('reference_status', 'unreviewed')}`; "
@@ -580,7 +660,7 @@ def render_html(manifest, report_dir=None):
             f'<title>{title}</title><h1>{title}</h1>'
             '<p>Visual results are evidence, not an automatic pass. Inspect frames and reference provenance.</p>'
             '<table><thead><tr><th>Run</th><th>Scene</th><th>FPS median</th><th>Window p99 of frame p99 (ms)</th>'
-            '<th>VRAM max (MiB)</th><th>RAM max (MiB)</th><th>VUIDs</th><th>Captures</th></tr></thead>'
+            '<th>Adapter usage max (MiB)</th><th>Working set max (MiB)</th><th>VUIDs</th><th>Captures</th></tr></thead>'
             '<tbody>' + ''.join(rows) + '</tbody></table><h2>A/B deltas: review signals, not verdicts</h2>'
             '<table><thead><tr><th>Baseline</th><th>Condition</th><th>Metric</th><th>Baseline value</th>'
             '<th>Condition value</th><th>Delta</th><th>Interpretation</th></tr></thead><tbody>'

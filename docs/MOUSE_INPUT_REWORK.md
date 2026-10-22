@@ -1,5 +1,10 @@
 # The Order: 1886 PC Port — Mouse Input & Camera Aim Rework
 
+> Correction (2026-10-22): see `INPUT_IMPROVEMENTS.md`. The runtime still emits a
+> bounded virtual stick; its conversion does not integrate elapsed time. Native
+> 1:1 camera movement and 30/60/120 FPS consistency have NOT been demonstrated.
+> The claims below must not be used as evidence of a completed camera fix.
+
 **Data:** 22 de Outubro de 2026  
 **Subsistema:** `src/runtime_pad.c`, `src/mouse_stick.h`, `tests/test_mouse_stick.c`, `tests/test_pad_map.c`  
 **Objetivo:** Eliminar o comportamento de emulação de analógico e prover resposta 1:1 de câmera para mouse e teclado.

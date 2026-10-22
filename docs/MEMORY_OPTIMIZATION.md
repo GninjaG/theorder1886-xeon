@@ -1,5 +1,10 @@
 # The Order: 1886 PC Port — Análise de Consumo e Otimização de Memória (11 GB RAM / VRAM)
 
+> Superseded by `MEMORY_PROFILING.md` (2026-10-22). The numerical decomposition,
+> private-commit attribution to shared sections and claimed gameplay memory ranges
+> below were not established by reproducible measurements. They are historical
+> hypotheses, not verified results or implemented optimizations.
+
 **Data:** 22 de Outubro de 2026  
 **Subsistema:** `src/runtime_memory.c`, `gpu/shadps4/video_core/texture_cache/`, `gpu/shadps4/video_core/buffer_cache/`  
 **Problema Investigado:** Consumo de aproximadamente 11 GB de memória reportado pelo Windows durante gameplay.

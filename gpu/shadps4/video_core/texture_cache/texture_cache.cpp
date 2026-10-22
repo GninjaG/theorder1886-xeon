@@ -1932,17 +1932,17 @@ void TextureCache::ReportMemory() {
             }
         });
     }
-    const u64 vram = instance.CanReportMemoryUsage() ? instance.GetDeviceMemoryUsage() : 0;
+    const s64 vram = instance.CanReportMemoryUsage() ? s64(instance.GetDeviceMemoryUsage() >> 20) : -1;
     const auto process = PortProcessMemory::Get();
-    std::printf("Memory: VRAM %llu MiB; textures %llu (%llu MiB), unused for a minute %llu "
-                "(%llu MiB), of them GPU-written tiled %llu (%llu MiB); process %llu MiB "
-                "committed, %llu MiB in RAM\n",
-                (unsigned long long)(vram >> 20), (unsigned long long)image_count,
+    std::printf("Memory: GPU adapter %lld MiB; textures %llu (%llu MiB), unused for a minute %llu "
+                "(%llu MiB), of them GPU-written tiled %llu (%llu MiB); process %lld MiB "
+                "committed, %lld MiB in RAM (-1 = unavailable)\n",
+                (long long)vram, (unsigned long long)image_count,
                 (unsigned long long)(image_bytes >> 20), (unsigned long long)idle,
                 (unsigned long long)(idle_bytes >> 20), (unsigned long long)kept,
                 (unsigned long long)(kept_bytes >> 20),
-                (unsigned long long)(process.private_bytes >> 20),
-                (unsigned long long)(process.working_set >> 20));
+                process.private_available ? (long long)(process.private_bytes >> 20) : -1ll,
+                process.resident_available ? (long long)(process.working_set >> 20) : -1ll);
     std::fflush(stdout);
 }
 

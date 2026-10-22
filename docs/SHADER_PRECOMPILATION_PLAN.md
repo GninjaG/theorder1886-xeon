@@ -1,5 +1,9 @@
 # The Order: 1886 PC Port — Shader Precompilation & Driver Pipeline Cache Plan
 
+> Superseded by `SHADER_CACHE_OPTIMIZATION.md` (2026-10-22). The sub-millisecond
+> restore and zero-microstutter statements below are not validated benchmarks.
+> Captured warm-cache startup still contains new builds and long visible-pipeline waits.
+
 **Data:** 22 de Outubro de 2026  
 **Subsistema:** `gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.*`, `launcher/`  
 **Referência Principal:** `iss_pc` (`port/gpu/shadps4/video_core/renderer_vulkan/vk_precompile.*`, BP08)

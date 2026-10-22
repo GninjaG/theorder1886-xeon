@@ -1,12 +1,41 @@
 from paths import ROOT
 import sys
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(ROOT))
 import run
 
 
 class RunIsaTests(unittest.TestCase):
+    def test_development_dll_path_is_configured_even_with_copied_sdl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'out' / 'theorder-probe.exe'
+            probe.parent.mkdir()
+            (probe.parent / 'SDL3.dll').touch()
+            clang64 = root / 'msys64' / 'clang64' / 'bin'
+            clang64.mkdir(parents=True)
+            env = {'MSYS2_ROOT': str(root / 'msys64'), 'PATH': 'original-path'}
+            with patch.object(run, 'WINDOWS', True), patch.object(run, 'PORT', root):
+                run.configure_windows_runtime(probe, env)
+            self.assertEqual(env['PATH'], f'{clang64}{run.os.pathsep}original-path')
+
+    def test_packaged_dll_path_is_not_replaced_by_development_toolchain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'dist' / 'theorder-probe.exe'
+            probe.parent.mkdir()
+            (probe.parent / 'SDL3.dll').touch()
+            clang64 = root / 'msys64' / 'clang64' / 'bin'
+            clang64.mkdir(parents=True)
+            env = {'MSYS2_ROOT': str(root / 'msys64'), 'PATH': 'packaged-path'}
+            with patch.object(run, 'WINDOWS', True), patch.object(run, 'PORT', root):
+                run.configure_windows_runtime(probe, env)
+            self.assertEqual(env['PATH'], 'packaged-path')
+
     def test_parse_cpu_features(self):
         self.assertEqual(run.parse_cpu_features('CPU: missing MOVBE, BMI1, LZCNT\n'), ['MOVBE', 'BMI1', 'LZCNT'])
         self.assertEqual(run.parse_cpu_features('CPU: complete\n'), [])

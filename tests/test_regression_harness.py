@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -24,6 +25,50 @@ batch_runs = load_tool('batch_runs')
 
 
 class RegressionReportTest(unittest.TestCase):
+    def test_cache_counters_are_cumulative_not_summed(self):
+        result = regression_report.parse_log(
+            "Pipeline binary cache: 10 hits, 2 compiled, 1 rejected, 2 saved, 0 cache errors\n"
+            "Pipeline binary cache: 20 hits, 3 compiled, 1 rejected, 3 saved, 0 cache errors\n", 10)
+        self.assertEqual(result['pipeline_binary_cache'],
+                         {'hits': 20, 'compiled': 3, 'rejected': 1, 'saved': 3, 'errors': 0})
+
+    def test_raw_frames_have_true_percentiles_and_time_weighted_fps(self):
+        result = regression_report.parse_frame_trace(io.StringIO(
+            "frame,frame_ms,driver_ns\n2,10,0\n3,10,0\n4,10,0\n5,100,90000000\n"))
+        self.assertEqual(result['samples'], 4)
+        self.assertAlmostEqual(result['fps_mean'], 4000 / 130)
+        self.assertEqual(result['frame_median_ms'], 10)
+        self.assertAlmostEqual(result['frame_p95_ms'], 86.5)
+        self.assertAlmostEqual(result['frame_p99_ms'], 97.3)
+        self.assertEqual(result['stutters'], 1)
+        self.assertAlmostEqual(result['stutters_per_minute'], 60000 / 130)
+        self.assertEqual(result['worst_frame_ms'], 100)
+
+    def test_raw_frame_errors_are_not_silently_discarded(self):
+        for rows in ("2", "2,0", "2,nan", "2,inf", "2,-1", "3,10\n2,10", "2,10\n2,10"):
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                regression_report.parse_frame_trace(io.StringIO("frame,frame_ms\n" + rows))
+        self.assertIsNone(regression_report.parse_frame_trace(
+            io.StringIO("frame,frame_ms\n"))['frame_p99_ms'])
+
+    def test_process_samples_keep_adapter_totals_separate(self):
+        log = (
+            "Process metrics: CPU -1.00%; private 11000.00 MiB; working set 4000.00 MiB; "
+            "peak working set 4500.00 MiB; Vulkan allocations 3000.00 MiB; "
+            "GPU adapter 6000.00 MiB; adapter budget 8000.00 MiB\n"
+            "Process metrics: CPU 12.50%; private 11200.00 MiB; working set 4200.00 MiB; "
+            "peak working set 4600.00 MiB; Vulkan allocations 3100.00 MiB; "
+            "GPU adapter -1.00 MiB; adapter budget -1.00 MiB\n"
+        )
+        result = regression_report.parse_log(log, 10)
+        self.assertEqual(result['summary']['process_committed_mib_max'], 11200)
+        self.assertEqual(result['summary']['process_ram_mib_max'], 4200)
+        self.assertEqual(result['summary']['renderer_allocated_mib_max'], 3100)
+        self.assertEqual(result['summary']['adapter_used_mib_max'], 6000)
+        self.assertEqual(result['summary']['process_cpu_percent_median'], 12.5)
+        self.assertIsNone(result['process_metrics'][0]['cpu_percent'])
+        self.assertIsNone(result['process_metrics'][1]['adapter_used_mib'])
+
     def test_parse_runtime_metrics_and_validation(self):
         log = '''GPU: using NVIDIA GeForce RTX 5060 Laptop GPU
 GPU: NVIDIA GeForce RTX 5060 Laptop GPU, 6144 MiB VRAM budget, driver NVIDIA 617.42

@@ -23,14 +23,16 @@ Usage Get() {
                                 sizeof(counters))) {
         usage.private_bytes = counters.PrivateUsage;
         usage.working_set = counters.WorkingSetSize;
+        usage.peak_working_set = counters.PeakWorkingSetSize;
+        usage.private_available = usage.resident_available = true;
     }
 #else
     if (std::FILE* f = std::fopen("/proc/self/statm", "r")) {
         unsigned long long size = 0, resident = 0;
         if (std::fscanf(f, "%llu %llu", &size, &resident) == 2) {
             const unsigned long long page = static_cast<unsigned long long>(sysconf(_SC_PAGESIZE));
-            usage.private_bytes = size * page;
             usage.working_set = resident * page;
+            usage.resident_available = true;
         }
         std::fclose(f);
     }

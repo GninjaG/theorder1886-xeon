@@ -1010,6 +1010,17 @@ void Instance::CollectToolingInfo() const {
     }
 }
 
+u64 Instance::GetRendererAllocationBytes() const {
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(allocator, budgets);
+    const auto properties = physical_device.getMemoryProperties();
+    u64 bytes = 0;
+    for (u32 heap = 0; heap < properties.memoryHeapCount; ++heap) {
+        bytes += budgets[heap].statistics.allocationBytes;
+    }
+    return bytes;
+}
+
 u64 Instance::GetDeviceMemoryUsage() const {
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_props{};
     vk::PhysicalDeviceMemoryProperties2 props = {

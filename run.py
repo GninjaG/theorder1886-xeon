@@ -221,6 +221,15 @@ def find_probe_executable():
     return find_executable('theorder-probe' + EXE_SUFFIX)
 
 
+def configure_windows_runtime(probe, env):
+    """Keep development probes on their matching toolchain DLL search path."""
+    development = probe.resolve().is_relative_to((PORT / 'out').resolve())
+    if WINDOWS and (development or not (probe.parent / 'SDL3.dll').is_file()):
+        clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
+        if clang64.is_dir():
+            env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
+
+
 def main():
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == '--after':
@@ -298,10 +307,7 @@ def main():
     if not probe or not probe.is_file():
         fail(f'theorder-probe{EXE_SUFFIX} / theorder-probe{EXE_SUFFIX} not found: build it with build.sh or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
-    if WINDOWS and not (probe.parent / 'SDL3.dll').is_file():
-        clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
-        if clang64.is_dir():
-            env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
+    configure_windows_runtime(probe, env)
     # Instruction sets this CPU lacks (MOVBE, BMI1, LZCNT): the ISA rewrite covers them; exit 20
     # is a set nothing covers.
     features = subprocess.run([str(probe), '--cpu-features'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -309,6 +315,9 @@ def main():
     if features.returncode == 20:
         print(features.stdout, end='', flush=True)
         sys.exit(20)
+    if features.returncode:
+        fail(f'Cannot start the native probe (exit 0x{features.returncode & 0xffffffff:08X}); '
+             'check that its DLLs match the executable and the CLANG64 toolchain.')
     missing = parse_cpu_features(features.stdout)
 
     candidates = [

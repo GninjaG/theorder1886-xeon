@@ -1,104 +1,92 @@
-# The Order: 1886 PC Port — Linha de Base de Performance e Otimizações de Renderização
+# Performance baseline
 
-**Versão:** v0.7.6 Post-Batch Stabilization  
-**Data:** 22 de Outubro de 2026  
-**Hardware de Referência:** Intel Core i7 / AMD Ryzen 7 + NVIDIA GeForce RTX (ex.: RTX 4060 / 5060 Laptop GPU)  
-**API Gráfica:** Vulkan 1.3 (Driver NVIDIA 570+ / 580+)  
+## 2026-10-22 checkpoint: measured title-menu workload, not gameplay
 
----
+The previous version of this document contained combat FPS, memory and improvement
+tables without reproducible captures. Those numbers are withdrawn. An empty-set
+hash fast path does not prove that gameplay stutters have been eliminated.
 
-## 1. Visão Geral da Análise de Desempenho
+Host: Windows 11, Intel Family 6 Model 183, NVIDIA RTX 5060 Laptop GPU,
+driver 621.1.0.0, Vulkan 1.4.357. Game: CUSA00035 01.02.
+Source: consolidated `1fb2c3e` plus the instrumentation changes recorded in Git.
+No AMD or Intel GPU compatibility is established by these runs.
 
-Este documento estabelece a linha de base técnica de desempenho, frametime e utilização de recursos do processador e memória após a aplicação das correções do Bug B (`vk_pipeline_cache`) e a implementação do suporte dinâmico a resoluções nativas de saída e upscalers temporais.
+Evidence is local, under `out\checkpoint-20261022` (not committed game data):
 
----
+| Run / evidence | Scope | Result |
+| --- | --- | --- |
+| `manifest.json` | Initial native Windows launch | 0 flips, exit `0xC000007B`, not a GPU benchmark |
+| `clang-manifest.json` | 30 s, CLANG64 environment | Exit 0, 1,440 logged flips |
+| `metrics.json` | 65 s, isolated cold profile | Exit 0, 3,720 logged flips, 13 process samples |
+| `captures\metrics-01-20261022T142847345849Z` | Final display capture | Title menu confirmed; scripted inputs did NOT establish gameplay |
+| `ab.json` | 40 s cold / warm isolated port caches | Both exit 0; whole-trace statistics below |
+| `native.json` | 90 s from normal PowerShell after DLL-path fix | Exit 0, 5,220 logged flips, 5,016 raw intervals; capture still frontend, not validated gameplay |
+| `wait.json` | Final 25 s instrumentation check | Exit 0, 1,114 intervals; 400.853 ms measured compilation waits, maximum 146.128 ms in one interval |
 
-## 2. Comportamento de Frametime: Antes vs. Depois da Correção do Bug B
+The harness reports flips from periodic log messages; the CSV contains individual
+observed intervals. Capture starts after the first flip and is flushed every five
+seconds; abrupt process termination can omit the final unflushed tail.
 
-### 2.1 Cenário de Análise
-- **Cena de Teste:** Capítulo 1 — Combate no beco de Whitechapel e pátio da carruagem sob chuva intensa com iluminação de lampiões a gás volumétrica (~3.200 a 4.100 draw calls por frame).
-- **Taxa de Quadros Alvo:** 60 FPS (Frame budget: 16.67 ms) / Modo 120 FPS desbloqueado.
+| Whole-trace metric | Cold | Warm |
+| --- | ---: | ---: |
+| Captured intervals | 2,018 | 1,933 |
+| Captured duration (s) | 35.073 | 36.298 |
+| Mean FPS (frames / observed time) | 57.537 | 53.254 |
+| Median frame (ms) | 16.658 | 16.679 |
+| Frame P95 (ms) | 17.803 | 17.867 |
+| Frame P99 (ms) | 31.827 | 32.384 |
+| Worst frame (ms) | 369.008 | 1,880.082 |
+| Stutters/min (>1.5x whole-trace median) | 42.768 | 51.243 |
 
-### 2.2 Tabela Comparativa de Métricas de Frametime
+These are single startup/menu samples, NOT a controlled optimization A/B or a
+regression verdict. Warm used a copy of the earlier menu profile; cold copied
+persistent data without `cache` or `shader`. OS/driver caches were not controlled.
+Warm reported 267 shader metas and 155 binary hits at startup, but still compiled
+new pipelines later.
 
-| Métrica | v0.7.6 Inicial (Com Hash Excessivo) | v0.7.6 Estabilizada (Fast-path `!empty()`) | Variação / Ganho |
-|---|---|---|---|
-| **Frametime Médio (1080p)** | 18.4 ms (~54.3 FPS) | 14.1 ms (~70.9 FPS) | **-23.4% no frametime** |
-| **Picos de Frametime (1% Low)** | 38.2 ms (~26.1 FPS) | 17.8 ms (~56.2 FPS) | **-53.4% nos picos** |
-| **Picos de Frametime (0.1% Low)** | 72.5 ms (~13.8 FPS) | 22.4 ms (~44.6 FPS) | **-69.1% (Fim dos microtravamentos)** |
-| **Desvio Padrão do Frametime** | ±6.8 ms | ±0.9 ms | **Consistência de quadro 7.5x maior** |
-| **Tempo de CPU no Hot Path** | 6.2 ms por frame | 0.8 ms por frame | **-87.1% de carga na render thread** |
+The warm CSV's frame 452 took 1,880.082 ms with 1,377.143 ms of aggregate
+pipeline-driver work, 2.667 ms recorder wait and 9.060 ms host-copy wait.
+Driver work can run concurrently across workers: do not interpret its sum as
+exclusive CPU time. Logs also record key-scoped visible-pipeline waits.
+This identifies a compilation-related investigation target, not the complete cause.
+Visible draws must not be dropped to improve this metric.
 
+The final native Windows run confirms the startup-path fix without manually
+preparing CLANG64: 58.934 mean FPS, 17.822/18.522 ms raw P95/P99, 401.409 ms worst
+frame, 23.263 stutters/min over 85.112 captured seconds. Binary totals: 9 hits,
+199 compiled, 199 saved, no reported rejection/error. A `--level` argument and
+scripted Cross presses did not prove gameplay; the final capture shows the
+frontend's save-information screen. Do not compare this longer startup interval
+against the shorter samples as an optimization gain.
+
+## Reproduce
+
+From a normal PowerShell, after `build.sh` has produced the development executable:
+
+```powershell
+python tools\batch_runs.py --runs 1 --secs 65 --frame-trace --scene title-menu `
+  --cache-state cold --profile-root out\baseline-cold `
+  --manifest out\baseline-cold.json --report-dir out\baseline-cold-report `
+  --cond measured=THEORDER_PERF_LOG=1
 ```
-Comportamento Gráfico de Frametime ao Longo do Tempo (Tiroteio / Rotação de Câmera):
 
-v0.7.6 Inicial (Spikes Contínuos):
-  [ms]
-   50 |        /\                  /\            /\
-   30 |   /\  /  \    /\    /\    /  \    /\    /  \
-   16 |--/--\/----\--/--\--/--\--/----\--/--\--/----\-- (Budget 16.6ms / 60 FPS)
-    0 +------------------------------------------------- Tempo ->
+For warm runs, use a new profile root, `--cache-state warm`, and `--user-template`
+pointing to a previously collected isolated profile. Never clear the user's caches
+or modify the user's saves to manufacture a cold run.
 
-v0.7.6 Estabilizada (Caminho Limpo O(1)):
-  [ms]
-   50 |
-   30 |
-   16 |------------------------------------------------- (Budget 16.6ms / 60 FPS)
-   14 |================================================= Linha plana constante ~14.1ms
-    0 +------------------------------------------------- Tempo ->
-```
+Raw CSV: `THEORDER_FRAME_CSV`, set per run by `--frame-trace`.
+Process sampler: `THEORDER_PERF_LOG=1`, twice-per-second sampling, five-second logs.
+CSV wait/work counters are overlapping instrumentation, not a CPU/GPU frame-time split.
+GPU timestamp profiling remains the existing `THEORDER_GPU_PROFILE=1` path.
+Arbitrary mutex timing, asset I/O, per-thread CPU, process WDDM VRAM and full GPU
+frame timing are not yet integrated into this report.
 
----
+## Version comparison and remaining gates
 
-## 3. Análise da Remoção do Cálculo de Hash no `vk_pipeline_cache`
-
-### 3.1 Mecânica do Gargalo Anterior
-No PR #56, `failed_graphics` foi adicionado como um `std::unordered_set<GraphicsPipelineKey>` para rastrear pipelines que falharam na compilação.
-
-A chave `GraphicsPipelineKey` encapsula:
-- 5 hashes de estágio de shader (Vertex, Fragment, Geometry, Hull, Domain).
-- Pipeline layout hashes e descriptor set allocations.
-- Estruturas de vertex binding e attribute descriptions.
-- Dynamic states, color blend attachments, rasterizer states e depth stencil.
-- **Tamanho Total em Memória da Chave:** ~300 bytes.
-
-Para cada draw call no `TryPreparedPipeline` e `GetGraphicsPipeline`:
-1. `std::hash<GraphicsPipelineKey>` lia e computava o hash Murmur/FNV sobre todos os 300 bytes.
-2. Acessava a tabela hash para verificar se a chave constava no conjunto.
-3. Repetia esse procedimento 3.500 vezes por frame = **1.050.000 bytes de memória varridos e hasheados por frame** apenas para consultar um conjunto que, na imensa maioria das execuções, estava **vazio** (`size() == 0`).
-
-### 3.2 Otimização Aplicada
-Com a verificação prévia `!failed_graphics.empty()`:
-- Como o contêiner permanece vazio após a inicialização dos shaders válidos, o branch predictor da CPU salta diretamente a verificação com custo de **0 ciclos de CPU** adicionais (uma única leitura de ponteiro/tamanho em cache L1).
-- Elimina-se completamente a varredura de mais de 1 MB de memória por frame na thread principal de renderização.
-
----
-
-## 4. Perfil de Utilização da CPU por Thread
-
-A engine de The Order: 1886 opera com arquitetura fortemente multithreaded originária do PS4 (8 núcleos Jaguar). Na versão Windows, as threads são distribuídas pelo runtime da seguinte forma:
-
-| Thread | Função | Utilização Média | Notas |
-|---|---|---|---|
-| **Thread Principal (Game Logic)** | Lógica de jogo, IA, animação e física | 18% - 30% | Execução suave em loop fixo. |
-| **Worker Threads (Job System 1-4)** | Descompressão de streaming, física secundária | 10% - 25% | Picos pontuais durante carregamento de streaming. |
-| **Render Thread (Vulkan Shim)** | Emissão de draw calls e submit para fila gráfica | 22% - 35% | **Carga estabilizada após remoção do hash de pipelines.** |
-| **Vulkan Pipeline Warm-up Thread** | Compilação em background assíncrona de SPIR-V | 0% (inativa) / 100% (warm-up inicial) | Executa de forma isolada sem travar a apresentação. |
-| **Total Global de CPU** | Todos os núcleos combinados | **25% - 40%** | Sem picos de 100% em nenhuma CPU lógica. |
-
----
-
-## 5. Comportamento de Memória (VRAM e RAM) por Resolução
-
-Medições realizadas em GPU com 8 GB de VRAM sob driver Vulkan mais recente:
-
-| Resolução de Saída | VRAM Alocada (Heap GPU) | RAM do Sistema | Largura de Apresentação | Notas de Estabilidade |
-|---|---|---|---|---|
-| **720p (1280 × 720)** | 3.4 GB | 4.2 GB | 1280 × 720 | Modo de alta performance para iGPUs e handhelds. |
-| **1080p (1920 × 1080)** | 4.1 GB | 4.5 GB | 1920 × 1080 | Resolução nativa padrão de The Order: 1886. |
-| **1440p (2560 × 1440)** | 4.9 GB | 4.8 GB | 2560 × 1440 | Excelente equilíbrio visual com TAA ou DLSS Quality. |
-| **4K (3840 × 2160)** | 6.8 GB | 5.2 GB | 3840 × 2160 | Recomenda-se GPU com no mínimo 8 GB de VRAM dedicada. |
-| **32:9 (5120 × 1440)** | 6.4 GB | 5.1 GB | 5120 × 1440 | Ultrawide total sem distorção nos render targets. |
-
-### Considerações sobre Upscaling (DLSS / FSR):
-- Ao utilizar **DLSS** ou **FSR 3.1** no perfil *Quality* com saída em 4K, a resolução interna de renderização permanece em 1440p (~2560x1440), reduzindo a pressão sobre os alvos de pós-processamento e mantendo o consumo de VRAM em confortáveis ~5.2 GB com qualidade de imagem praticamente indistinguível do 4K nativo.
+- v0.7.5: `windows-v0.7.5`, `4c76cd3`.
+- v0.7.6 candidate: `windows-v0.7.6-rc.1`, `f1f0c8a`; no final v0.7.6 tag was found.
+- Previous remote master: `10e44b4`; consolidated master: `1fb2c3e`.
+- No equivalent gameplay benchmark across those builds, bisect verdict, combat,
+  explosions, transitions or 30-60 minute gameplay soak has been obtained here.
+- Establish a verified repeatable gameplay checkpoint and input replay before
+  attributing the user's v0.7.6 gameplay regression or claiming it fixed.

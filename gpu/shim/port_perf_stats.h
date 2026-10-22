@@ -34,7 +34,8 @@ struct Sample {
     std::string upscaler;
     std::string gpu_name;
     float gpu_percent = -1.0f, cpu_percent = -1.0f;
-    double ram_used_gb = -1.0, ram_total_gb = -1.0, vram_used_gb = -1.0, vram_total_gb = -1.0;
+    double ram_used_gb = -1.0, working_set_gb = -1.0, peak_working_set_gb = -1.0;
+    double renderer_allocated_gb = -1.0, vram_used_gb = -1.0, vram_total_gb = -1.0;
 };
 
 /// Process CPU time over wall time on every core, 0 to 100; -1 without a wall interval.
@@ -46,7 +47,7 @@ inline float CpuPercent(uint64_t process_delta, uint64_t wall_delta, unsigned co
 }
 
 /// The overlay text for the items in `mask`: one line each, or one line when `row`.
-inline std::string Format(const Sample& s, unsigned mask, bool row) {
+inline std::string Format(const Sample& s, unsigned mask, bool row, bool advanced = false) {
     std::string out;
     char part[160];
     const auto add = [&] {
@@ -59,9 +60,9 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
         if (used < 0.0) {
             std::snprintf(to, size, "%s n/a", label);
         } else if (total < 0.0) {
-            std::snprintf(to, size, "%s %.1f GB", label, used);
+            std::snprintf(to, size, "%s %.1f GiB", label, used);
         } else {
-            std::snprintf(to, size, "%s %.1f / %.1f GB", label, used, total);
+            std::snprintf(to, size, "%s %.1f / %.1f GiB", label, used, total);
         }
     };
     if (mask & Fps) {
@@ -94,12 +95,24 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
         add();
     }
     if (mask & Ram) {
-        pair(part, sizeof(part), "RAM", s.ram_used_gb, s.ram_total_gb);
+        pair(part, sizeof(part), "RAM private", s.ram_used_gb, -1.0);
         add();
+        if (advanced) {
+            pair(part, sizeof(part), "Working set", s.working_set_gb, -1.0);
+            add();
+            pair(part, sizeof(part), "Peak working set", s.peak_working_set_gb, -1.0);
+            add();
+        }
     }
     if (mask & Vram) {
-        pair(part, sizeof(part), "VRAM", s.vram_used_gb, s.vram_total_gb);
+        pair(part, sizeof(part), "GPU adapter", s.vram_used_gb, s.vram_total_gb);
         add();
+        if (advanced) {
+            pair(part, sizeof(part), "Vulkan allocations", s.renderer_allocated_gb, -1.0);
+            add();
+            std::snprintf(part, sizeof(part), "VRAM process n/a");
+            add();
+        }
     }
     return out;
 }

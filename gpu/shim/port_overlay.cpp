@@ -289,7 +289,7 @@ std::string OverlayText() {
     sample.fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
     sample.frame_ms = frame_ms_avg;
     sample.upscaler = UpscalerLabel(s.upscaler);
-    return P::Format(sample, items, s.overlay_layout == 0);
+    return P::Format(sample, items, s.overlay_layout == 0, s.overlay_advanced);
 }
 
 void ImageTab() {
@@ -442,6 +442,8 @@ void OverlayTab() {
     auto& s = PortSettings::Get();
     if (BeginRows("##overlay_on")) {
         CheckRow("Show overlay", s.show_fps, "The performance overlay in a corner of the screen.");
+        CheckRow("Advanced metrics", s.overlay_advanced,
+                 "Separate private commit, working set, Vulkan allocations and adapter totals.");
         ImGui::EndTable();
     }
     ImGui::BeginDisabled(!s.show_fps);
@@ -449,7 +451,7 @@ void OverlayTab() {
     if (ImGui::BeginTable("##overlay_items", 2, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableNextColumn();
         static const char* const names[] = {"FPS", "Frametime", "Upscaler", "GPU (name and use)", "CPU (game)",
-                                            "RAM (game / total)", "VRAM (used / available)"};
+                                            "RAM (private commit)", "GPU memory (adapter / budget)"};
         for (unsigned item = 0; item < 7; ++item) {
             const unsigned bit = 1u << item;
             bool on = (s.overlay_items & bit) != 0;
@@ -788,6 +790,9 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     std::scoped_lock lock{imgui_mutex};
     if (initialized) {
         return;
+    }
+    if (const char* log = std::getenv("THEORDER_PERF_LOG"); log && std::strcmp(log, "1") == 0) {
+        PortPerfStats::Start(instance);
     }
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
