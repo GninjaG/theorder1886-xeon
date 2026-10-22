@@ -355,6 +355,7 @@ void ReportPipelineBinaryCache() {
 }
 
 thread_local bool g_pipeline_restore_only = false;
+extern std::atomic<u64> g_port_driver_pipelines_created;
 
 namespace {
 template <typename PipelineCreateInfo, typename KeyType, typename Creator>
@@ -584,20 +585,28 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
     vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info,
     const GraphicsPipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
     const std::filesystem::path& directory) {
-    return CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
+    auto res = CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
         [&](vk::PipelineCache c, const vk::GraphicsPipelineCreateInfo& i) {
             return device.createGraphicsPipelineUnique(c, i);
         });
+    if (res.result == vk::Result::eSuccess && res.value) {
+        g_port_driver_pipelines_created.fetch_add(1, std::memory_order_relaxed);
+    }
+    return res;
 }
 
 vk::ResultValue<vk::UniquePipeline> CreateCachedComputePipeline(
     vk::Device device, vk::PipelineCache cache, const vk::ComputePipelineCreateInfo& info,
     const ComputePipelineKey& key, const vk::PipelineBinaryKeyKHR& global_key,
     const std::filesystem::path& directory) {
-    return CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
+    auto res = CreateCachedPipelineImpl(device, cache, info, key, global_key, directory,
         [&](vk::PipelineCache c, const vk::ComputePipelineCreateInfo& i) {
             return device.createComputePipelineUnique(c, i);
         });
+    if (res.result == vk::Result::eSuccess && res.value) {
+        g_port_driver_pipelines_created.fetch_add(1, std::memory_order_relaxed);
+    }
+    return res;
 }
 
 // port: THEORDER_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in

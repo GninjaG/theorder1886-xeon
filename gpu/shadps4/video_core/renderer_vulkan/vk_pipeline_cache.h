@@ -149,6 +149,12 @@ public:
     void Sync();
     void ReportCompilerStats();
 
+    /// port: driver pipeline cache persistence (BP08 from iss_pc)
+    void StartDriverCacheSaver();
+    void StopDriverCacheSaver();
+    bool SaveDriverCache();
+    bool SaveDriverCacheUnchecked();
+
     bool LoadComputePipeline(Serialization::Archive& ar);
     bool LoadGraphicsPipeline(Serialization::Archive& ar);
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
@@ -228,6 +234,8 @@ private:
     bool MergeWarmStage(WarmStage& stage);
     void PumpWarmUp();
     void StopWarmUp();
+    struct DriverCacheSaver;
+    DriverCacheSaver* driver_saver = nullptr;
     /// port: the stored shader metas, read on a background thread at start so that
     /// LoadCachedProgram does not open a file per permutation on the GPU thread (~1 ms each,
     /// a quarter of a second for a material shader with 256 cached permutations).

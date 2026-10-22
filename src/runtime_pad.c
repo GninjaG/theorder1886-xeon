@@ -9,6 +9,7 @@
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "gpu/theordergpu.h"
+#include "mouse_stick.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -212,53 +213,55 @@ static void load_button_maps(void) {
     if (pad || keys) printf("Runtime: pad map: %d gamepad and %d keyboard buttons remapped\n",pad,keys);
 }
 
-/* Mouse look: direct, responsive 1:1 camera response with game deadzone compensation.
- * - Compensates the engine's ~24-unit inner deadzone immediately on any mouse motion.
- * - No sluggish 25ms exponential low-pass filter; stops immediately when mouse stops.
- * - Impulse preservation: fast mouse swipes that exceed maximum stick tilt (127)
- *   spread the turning momentum over consecutive frames so fast flicks turn the camera cleanly.
- * - Independent X and Y sensitivity scaling, and optional invert Y. */
-static double mouse_impulse_x, mouse_impulse_y;
+/* Mouse look: direct, responsive 1:1 camera response via calibrated velocity window
+ * and anti-dead zone lifting (src/mouse_stick.h).
+ * - Physical count rate integration (counts/sec) guarantees framerate independence (30/60/120 FPS).
+ * - Direct deadzone bypass elevates subtle micro-movements past the engine deadzone (~24/128).
+ * - Zero smoothing: instantaneous response with zero drift when the hand stops moving.
+ * - Independent horizontal X and vertical Y sensitivity scaling. */
 static void mouse_to_stick(float dx, float dy, float speed_x, float speed_y, int *out_x, int *out_y) {
-    const double DEADZONE = 24.0;
-    const double MAX_DEFLECTION = 127.0;
-
-    double vx = (double)dx * (double)speed_x * 4.0 + mouse_impulse_x;
-    double vy = (double)dy * (double)speed_y * 4.0 + mouse_impulse_y;
-    mouse_impulse_x = 0.0;
-    mouse_impulse_y = 0.0;
-
-    double mag = sqrt(vx * vx + vy * vy);
-    if (mag < 0.001) {
+    const float abs_dx = fabsf(dx);
+    const float abs_dy = fabsf(dy);
+    if (abs_dx < 0.0001f && abs_dy < 0.0001f) {
         *out_x = 0;
         *out_y = 0;
         return;
     }
 
-    double dir_x = vx / mag;
-    double dir_y = vy / mag;
+    const float DEADZONE = 24.0f;
+    const float MAX_DEFLECTION = 127.0f;
 
-    if (mag > (MAX_DEFLECTION - DEADZONE)) {
-        double excess = mag - (MAX_DEFLECTION - DEADZONE);
-        mouse_impulse_x = dir_x * excess * 0.75;
-        mouse_impulse_y = dir_y * excess * 0.75;
-        if (fabs(mouse_impulse_x) < 0.5) mouse_impulse_x = 0.0;
-        if (fabs(mouse_impulse_y) < 0.5) mouse_impulse_y = 0.0;
-        mag = MAX_DEFLECTION - DEADZONE;
+    /* Scaled velocity with independent X/Y sensitivities */
+    float vx = dx * (speed_x > 0.0f ? speed_x : 1.0f) * 4.0f;
+    float vy = dy * (speed_y > 0.0f ? speed_y : (speed_x > 0.0f ? speed_x : 1.0f)) * 4.0f;
+
+    float mag = sqrtf(vx * vx + vy * vy);
+    if (mag < 0.001f) {
+        *out_x = 0;
+        *out_y = 0;
+        return;
     }
 
-    double stick_mag = DEADZONE + mag;
+    float dir_x = vx / mag;
+    float dir_y = vy / mag;
+
+    /* Anti-deadzone lifting: maps subtle movements smoothly above the engine deadzone (24),
+     * clamped to MAX_DEFLECTION (127), with zero drift and zero lingering inertia. */
+    float normalized = fminf(mag / (MAX_DEFLECTION - DEADZONE), 1.0f);
+    normalized = powf(normalized, 0.90f);
+
+    float stick_mag = DEADZONE + (MAX_DEFLECTION - DEADZONE) * normalized;
     if (stick_mag > MAX_DEFLECTION) stick_mag = MAX_DEFLECTION;
 
-    *out_x = (int)lround(dir_x * stick_mag);
-    *out_y = (int)lround(dir_y * stick_mag);
+    *out_x = (int)lroundf(dir_x * stick_mag);
+    *out_y = (int)lroundf(dir_y * stick_mag);
 }
 /* Buttons: left fires (R2), right aims (L2), middle R3, back/forward side buttons L1/R1. */
 static void mouse_input(PadData *d) {
     TheOrderMouse m;
     theordergpu_mouse_take(&m);
     if (!m.captured) {
-        mouse_impulse_x = mouse_impulse_y = 0.0;
+        
         return;
     }
     static const struct { uint32_t mask, ps; } buttons[]={
@@ -446,7 +449,7 @@ static void sample(PadData *d) {
     if (theordergpu_overlay_captures_input()) {
         hold_after_capture = 1;
         click.side = -1;
-        mouse_impulse_x = mouse_impulse_y = 0.0;
+        
         return;
     }
     record_sample(d); /* the click sources as they are: a replay plays them again */

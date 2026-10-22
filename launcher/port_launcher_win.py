@@ -1794,6 +1794,7 @@ class Launcher:
         buttons.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(6, 8))
         ttk.Button(buttons, text=_('Copy', 'Копировать'), command=self.copy_log).pack(side='left')
         ttk.Button(buttons, text=_('Clear', 'Очистить'), command=lambda: self.set_log('')).pack(side='left', padx=6)
+        ttk.Button(buttons, text=_('Export Bug Report (.zip)', 'Экспорт отчета (.zip)'), command=self.export_diagnostic_report).pack(side='left', padx=6)
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we')
         self.log = tk.Text(holder, wrap='none', height=18, bg='#0a0808', fg='#cfc6bc', insertbackground=TEXT,
@@ -1802,6 +1803,38 @@ class Launcher:
         self.log.configure(yscrollcommand=bar.set)
         bar.pack(side='right', fill='y')
         self.log.pack(side='left', fill='both', expand=True)
+
+    def export_diagnostic_report(self):
+        try:
+            import port_report
+            from datetime import datetime
+            from tkinter import filedialog
+            log_text = self.log.get('1.0', 'end-1c') if hasattr(self, 'log') else ''
+            ini_cfg = {}
+            for k in ('display_mode', 'upscaler', 'output_res', 'fps_limit', 'vsync', 'hdr'):
+                try:
+                    ini_cfg[k] = self.var(k, 'ini').get()
+                except Exception:
+                    pass
+            app_cfg = {}
+            for k in ('dmem_mb', 'ui_language'):
+                try:
+                    app_cfg[k] = self.var(k, 'app').get()
+                except Exception:
+                    pass
+            report_md, redacted_log = port_report.generate_report(app_cfg, ini_cfg, log_text, PORT_DIR, APP_NAME)
+            default_name = f"theorder1886-report-{datetime.now():%Y%m%d-%H%M}.zip"
+            zip_path = filedialog.asksaveasfilename(
+                title=_("Save Diagnostic Bug Report", "Сохранить отчет"),
+                initialfile=default_name,
+                defaultextension=".zip",
+                filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")]
+            )
+            if zip_path:
+                port_report.export_report_zip(zip_path, report_md, redacted_log)
+                self.messagebox.showinfo(APP_NAME, _("Bug report exported successfully:\n\n{}").format(zip_path))
+        except Exception as e:
+            self.messagebox.showerror(APP_NAME, f"Failed to export report: {e}")
 
     # ---- state -------------------------------------------------------------------------------
     def game_changed(self):
