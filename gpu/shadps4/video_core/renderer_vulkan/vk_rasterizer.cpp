@@ -45,6 +45,8 @@ static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     push_data.xscale = regs.viewport_control.xscale_enable ? regs.viewports[0].xscale : 1.f;
     push_data.yoffset = regs.viewport_control.yoffset_enable ? regs.viewports[0].yoffset : 0.f;
     push_data.yscale = regs.viewport_control.yscale_enable ? regs.viewports[0].yscale : 1.f;
+    push_data.motion_params_address = Shader::MotionVectors::params_address;
+    push_data.motion_positions_address = Shader::MotionVectors::positions_address;
     return push_data;
 }
 

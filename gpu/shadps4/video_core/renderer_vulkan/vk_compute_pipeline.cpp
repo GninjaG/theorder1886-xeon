@@ -18,7 +18,8 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
                                  vk::PipelineCache pipeline_cache, ComputePipelineKey compute_key_,
                                  const Shader::Info& info_, vk::ShaderModule module,
                                  SerializationSupport& sdata, bool preloading /*=false*/)
-    : Pipeline{instance, scheduler, desc_heap, profile, pipeline_cache, true},
+    : Pipeline{instance, scheduler, desc_heap, profile, pipeline_cache, true,
+               Shader::PushDataBaseSize},
       compute_key{compute_key_} {
     auto& info = stages[int(Shader::SwStage::Compute)];
     info = &info_;
@@ -72,7 +73,7 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
     const vk::PushConstantRange push_constants = {
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .offset = 0,
-        .size = sizeof(Shader::PushData),
+        .size = Shader::PushDataBaseSize,
     };
 
     uses_push_descriptors = binding < instance.MaxPushDescriptors();

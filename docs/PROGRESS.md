@@ -2,6 +2,36 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Remove runtime motion addresses from graphics specialization
+
+- **Diagnosis:** the vertex shader for object motion vectors used Vulkan
+  specialization constants for two session-allocated buffer device addresses.
+  This made addresses part of pipeline creation rather than per-draw data.
+- **Change:** addresses now come from push constants. Only motion-enabled
+  graphics pipelines use the expanded range; compute and non-motion graphics
+  layouts keep the prior size. Shader metadata versioning invalidates only
+  motion-enabled vertex SPIR-V.
+- **Red/green:** the real `motion-shader-test` first failed with
+  `motion vertex shader specializes session buffer addresses` (exit 2). It now
+  verifies both specialization IDs are absent, both motion address loads use
+  push constants, and plain vertex shaders declare neither motion member.
+  Full build, 47 C/C++ tests and Python pass; the focused shader test passed
+  again after adding the plain-shader assertion.
+- **Runtime:** the final-build isolated run (`motion-address-final.json`) exited
+  0 after 134.7 s and 7,440 flips, with object motion enabled, zero reported
+  guest faults and no hang. Its trace has 7,338 intervals: median 16.662 ms,
+  P95/P99 17.877/18.359 ms, worst 1,741.505 ms and 10.9 intervals/minute over
+  1.5x median. The run had 547 binary hits and 102 compiles. This is not a
+  matched before/after comparison and proves no stutter or cache improvement;
+  the requested display capture did not produce image files, so the exact
+  visible motion-vector scene was not confirmed.
+- **Runtime caveat:** an earlier isolated attempt stopped after 2,018 flips
+  with `No space left on device`; it is invalid evidence. The original `user`
+  profile and existing FSR submodule changes remain untouched.
+- **Next:** compare identical motion-enabled application pipeline keys and
+  driver-cache outcomes across matched pre/post builds in a visually verified
+  scene. Do not relax visible-draw waits.
+
 ## 2026-10-22: Reuse compute pipelines by verified shader content
 
 - **Evidence:** two separate 75 s warm-title runs starting from copies of the

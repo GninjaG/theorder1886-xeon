@@ -66,10 +66,15 @@ u32 CurrentShaderBinaryVersion() {
 
 // port: a translation fix that only some shaders meet raises their version alone, so only they
 // are translated again (a ShaderBinaryVersion bump rebuilds every pipeline: a cold-cache session).
-u32 ShaderBinaryVersionFor(const Shader::Info& info) {
+u32 ShaderBinaryVersionFor(const Shader::Info& info,
+                           const Shader::StageSpecialization& spec) {
     u32 version = CurrentShaderBinaryVersion();
     if (info.uses_buffer_atomic_float_min_max || info.uses_image_atomic_float_min_max) {
         version += 1u << 16; // the float atomic min/max fallback runs one atomic (2026-10-18)
+    }
+    if (spec.runtime_info.hw_stage == Shader::HwStage::Vertex &&
+        spec.runtime_info.hw.vs.motion_vectors) {
+        version += 1u << 17; // motion addresses moved from specialization constants to push data
     }
     return version;
 }
@@ -760,7 +765,7 @@ void RegisterShaderMeta(const Shader::Info& info,
     Serialization::Writer meta{ar};
 
     meta.Write(Serialization::ShaderMetaVersion);
-    meta.Write(ShaderBinaryVersionFor(info));
+    meta.Write(ShaderBinaryVersionFor(info, spec));
 
     meta.Write(perm_hash);
     meta.Write(perm_idx);
@@ -813,7 +818,7 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
-    if (binary_version != ShaderBinaryVersionFor(info)) {
+    if (binary_version != ShaderBinaryVersionFor(info, spec)) {
         return false;
     }
     return true;

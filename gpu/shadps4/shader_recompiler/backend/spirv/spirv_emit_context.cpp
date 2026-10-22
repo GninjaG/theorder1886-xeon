@@ -830,10 +830,16 @@ void EmitContext::DefineOutputs() {
 }
 
 void EmitContext::DefinePushDataBlock() {
-    // Create push constants block for instance steps rates
-    // port: two more members after upstream's, the object motion parameter and the scene size
-    const Id struct_type{Name(
-        TypeStruct(F32[1], F32[1], F32[1], F32[1], U32[4], U32[4], U32[2], U32[1], U32[1]), "AuxData")};
+    // Create push constants block for instance steps rates.
+    // port: session addresses extend the block only for motion-enabled vertex shaders.
+    const bool has_motion_addresses =
+        runtime_info.hw_stage == HwStage::Vertex && runtime_info.hw.vs.motion_vectors;
+    const std::array members{F32[1], F32[1], F32[1], F32[1], U32[4], U32[4], U32[2],
+                             U32[1], U32[1], U64, U64};
+    const std::span<const Id> all_members{members};
+    const auto active_members =
+        has_motion_addresses ? all_members : all_members.first(PushData::MotionParamsAddressIndex);
+    const Id struct_type{Name(TypeStruct(active_members), "AuxData")};
     Decorate(struct_type, spv::Decoration::Block);
     MemberName(struct_type, PushData::XOffsetIndex, "xoffset");
     MemberName(struct_type, PushData::YOffsetIndex, "yoffset");
@@ -856,6 +862,14 @@ void EmitContext::DefinePushDataBlock() {
     MemberName(struct_type, PushData::SceneSizeIndex, "scene_size");
     MemberDecorate(struct_type, PushData::SceneSizeIndex, spv::Decoration::Offset,
                    static_cast<u32>(offsetof(PushData, scene_size)));
+    if (has_motion_addresses) {
+        MemberName(struct_type, PushData::MotionParamsAddressIndex, "motion_params_address");
+        MemberDecorate(struct_type, PushData::MotionParamsAddressIndex, spv::Decoration::Offset,
+                       static_cast<u32>(offsetof(PushData, motion_params_address)));
+        MemberName(struct_type, PushData::MotionPositionsAddressIndex, "motion_positions_address");
+        MemberDecorate(struct_type, PushData::MotionPositionsAddressIndex, spv::Decoration::Offset,
+                       static_cast<u32>(offsetof(PushData, motion_positions_address)));
+    }
     push_data_block = DefineVar(struct_type, spv::StorageClass::PushConstant);
     Name(push_data_block, "push_data");
     interfaces.push_back(push_data_block);

@@ -77,15 +77,14 @@ static void EmitVertexMotion(EmitContext& ctx) {
                                            ctx.push_data_block,
                                            ctx.ConstU32(PushData::MotionParamIndex));
     const Id param_index = ctx.OpLoad(u32_type, param_ptr);
-    // The buffer addresses are specialization constants, not literals: the module stays the
-    // same across sessions (the defaults only keep the two declarations apart).
-    const auto spec_address = [&](u32 spec_id) {
-        const Id id = ctx.SpecConstant(ctx.U64, u64(spec_id));
-        ctx.Decorate(id, spv::Decoration::SpecId, spec_id);
-        return id;
+    const auto push_address = [&](u32 index) {
+        const Id ptr = ctx.OpAccessChain(
+            ctx.TypePointer(spv::StorageClass::PushConstant, ctx.U64), ctx.push_data_block,
+            ctx.ConstU32(index));
+        return ctx.OpLoad(ctx.U64, ptr);
     };
-    const Id params_base = spec_address(MotionVectors::ParamsSpecId);
-    const Id positions_base = spec_address(MotionVectors::PositionsSpecId);
+    const Id params_base = push_address(PushData::MotionParamsAddressIndex);
+    const Id positions_base = push_address(PushData::MotionPositionsAddressIndex);
     const auto address = [&](Id base, Id index, u32 stride) {
         return ctx.OpIAdd(ctx.U64, base,
                           ctx.OpIMul(ctx.U64, ctx.OpUConvert(ctx.U64, index),

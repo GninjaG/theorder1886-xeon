@@ -90,10 +90,8 @@ struct MotionVectors {
     /// the position array (vec4 per vertex; element 0 is scratch), fixed for the session.
     static inline u64 params_address = 0;
     static inline u64 positions_address = 0;
-    /// port: both addresses reach the vertex shader as specialization constants (set by
-    /// GraphicsPipeline), so its SPIR-V is the same in every session and can be cached.
-    static constexpr u32 ParamsSpecId = 0x6d76;
-    static constexpr u32 PositionsSpecId = 0x6d77;
+    /// port: addresses are supplied through push constants to keep cached pipelines independent
+    /// of per-session Vulkan buffer addresses.
     static constexpr u32 FlagStore = 1;
     static constexpr u32 FlagLoad = 2;
 };

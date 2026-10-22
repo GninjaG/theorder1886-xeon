@@ -29,7 +29,7 @@ class Pipeline {
 public:
     Pipeline(const Instance& instance, Scheduler& scheduler, DescriptorHeap& desc_heap,
              const Shader::Profile& profile, vk::PipelineCache pipeline_cache,
-             bool is_compute = false);
+             bool is_compute, u32 push_constant_size);
     virtual ~Pipeline();
 
     vk::Pipeline Handle() const noexcept {
@@ -84,6 +84,7 @@ protected:
     std::array<const Shader::Info*, Shader::MaxStageTypes> stages{};
     bool uses_push_descriptors{};
     bool is_compute;
+    u32 push_constant_size;
 };
 
 } // namespace Vulkan

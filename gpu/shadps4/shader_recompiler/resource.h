@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 
 #include "common/types.h"
 #include "shader_recompiler/ir/type.h"
@@ -304,6 +305,8 @@ struct PushData {
     /// port: members after the three buf_offsets vectors (see spirv_emit_context.cpp)
     static constexpr u32 MotionParamIndex = BufOffsetIndex + 3;
     static constexpr u32 SceneSizeIndex = MotionParamIndex + 1;
+    static constexpr u32 MotionParamsAddressIndex = SceneSizeIndex + 1;
+    static constexpr u32 MotionPositionsAddressIndex = MotionParamsAddressIndex + 1;
 
     float xoffset;
     float yoffset;
@@ -312,13 +315,18 @@ struct PushData {
     std::array<u8, NUM_BUFFERS> buf_offsets;
     u32 motion_param; ///< port: object motion parameter index (0: off)
     u32 scene_size; ///< reduced width | height << 16; zero means native pixel coordinates
+    u64 motion_params_address;
+    u64 motion_positions_address;
 
     void AddOffset(u32 binding, u32 offset) {
         ASSERT(offset < 256 && binding < buf_offsets.size());
         buf_offsets[binding] = offset;
     }
 };
+inline constexpr u32 PushDataBaseSize = offsetof(PushData, motion_params_address);
 static_assert(sizeof(PushData) <= 128,
               "PushData size is greater than minimum size guaranteed by Vulkan spec");
+static_assert(offsetof(PushData, motion_positions_address) ==
+              offsetof(PushData, motion_params_address) + sizeof(u64));
 
 } // namespace Shader

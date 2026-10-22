@@ -27,6 +27,16 @@ namespace Vulkan {
 
 using Shader::Backend::SPIRV::AuxShaderType;
 
+static u32 PushConstantSize(std::span<const Shader::Info*, MaxShaderStages> infos,
+                            std::span<const Shader::RuntimeInfo, MaxShaderStages> runtime_infos) {
+    const u32 vertex = u32(Shader::SwStage::Vertex);
+    if (infos[vertex] && runtime_infos[vertex].hw_stage == Shader::HwStage::Vertex &&
+        runtime_infos[vertex].hw.vs.motion_vectors) {
+        return static_cast<u32>(sizeof(Shader::PushData));
+    }
+    return Shader::PushDataBaseSize;
+}
+
 // port: where pipeline construction time goes (reported when the background warm-up ends).
 std::atomic<u64> g_port_pipeline_total_ns, g_port_pipeline_driver_ns;
 std::atomic<u32> g_port_pipelines_built;
@@ -53,7 +63,9 @@ GraphicsPipeline::GraphicsPipeline(
     std::span<const Shader::RuntimeInfo, MaxShaderStages> runtime_infos,
     const Shader::Gcn::FetchShaderData* fetch_shader_, std::span<const vk::ShaderModule> modules,
     SerializationSupport& sdata, bool preloading)
-    : Pipeline{instance, scheduler, desc_heap, profile, pipeline_cache}, key{key_} {
+    : Pipeline{instance, scheduler, desc_heap, profile, pipeline_cache, false,
+               PushConstantSize(infos, runtime_infos)},
+      key{key_} {
     const auto started = Clock::now();
     if (fetch_shader_) {
         fetch_shader = *fetch_shader_;
@@ -67,7 +79,7 @@ GraphicsPipeline::GraphicsPipeline(
     const vk::PushConstantRange push_constants = {
         .stageFlags = AllGraphicsStageBits,
         .offset = 0,
-        .size = sizeof(Shader::PushData),
+        .size = push_constant_size,
     };
 
     const vk::DescriptorSetLayout set_layout = *desc_layout;
@@ -193,17 +205,6 @@ GraphicsPipeline::GraphicsPipeline(
 
     boost::container::static_vector<vk::PipelineShaderStageCreateInfo, MaxShaderStages>
         shader_stages;
-    // port: the object motion buffer addresses, specialization constants of the vertex shader
-    // (EmitVertexMotion); unused by a shader without motion vectors.
-    using Motion = Shader::MotionVectors;
-    const std::array<u64, 2> motion_addresses{Motion::params_address, Motion::positions_address};
-    const std::array motion_entries{
-        vk::SpecializationMapEntry{Motion::ParamsSpecId, 0, sizeof(u64)},
-        vk::SpecializationMapEntry{Motion::PositionsSpecId, sizeof(u64), sizeof(u64)},
-    };
-    const vk::SpecializationInfo motion_specialization{
-        static_cast<u32>(motion_entries.size()), motion_entries.data(), sizeof(motion_addresses),
-        motion_addresses.data()};
     auto stage = u32(Shader::SwStage::Vertex);
     if (infos[stage]) {
         const auto* ps = infos[u32(Shader::SwStage::Fragment)];
@@ -217,7 +218,6 @@ GraphicsPipeline::GraphicsPipeline(
             .stage = vk::ShaderStageFlagBits::eVertex,
             .module = modules[stage],
             .pName = "main",
-            .pSpecializationInfo = Motion::params_address ? &motion_specialization : nullptr,
         });
     }
     stage = u32(Shader::SwStage::Geometry);

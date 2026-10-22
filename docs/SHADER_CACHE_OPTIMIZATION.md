@@ -2,6 +2,38 @@
 
 2026-10-22 checkpoint. No claim of stutter elimination.
 
+## Graphics motion-address specialization
+
+`GraphicsPipeline` supplied the session's two object-motion buffer device
+addresses as vertex-stage Vulkan specialization values. Those addresses are
+allocated at runtime, so they became pipeline-creation inputs even though the
+motion shader module itself was otherwise identical across sessions. The
+motion shader now loads both `u64` addresses from push constants populated by
+the rasterizer. Only graphics pipelines whose vertex runtime info enables
+motion vectors use the larger 96-byte push-constant range; compute and
+non-motion graphics pipelines retain the existing 80-byte range. The binary
+version is raised only for motion-enabled vertex shader metadata, so unrelated
+cached SPIR-V remains valid.
+
+`motion-shader-test` exercised the actual SPIR-V backend and was red before the
+change (`motion vertex shader specializes session buffer addresses`, exit 2).
+It checks that these `SpecId` decorations are absent, that the generated motion
+vertex shader reads both address members at the host-layout offsets, and that a
+plain vertex shader does not declare either member. Full build, 47 C/C++
+regression tests and Python pass; the focused test also passed after the
+plain-shader assertion was added.
+
+The final-build isolated run (`out\motion-address-final.json`) exited 0 after
+134.7 s and 7,440 flips with object motion enabled, no reported guest fault and
+no hang. Its 7,338-interval trace has median/P95/P99 16.662/17.877/18.359 ms,
+worst 1,741.505 ms and 10.9 intervals/minute above 1.5x median; it logged 547
+binary hits and 102 compiles. The final display trigger produced no image files,
+so the visible scene using motion vectors is not verified. This standalone run
+is not a matched A/B and does not demonstrate fewer driver creations or better
+frametimes. The earlier disk-full attempt after 2,018 flips remains invalid
+evidence. A controlled comparison of identical application keys and driver
+cache outcomes in a visually confirmed scene is still required.
+
 ## Content identity, not permutation-index identity
 
 Two isolated 75-second warm runs (`out\checkpoint-20261022\identity.json`) copy
