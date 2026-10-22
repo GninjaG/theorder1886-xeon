@@ -36,6 +36,7 @@ struct Sample {
     float gpu_percent = -1.0f, cpu_percent = -1.0f;
     double ram_used_gb = -1.0, working_set_gb = -1.0, peak_working_set_gb = -1.0;
     double renderer_allocated_gb = -1.0, vram_used_gb = -1.0, vram_total_gb = -1.0;
+    double gpu_dedicated_gb = -1.0, gpu_shared_gb = -1.0;
 };
 
 /// Process CPU time over wall time on every core, 0 to 100; -1 without a wall interval.
@@ -105,12 +106,14 @@ inline std::string Format(const Sample& s, unsigned mask, bool row, bool advance
         }
     }
     if (mask & Vram) {
-        pair(part, sizeof(part), "GPU adapter", s.vram_used_gb, s.vram_total_gb);
+        pair(part, sizeof(part), "GPU dedicated process", s.gpu_dedicated_gb, -1.0);
         add();
         if (advanced) {
+            pair(part, sizeof(part), "GPU shared process", s.gpu_shared_gb, -1.0);
+            add();
             pair(part, sizeof(part), "Vulkan allocations", s.renderer_allocated_gb, -1.0);
             add();
-            std::snprintf(part, sizeof(part), "VRAM process n/a");
+            pair(part, sizeof(part), "GPU adapter", s.vram_used_gb, s.vram_total_gb);
             add();
         }
     }

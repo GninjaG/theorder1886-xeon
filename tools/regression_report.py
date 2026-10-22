@@ -27,6 +27,7 @@ PROCESS_METRICS = re.compile(
     r'Process metrics: CPU (-?[\d.]+)%; private (-?[\d.]+) MiB; working set (-?[\d.]+) MiB; '
     r'peak working set (-?[\d.]+) MiB; Vulkan allocations (-?[\d.]+) MiB; '
     r'GPU adapter (-?[\d.]+) MiB; adapter budget (-?[\d.]+) MiB'
+    r'(?:; GPU dedicated process (-?[\d.]+) MiB; GPU shared process (-?[\d.]+) MiB)?'
 )
 PIPELINE_CACHE = re.compile(
     r'Pipeline binary cache: (\d+) hits, (\d+) compiled, (\d+) rejected, (\d+) saved, '
@@ -138,9 +139,10 @@ def parse_log(text, seconds):
         for match in MEMORY.finditer(text)
     ]
     process_fields = ('cpu_percent', 'private_mib', 'working_set_mib', 'peak_working_set_mib',
-                      'renderer_allocated_mib', 'adapter_used_mib', 'adapter_budget_mib')
+                      'renderer_allocated_mib', 'adapter_used_mib', 'adapter_budget_mib',
+                      'gpu_dedicated_process_mib', 'gpu_shared_process_mib')
     process_metrics = [
-        {key: float(value) if float(value) >= 0 else None
+        {key: float(value) if value is not None and float(value) >= 0 else None
          for key, value in zip(process_fields, match.groups())}
         for match in PROCESS_METRICS.finditer(text)
     ]
@@ -194,6 +196,8 @@ def parse_log(text, seconds):
             'vram_used_mib_max': maximum('adapter_used_mib', 'vram_used_mib'),
             'adapter_used_mib_max': maximum('adapter_used_mib', 'vram_used_mib'),
             'renderer_allocated_mib_max': maximum('renderer_allocated_mib'),
+            'gpu_dedicated_process_mib_max': maximum('gpu_dedicated_process_mib'),
+            'gpu_shared_process_mib_max': maximum('gpu_shared_process_mib'),
             'process_committed_mib_max': maximum('private_mib', 'process_committed_mib'),
             'process_ram_mib_max': maximum('working_set_mib', 'process_ram_mib'),
             'process_cpu_percent_median': percentile(

@@ -68,6 +68,25 @@ class RegressionReportTest(unittest.TestCase):
         self.assertEqual(result['summary']['process_cpu_percent_median'], 12.5)
         self.assertIsNone(result['process_metrics'][0]['cpu_percent'])
         self.assertIsNone(result['process_metrics'][1]['adapter_used_mib'])
+        self.assertIsNone(result['summary']['gpu_dedicated_process_mib_max'])
+
+    def test_gpu_process_memory_is_not_adapter_usage(self):
+        log = (
+            "Process metrics: CPU 1.00%; private 100.00 MiB; working set 90.00 MiB; "
+            "peak working set 95.00 MiB; Vulkan allocations 40.00 MiB; "
+            "GPU adapter 6000.00 MiB; adapter budget 8000.00 MiB; "
+            "GPU dedicated process 1024.00 MiB; GPU shared process 256.00 MiB\n"
+            "Process metrics: CPU 2.00%; private 100.00 MiB; working set 90.00 MiB; "
+            "peak working set 95.00 MiB; Vulkan allocations 40.00 MiB; "
+            "GPU adapter 6100.00 MiB; adapter budget 8000.00 MiB; "
+            "GPU dedicated process -1.00 MiB; GPU shared process 0.00 MiB\n"
+        )
+        result = regression_report.parse_log(log, 10)
+        self.assertEqual(result['summary']['gpu_dedicated_process_mib_max'], 1024)
+        self.assertEqual(result['summary']['gpu_shared_process_mib_max'], 256)
+        self.assertEqual(result['summary']['adapter_used_mib_max'], 6100)
+        self.assertIsNone(result['process_metrics'][1]['gpu_dedicated_process_mib'])
+        self.assertEqual(result['process_metrics'][1]['gpu_shared_process_mib'], 0)
 
     def test_parse_runtime_metrics_and_validation(self):
         log = '''GPU: using NVIDIA GeForce RTX 5060 Laptop GPU

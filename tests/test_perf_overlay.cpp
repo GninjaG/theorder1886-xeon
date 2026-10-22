@@ -5,9 +5,11 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <limits>
 #include "port_perf_stats.h"
 #include "port_settings.h"
 #include "port_process_memory.h"
+#include "port_gpu_process_memory.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -40,26 +42,52 @@ int main() {
     s.renderer_allocated_gb = 3.0;
     s.vram_used_gb = 5.4;
     s.vram_total_gb = 12.0;
+    s.gpu_dedicated_gb = 2.5;
+    s.gpu_shared_gb = 0.3;
     // Adapter totals must never look like the game's VRAM; RAM has no machine-total denominator.
     assert(P::Format(s, P::Ram | P::Vram, true) ==
-           "RAM private 6.1 GiB   GPU adapter 5.4 / 12.0 GiB");
+           "RAM private 6.1 GiB   GPU dedicated process 2.5 GiB");
     assert(P::Format(s, P::DefaultItems, true) == "238 FPS   4.2 ms   FSR 3.1");
     assert(P::Format(s, P::AllItems, false) ==
-           "238 FPS\n4.2 ms\nFSR 3.1\nRTX 4070 87%\nCPU 34%\nRAM private 6.1 GiB\nGPU adapter 5.4 / 12.0 GiB");
-    assert(P::Format(s, P::Cpu | P::Vram, true) == "CPU 34%   GPU adapter 5.4 / 12.0 GiB");
+           "238 FPS\n4.2 ms\nFSR 3.1\nRTX 4070 87%\nCPU 34%\nRAM private 6.1 GiB\nGPU dedicated process 2.5 GiB");
+    assert(P::Format(s, P::Cpu | P::Vram, true) == "CPU 34%   GPU dedicated process 2.5 GiB");
     assert(P::Format(s, P::Ram | P::Vram, false, true) ==
            "RAM private 6.1 GiB\nWorking set 4.0 GiB\nPeak working set 4.5 GiB\n"
-           "GPU adapter 5.4 / 12.0 GiB\nVulkan allocations 3.0 GiB\nVRAM process n/a");
+           "GPU dedicated process 2.5 GiB\nGPU shared process 0.3 GiB\n"
+           "Vulkan allocations 3.0 GiB\nGPU adapter 5.4 / 12.0 GiB");
     assert(P::Format(s, 0, true).empty());
 
     P::Sample unknown;
     unknown.upscaler = "";
     assert(P::Format(unknown, P::Upscaler | P::Gpu | P::Cpu | P::Ram | P::Vram, false) ==
-           "Native\nGPU n/a\nCPU n/a\nRAM private n/a\nGPU adapter n/a");
+           "Native\nGPU n/a\nCPU n/a\nRAM private n/a\nGPU dedicated process n/a");
     unknown.ram_used_gb = 2.0;
     assert(P::Format(unknown, P::Ram, true) == "RAM private 2.0 GiB");
 
 #ifdef _WIN32
+    wchar_t first[] = L"pid_42_luid_0x0_0x1_phys_0";
+    wchar_t second[] = L"pid_42_luid_0x0_0x2_phys_0";
+    wchar_t other[] = L"pid_420_luid_0x0_0x1_phys_0";
+    PDH_FMT_COUNTERVALUE_ITEM_W items[3]{};
+    items[0].szName = first;
+    items[1].szName = second;
+    items[2].szName = other;
+    for (auto& item : items) item.FmtValue.CStatus = PDH_CSTATUS_VALID_DATA;
+    items[0].FmtValue.doubleValue = 100;
+    items[1].FmtValue.doubleValue = 200;
+    items[2].FmtValue.doubleValue = 9000;
+    assert(P::ProcessCounterBytes(items, L"pid_42_") == 300);
+    assert(P::ProcessCounterBytes(items, L"pid_4_") < 0);
+    items[1].FmtValue.CStatus = PDH_CSTATUS_INVALID_DATA;
+    assert(P::ProcessCounterBytes(items, L"pid_42_") < 0); // no partial multi-adapter total
+    items[1].FmtValue.CStatus = PDH_CSTATUS_NEW_DATA;
+    items[1].FmtValue.doubleValue = -1;
+    assert(P::ProcessCounterBytes(items, L"pid_42_") < 0);
+    items[1].FmtValue.doubleValue = std::numeric_limits<double>::quiet_NaN();
+    assert(P::ProcessCounterBytes(items, L"pid_42_") < 0);
+    items[0].FmtValue.doubleValue = items[1].FmtValue.doubleValue = 0;
+    assert(P::ProcessCounterBytes(items, L"pid_42_") == 0); // known zero is not unavailable
+
     const auto before = PortProcessMemory::Get();
     void* reserved = VirtualAlloc(nullptr, 256ull << 20, MEM_RESERVE, PAGE_NOACCESS);
     assert(reserved);

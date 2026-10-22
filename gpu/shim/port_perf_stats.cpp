@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 #include "port_process_memory.h"
+#include "port_gpu_process_memory.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 
 #ifdef _WIN32
@@ -87,6 +88,7 @@ private:
 
 void Run(const Vulkan::Instance* instance) {
     GpuUsage gpu;
+    GpuProcessMemory gpu_memory;
     FILETIME created, ended, kernel, user;
     uint64_t last_process = 0, last_wall = 0;
     const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
@@ -122,15 +124,20 @@ void Run(const Vulkan::Instance* instance) {
             s.vram_total_gb = double(instance->GetDeviceMemoryBudgetNow()) / GiB;
         }
         s.gpu_percent = gpu.Percent();
+        const auto gpu_bytes = gpu_memory.Get();
+        if (gpu_bytes.dedicated >= 0) s.gpu_dedicated_gb = gpu_bytes.dedicated / GiB;
+        if (gpu_bytes.shared >= 0) s.gpu_shared_gb = gpu_bytes.shared / GiB;
         const auto now = std::chrono::steady_clock::now();
         if (log && now - last_log >= std::chrono::seconds(5)) {
             const auto mib = [](double gib) { return gib < 0 ? -1.0 : gib * 1024.0; };
             std::printf("Process metrics: CPU %.2f%%; private %.2f MiB; working set %.2f MiB; "
                         "peak working set %.2f MiB; Vulkan allocations %.2f MiB; "
-                        "GPU adapter %.2f MiB; adapter budget %.2f MiB\n",
+                        "GPU adapter %.2f MiB; adapter budget %.2f MiB; "
+                        "GPU dedicated process %.2f MiB; GPU shared process %.2f MiB\n",
                         s.cpu_percent, mib(s.ram_used_gb), mib(s.working_set_gb),
                         mib(s.peak_working_set_gb), mib(s.renderer_allocated_gb),
-                        mib(s.vram_used_gb), mib(s.vram_total_gb));
+                        mib(s.vram_used_gb), mib(s.vram_total_gb),
+                        mib(s.gpu_dedicated_gb), mib(s.gpu_shared_gb));
             last_log = now;
         }
         {

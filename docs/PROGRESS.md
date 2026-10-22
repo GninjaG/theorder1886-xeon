@@ -2,6 +2,28 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Real process GPU memory, separate from adapter totals
+
+- **Implemented:** `port_gpu_process_memory.h` reads WDDM PDH dedicated/shared
+  process memory on the existing 500 ms background sampler. Exact PID matching
+  sums physical adapters; missing/invalid matching counters stay unavailable,
+  not a fabricated zero or partial total. Compact overlay shows dedicated
+  process usage; advanced mode separates shared usage, VMA and adapter totals.
+  `regression_report.py` preserves old logs and exports new samples/maxima.
+- **Measured:** `out\checkpoint-20261022\wddm.json`, isolated warm 65 s
+  title-screen run, exit 0, 3,540 flips, no reported guest fault. Sampled maxima:
+  dedicated 2,149.07 MiB, shared 657.12 MiB, adapter 2,157.46 MiB,
+  VMA 1,848.76 MiB, private commit 7,809.92 MiB, Working Set 5,962.35 MiB.
+  Independent same-PID WMI samples match stable PDH values at
+  2,145.25 / 625.12 MiB; details in `MEMORY_PROFILING.md`.
+- **Validation:** full build and all 45 C/C++ suites plus Python pass.
+  Focused tests cover PID collisions, multiple adapters, missing/invalid data
+  and known zero. Original game data/saves and FSR submodule changes preserved.
+- **Limits:** this fixes measurement scope, not allocation waste or stutters.
+  No 11 GB classification, gameplay leak verdict, 30-60 minute soak or
+  AMD/Intel validation follows. Native camera, mixed-input menu, recurrent
+  compilation stalls, actual DLSS and Frame Generation remain open.
+
 ## 2026-10-22: Actual 900p output and accumulated-cache repeat
 
 - **Implemented:** `gpu\shim\port_settings.h`, `port_overlay.cpp` and
