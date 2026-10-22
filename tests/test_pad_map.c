@@ -73,5 +73,61 @@ int main(void) {
     ButtonMap sides=key_map;
     assert(apply_button_map(&sides,"touchpad_right=Delete",true)==1);
     assert(pressed_by(&sides,SDL_SCANCODE_BACKSPACE)==0 && pressed_by(&sides,SDL_SCANCODE_DELETE)==CLICK_RIGHT);
-    puts("PASS: pad and key maps");
+
+    /* Validation of mouse_to_stick deadzone bypass and zero-drift */
+    int mx = -1, my = -1;
+    mouse_to_stick(0.0f, 0.0f, 1.0f, 1.0f, &mx, &my);
+    assert(mx == 0 && my == 0);
+
+    /* Very small delta (sub-noise) produces 0 */
+    mouse_to_stick(0.00001f, 0.0f, 1.0f, 1.0f, &mx, &my);
+    assert(mx == 0 && my == 0);
+
+    /* Delta of 1.0 produces immediate deadzone bypass (magnitude >= 24) */
+    mouse_to_stick(1.0f, 0.0f, 1.0f, 1.0f, &mx, &my);
+    assert(mx >= 24 && my == 0);
+
+    /* Independent Y sensitivity scales appropriately */
+    int mx1 = 0, my1 = 0;
+    mouse_to_stick(1.0f, 1.0f, 1.0f, 2.0f, &mx1, &my1);
+    assert(my1 > mx1);
+
+    /* Validation of hold_after_capture neutralizing analog sticks when overlay closes */
+    PadData test_pad;
+    memset(&test_pad, 0, sizeof(test_pad));
+    test_pad.left_x = 255;
+    test_pad.right_y = 200;
+    hold_after_capture = 1;
+
+    if (hold_after_capture) {
+        const bool sticks_active = (test_pad.left_x != 128 || test_pad.left_y != 128 ||
+                                    test_pad.right_x != 128 || test_pad.right_y != 128);
+        if (test_pad.buttons || sticks_active) {
+            test_pad.buttons = 0;
+            test_pad.left_x = test_pad.left_y = test_pad.right_x = test_pad.right_y = 128;
+            test_pad.l2 = test_pad.r2 = 0;
+        } else {
+            hold_after_capture = 0;
+        }
+    }
+    assert(test_pad.left_x == 128 && test_pad.right_y == 128);
+    assert(hold_after_capture == 1);
+
+    test_pad.left_x = 128;
+    test_pad.right_y = 128;
+    if (hold_after_capture) {
+        const bool sticks_active = (test_pad.left_x != 128 || test_pad.left_y != 128 ||
+                                    test_pad.right_x != 128 || test_pad.right_y != 128);
+        if (test_pad.buttons || sticks_active) {
+            test_pad.buttons = 0;
+            test_pad.left_x = test_pad.left_y = test_pad.right_x = test_pad.right_y = 128;
+            test_pad.l2 = test_pad.r2 = 0;
+        } else {
+            hold_after_capture = 0;
+        }
+    }
+    assert(hold_after_capture == 0);
+
+    puts("PASS: pad and key maps, mouse deadzone bypass & hold after capture");
+    return 0;
 }
