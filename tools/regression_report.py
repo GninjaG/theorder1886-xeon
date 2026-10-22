@@ -33,6 +33,10 @@ PIPELINE_CACHE = re.compile(
     r'Pipeline binary cache: (\d+) hits, (\d+) compiled, (\d+) rejected, (\d+) saved, '
     r'(\d+) cache errors'
 )
+COMPUTE_REUSE = re.compile(
+    r'Compute pipeline reuse: shader ([0-9a-f]{16}) permutation (\d+) -> (\d+) '
+    r'\(SPIR-V ([0-9a-f]{16})\)'
+)
 GAME_IDENTITY = re.compile(
     r'Patches: (CUSA\d+) (\d{2}\.\d{2}), eboot\.bin sha256 ([0-9a-fA-F]{64})'
 )
@@ -176,6 +180,11 @@ def parse_log(text, seconds):
         'memory_samples': memory,
         'process_metrics': process_metrics,
         'pipeline_binary_cache': pipeline_cache[-1] if pipeline_cache else None,
+        'compute_pipeline_reuse_events': [
+            {'shader': shader, 'permutation': int(index), 'pipeline_permutation': int(canonical),
+             'spirv_hash': spirv}
+            for shader, index, canonical, spirv in COMPUTE_REUSE.findall(text)
+        ],
         'stall_frame_ms': stall_ms,
         'validation_vuids': vuids,
         'validation_messages': validation_lines,

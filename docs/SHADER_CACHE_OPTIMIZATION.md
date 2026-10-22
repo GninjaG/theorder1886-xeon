@@ -2,6 +2,49 @@
 
 2026-10-22 checkpoint. No claim of stutter elimination.
 
+## Content identity, not permutation-index identity
+
+Two isolated 75-second warm runs (`out\checkpoint-20261022\identity.json`) copy
+the same initial QTE profile. Both exit 0 without reported guest faults.
+`identity-content-analysis.json` correlates actual cached SPIR-V SHA-256 with
+emulator and driver keys. For compute shader `0x804aeead`, 42 application keys
+occur among binary misses in both sessions; **all 42 have different SPIR-V and
+different driver keys**. A repeated numeric permutation index is not evidence
+that the driver recompiled the same binary.
+
+The runs produce 60 / 70 new permutations of that shader. Of those, 11 / 13
+have byte contents already present at an earlier index. Most new variants are
+not duplicates. This supports resource-specialization variation as a major
+remaining target, not disabling image-type specialization. It does not resolve
+the separate graphics motion-address hypothesis.
+
+The renderer now retains the persisted SPIR-V checksum for live, deferred and
+warm-loaded modules. Compute selection can use an earlier permutation's pipeline
+key only with matching nonzero checksums, runtime information, start bindings,
+descriptor counts **and complete image specializations**. The last condition
+preserves the existing fallback-image mask used by `BindTextures`; matching
+binary checksums alone would not preserve that host-side state. Shader patching
+and collection bypass this reuse. No shader metadata or module is discarded,
+no cache version is invalidated, and no draw/dispatch wait or fallback policy
+is relaxed. Graphics keys are unchanged.
+
+`THEORDER_COMPUTE_PIPELINE_REUSE=0` restores the previous key selection for
+diagnostics. With `THEORDER_PERMUTATION_LOG=1`, first reuse selections log both
+indices and the checksum; regression manifests preserve those events.
+`compute-pipeline-reuse-test` goes from index 1 (red) to index 0 (green), and
+rejects different/unknown checksums, image/fallback-mask, layout and runtime
+differences. The selected index is cached to avoid rescanning the program on
+every dispatch.
+
+Final guarded-runtime evidence: `compute-reuse-final.json`, two isolated 80 s
+title-screen runs, both exit 0 without reported guest faults. The enabled run
+records `0x9846aaff` permutation 1 -> 0, checksum `59f4eb55c8623cbe`.
+This proves the path executes, not a total count of avoided driver creations.
+The broad `0x804aeead` variants are deliberately not merged through incompatible
+fallback masks. The sampled frame results **do not establish a speedup**; see
+`PERFORMANCE_BASELINE.md`. Earlier `compute-reuse.json` is development-only
+evidence predating the final image-mask guard and must not be used as the result.
+
 ## Reference inspection
 
 Reference: `HayatoG/iss_pc` commit `cde38afd3220fbdc79321eb18a57861469ec02a1`.

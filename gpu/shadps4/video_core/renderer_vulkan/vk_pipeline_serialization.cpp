@@ -999,6 +999,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     // at the exact position rather than append
 
     vk::ShaderModule module{};
+    u64 module_hash = spv_hash;
 
     auto [it_pgm, new_program] = program_cache.try_emplace(program->info.pgm_hash);
     if (new_program) {
@@ -1022,11 +1023,12 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
             if (!module) {
                 return false;
             }
+            module_hash = it->spv_hash;
         } else {
             module = CompileSPV(spv, instance.GetDevice());
         }
     }
-    it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
+    it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx, module_hash);
     if (it_pgm.value()->info.sw_stage == Shader::SwStage::Vertex) {
         BbFaceDepth::Register(module, spv, it_pgm.value()->info.pgm_hash);
     }
@@ -1317,6 +1319,7 @@ struct PipelineCache::WarmStage {
     Shader::StageSpecialization spec{};
     std::optional<Shader::Gcn::FetchShaderData> fetch;
     size_t perm_idx{};
+    u64 spv_hash{};
     vk::ShaderModule module{};
     // GPU thread, from the merge on.
     bool merged = false;
@@ -1550,9 +1553,8 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             const bool meta_blob_found = !meta_blob.empty();
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
-                u64 spv_hash{};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->spec, stage->perm_idx,
-                                   spv_hash)) {
+                                   stage->spv_hash)) {
                     if (!stage->spec.fetch_shader_data.Empty()) {
                         stage->fetch = stage->spec.fetch_shader_data;
                     }
@@ -1562,7 +1564,7 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
                             fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
                                         stage->perm_idx),
                             spv);
-                    if (!spv.empty() && SpvHash(spv) == spv_hash) {
+                    if (!spv.empty() && SpvHash(spv) == stage->spv_hash) {
                         const auto module_started = std::chrono::steady_clock::now();
                         stage->module = CompileSPV(spv, stage->device);
                         module_time = ElapsedNs(module_started);
@@ -1589,7 +1591,7 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     const auto it_pgm = program_cache.find(hash);
     if (it_pgm == program_cache.end()) {
         Program* program = stage.program.get();
-        program->InsertPermut(stage.module, std::move(stage.spec), stage.perm_idx);
+        program->InsertPermut(stage.module, std::move(stage.spec), stage.perm_idx, stage.spv_hash);
         program_cache.emplace(hash, std::move(stage.program));
         stage.module_kept = true;
         stage.result = stage.module;
@@ -1622,6 +1624,7 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     if (it != program.modules.end()) {
         if (!it->module) { // a deferred cached permutation (LoadCachedProgram): use this one
             it->module = stage.module;
+            it->spv_hash = stage.spv_hash;
             stage.module_kept = true;
         }
         stage.result = it->module;
@@ -1631,7 +1634,7 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
             return false;
         }
         stage.spec.info = &program.info;
-        program.InsertPermut(stage.module, std::move(stage.spec), stage.perm_idx);
+        program.InsertPermut(stage.module, std::move(stage.spec), stage.perm_idx, stage.spv_hash);
         stage.module_kept = true;
         stage.result = stage.module;
     }

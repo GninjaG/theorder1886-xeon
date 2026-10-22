@@ -3,9 +3,11 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdio>
 #include <unordered_set>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <shared_mutex>
 #include <variant>
@@ -52,10 +54,11 @@ struct Program {
     struct Module {
         vk::ShaderModule module;
         Shader::StageSpecialization spec;
-        u64 spv_hash{}; ///< port: of a cached module not loaded yet (LoadDeferredModule)
+        u64 spv_hash{}; ///< checksum of the persisted SPIR-V, zero if unknown
         /// port: made this session, at the next free index: a stored pipeline key with that
         /// index may be another session's permutation there (not "known", see GetGraphicsPipeline).
         bool fresh = false;
+        std::optional<size_t> compute_pipeline_permutation;
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
@@ -74,9 +77,42 @@ struct Program {
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
         : info{stage, l_stage, params} {}
 
-    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec) {
-        modules.emplace_back(module, std::move(spec));
+    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec, u64 spv_hash) {
+        modules.emplace_back(module, std::move(spec), spv_hash);
         modules.back().fresh = true;
+    }
+
+    size_t ComputePipelinePermutation(size_t index) {
+        auto& selected = modules[index];
+        if (info.sw_stage != Shader::SwStage::Compute || !selected.spv_hash ||
+            !selected.spec.Valid()) {
+            return index;
+        }
+        // The same emitted binary can result from different resource specializations.
+        // Keep their metadata, but reuse a pipeline only with the same descriptor ABI.
+        // Image specializations must also match: a pipeline may retain a fallback-image
+        // mask used by BindTextures even when it is later selected for an exact dispatch.
+        const auto compatible = [&](size_t candidate) {
+            const auto& other = modules[candidate];
+            const auto& a = selected.spec;
+            const auto& b = other.spec;
+            return other.spv_hash == selected.spv_hash && b.Valid() &&
+                   a.runtime_info == b.runtime_info && a.start == b.start &&
+                   a.buffers.size() == b.buffers.size() && a.samplers.size() == b.samplers.size() &&
+                   a.fmasks.size() == b.fmasks.size() && a.images == b.images;
+        };
+        if (selected.compute_pipeline_permutation &&
+            compatible(*selected.compute_pipeline_permutation)) {
+            return *selected.compute_pipeline_permutation;
+        }
+        for (size_t candidate = 0; candidate < index; ++candidate) {
+            if (compatible(candidate)) {
+                selected.compute_pipeline_permutation = candidate;
+                return candidate;
+            }
+        }
+        selected.compute_pipeline_permutation = index;
+        return index;
     }
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,

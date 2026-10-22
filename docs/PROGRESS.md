@@ -2,6 +2,41 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-22: Reuse compute pipelines by verified shader content
+
+- **Evidence:** two separate 75 s warm-title runs starting from copies of the
+  same profile show 42 matching emulator compute keys for `0x804aeead` but
+  different SPIR-V SHA-256 and driver keys for every one. A repeated numeric
+  permutation index is not a stable shader identity. New specializations of
+  this shader include 11/60 and 13/70 binaries already present at other indices.
+  The identities and counts are in
+  `out\checkpoint-20261022\identity-content-analysis.json`.
+- **Change:** preserve SPIR-V checksums for live, deferred, pipeline-stage and
+  warm-loaded modules. Compute pipelines may share a prior key only for the same
+  nonzero SPIR-V checksum and exact image specialization/fallback mask, runtime
+  specialization, descriptor counts and start bindings. Unknown content,
+  graphics, patched/collected shaders and any incompatible metadata retain
+  independent keys. No module, shader variation, draw, wait or fallback is
+  removed. `THEORDER_COMPUTE_PIPELINE_REUSE=0` preserves the previous behavior.
+- **Regression/validation:** `compute-pipeline-reuse-test` reproduced an
+  identical-binary module selecting index 1 instead of 0; now confirms 0 and
+  rejects unknown/different binaries and layout/image/fallback/runtime
+  mismatches. Regression-report JSON keeps observed reuse identities.
+  Full build, 47 C/C++ suites and Python pass.
+- **Runtime:** `compute-reuse-final.json` has one interleaved 80 s title-menu
+  pair; both runs exit 0 without reported guest faults. Enabled run logs
+  `0x9846aaff` permutation 1 -> 0 with checksum `59f4eb55c8623cbe`.
+  Captures confirm only title-screen workload. Mean/P99/worst are not a
+  matched speedup: enabled 56.632 FPS / 18.514 ms / 1,360.099 ms versus prior
+  58.418 / 18.242 / 699.038. The measured counts also differ by only three
+  compiled pipelines. No microstutter elimination is claimed.
+- **Still open:** the high-variation `0x804aeead` particle shader has
+  resource-dependent image fallback masks, so the guard intentionally does
+  not merge those permutations. The run still has visible multi-hundred-ms
+  pipeline-driver stalls. Graphics motion-address key variation, gameplay
+  equivalent-scene testing, mouse camera, long memory soak, real DLSS/Frame
+  Generation and AMD/Intel remain unvalidated.
+
 ## 2026-10-22: Reproduced and fixed stuck menu input
 
 - **Root cause:** ImGui retains key/gamepad/mouse presses across menu close,

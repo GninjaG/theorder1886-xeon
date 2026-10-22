@@ -1,5 +1,28 @@
 # Performance baseline
 
+## Content-key reuse checkpoint (not a stutter fix)
+
+`out\checkpoint-20261022\compute-reuse-final.json`: final guarded build, two
+isolated 80 s title-screen runs using the same initial warm-profile copy.
+Only `THEORDER_COMPUTE_PIPELINE_REUSE` changes (0 / 1). Both exit 0 without
+reported guest faults; output captures confirm the title screen.
+
+| Metric | Previous keys | Content reuse |
+| --- | ---: | ---: |
+| Captured duration (s) | 75.165 | 76.124 |
+| Mean FPS | 58.418 | 56.632 |
+| P95 / P99 (ms) | 17.759 / 18.242 | 17.793 / 18.514 |
+| Worst frame (ms) | 699.038 | 1,360.099 |
+| Last sampled binary hits / compiled | 1,118 / 47 | 1,129 / 44 |
+
+**No frametime improvement is established.** This pair still has different
+resource-dependent permutations, OS/driver state and asynchronous startup work.
+Neither the fewer sampled compilations nor the worse worst-frame sample alone
+establishes an optimization gain or a regression. One exact reuse selection
+(`0x9846aaff`, index 1 -> 0) is logged in the enabled run; this is not a measured
+count of saved driver creations. Details and the independent SPIR-V content
+comparison are in `SHADER_CACHE_OPTIMIZATION.md`.
+
 ## Prologue evidence after the instrumentation checkpoint
 
 Source: `9bd9ae7` for the first four runs; `qte.json` includes the scripted-input
@@ -137,7 +160,8 @@ Raw CSV: `THEORDER_FRAME_CSV`, set per run by `--frame-trace`.
 Process sampler: `THEORDER_PERF_LOG=1`, twice-per-second sampling, five-second logs.
 CSV wait/work counters are overlapping instrumentation, not a CPU/GPU frame-time split.
 GPU timestamp profiling remains the existing `THEORDER_GPU_PROFILE=1` path.
-Arbitrary mutex timing, asset I/O, per-thread CPU, process WDDM VRAM and full GPU
+Process WDDM dedicated/shared usage is now collected separately; see
+`MEMORY_PROFILING.md`. Arbitrary mutex timing, asset I/O, per-thread CPU and full GPU
 frame timing are not yet integrated into this report.
 
 ## Version comparison and remaining gates

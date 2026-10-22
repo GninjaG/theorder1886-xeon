@@ -25,6 +25,19 @@ batch_runs = load_tool('batch_runs')
 
 
 class RegressionReportTest(unittest.TestCase):
+    def test_compute_reuse_preserves_content_identity_and_permutation_indices(self):
+        result = regression_report.parse_log(
+            "Compute pipeline reuse: shader 00000000804aeead permutation 361 -> 7 "
+            "(SPIR-V fedcba9876543210)\n"
+            "Compute pipeline reuse: shader 00000000804aeead permutation 370 -> 7 "
+            "(SPIR-V fedcba9876543210)\n", 10)
+        self.assertEqual(result['compute_pipeline_reuse_events'], [
+            {'shader': '00000000804aeead', 'permutation': 361,
+             'pipeline_permutation': 7, 'spirv_hash': 'fedcba9876543210'},
+            {'shader': '00000000804aeead', 'permutation': 370,
+             'pipeline_permutation': 7, 'spirv_hash': 'fedcba9876543210'}])
+        self.assertEqual(regression_report.parse_log('', 10)['compute_pipeline_reuse_events'], [])
+
     def test_cache_counters_are_cumulative_not_summed(self):
         result = regression_report.parse_log(
             "Pipeline binary cache: 10 hits, 2 compiled, 1 rejected, 2 saved, 0 cache errors\n"

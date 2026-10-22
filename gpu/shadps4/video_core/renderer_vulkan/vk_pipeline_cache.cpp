@@ -937,7 +937,7 @@ void PipelineCache::PublishShaders(bool wait) {
             build->spec.info = &program->info;
             RegisterShaderMeta(program->info, build->spec.fetch_shader_data, build->spec,
                                perm_hash, build->permutation, spv_hash);
-            program->AddPermut(build->module, std::move(build->spec));
+            program->AddPermut(build->module, std::move(build->spec), spv_hash);
             build->module = nullptr;
             program->pending.reset();
         }
@@ -1979,7 +1979,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
         RegisterShaderMeta(new_program->info, spec.fetch_shader_data, spec, perm_hash, 0,
                            spv_hash);
-        new_program->AddPermut(module, std::move(spec));
+        new_program->AddPermut(module, std::move(spec), spv_hash);
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
         {
@@ -2079,7 +2079,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx, spv_hash);
         std::unique_lock lk{programs_mutex};
-        program->AddPermut(module, std::move(spec));
+        program->AddPermut(module, std::move(spec), spv_hash);
     } else {
         info.AddBindings(binding);
         module = it->module;
@@ -2087,6 +2087,25 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         perm_hash = HashCombine(params.hash, perm_idx);
     }
     sel.fresh_permutation |= program->modules[perm_idx].fresh;
+    static const bool reuse_compute = [] {
+        const char* env = std::getenv("THEORDER_COMPUTE_PIPELINE_REUSE");
+        return !env || *env != '0';
+    }();
+    if (hw_stage == HwStage::Compute && reuse_compute &&
+        !EmulatorSettings.IsPatchShaders() && !EmulatorSettings.IsShaderCollect()) {
+        const bool first_lookup = !program->modules[perm_idx].compute_pipeline_permutation;
+        const auto canonical = program->ComputePipelinePermutation(perm_idx);
+        if (canonical != perm_idx) {
+            static const bool log = std::getenv("THEORDER_PERMUTATION_LOG") != nullptr;
+            if (log && first_lookup) {
+                std::printf("Compute pipeline reuse: shader %016llx permutation %zu -> %zu "
+                            "(SPIR-V %016llx)\n",
+                            static_cast<unsigned long long>(params.hash), perm_idx, canonical,
+                            static_cast<unsigned long long>(program->modules[perm_idx].spv_hash));
+            }
+            perm_hash = HashCombine(params.hash, canonical);
+        }
+    }
     return std::make_tuple(&program->info, module,
                            ToFetchShader(program->modules[perm_idx].spec.fetch_shader_data),
                            perm_hash);

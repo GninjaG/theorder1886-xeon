@@ -450,6 +450,11 @@ target_compile_options(overlay-input-test PRIVATE -UNDEBUG -fPIC -fvisibility=hi
 target_compile_definitions(overlay-input-test PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     THEORDER_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 target_link_libraries(overlay-input-test PRIVATE theordergpu PkgConfig::SDL3)
+add_executable(compute-pipeline-reuse-test EXCLUDE_FROM_ALL ../tests/test_compute_pipeline_reuse.cpp
+    ../tests/test_gpu_runtime_stubs.cpp)
+target_include_directories(compute-pipeline-reuse-test PRIVATE shim shadps4 third_party/gcn/include)
+target_compile_options(compute-pipeline-reuse-test PRIVATE -UNDEBUG -fPIC)
+target_link_libraries(compute-pipeline-reuse-test PRIVATE theordergpu)
 add_executable(readback-queue-test EXCLUDE_FROM_ALL ../tests/test_readback_queue.cpp)
 target_include_directories(readback-queue-test PRIVATE shadps4)
 target_compile_options(readback-queue-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
