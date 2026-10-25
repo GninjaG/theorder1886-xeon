@@ -2,6 +2,28 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-25: Windows v0.7.8 published
+
+- **Release:** https://github.com/mateussmeneses/theorder1886-port/releases/tag/windows-v0.7.8
+  is public and latest, not a draft/prerelease. The tag points to validated
+  master commit `26f14266a6e746f0f46bf45a43463e1a3588baf0`; the remote attribution
+  commit was merged without conflict or history rewriting. Publication was
+  explicitly authorized by the user.
+- **Artifacts:** the ZIP and `.sha256` sidecar are uploaded. GitHub's ZIP digest
+  matches local SHA-256
+  `2a43630080bbb632ed751a5926f3304680fe6c9d763e3895e6a405af1fe1a4db`.
+  CRCs, player-data exclusion, embedded launcher version, staging identity,
+  runtime code sections and entry point were checked. Packaging strips debug
+  symbols; no game files, saves, player caches or private logs were uploaded.
+- **Final gates:** build and all 48 C/C++ suites passed after the merge;
+  Python ran 316 tests, 39 skipped, no failures. The overlay is covered by
+  virtual SDL events and rendered ImGui frames, not physical-device sign-off.
+- **Updater probe:** authenticated GitHub latest/tag/asset checks passed. The
+  anonymous launcher endpoint returned HTTP 403 with rate-limit remaining 0;
+  this temporary external quota prevented live anonymous discovery validation.
+  The manual release page remains available. The tag/assets were not changed
+  to bypass the quota. Local agent instructions remain untracked/unpublished.
+
 ## 2026-10-25: v0.7.8 overlay fixes and authorized release preparation
 
 - **Menu fixes:** stable ImGui window ID preserves focus/scroll as input prompts

@@ -57,6 +57,9 @@ stutters and dialogue subtitles are not declared fixed.
   for this release. No save edits, gamma workaround or broad shadow override
   are introduced to hide a symptom. Stable 60/120 FPS and campaign completion
   are not guaranteed.
+- Automatic update discovery depends on GitHub's unauthenticated API quota.
+   When rate-limited, the background check cannot announce a new version until
+   the quota recovers; the manual GitHub release/download page remains available.
 
 For reports, include chapter/checkpoint and camera, GPU/driver, game version,
 resolution/upscaler, a matching capture, and a log with private paths redacted.
@@ -96,6 +99,10 @@ proprietary DLSS runtime. You must supply your own legally obtained game dump.
 5. **Limites:** legendas foram adiadas. Flicker, iluminacao, sombras, artefatos
    AMD/Intel e stutters ainda precisam de retestes equivalentes; esta release
    nao declara esses relatos corrigidos nem garante 60/120 FPS.
+
+A verificacao automatica depende da quota publica da API GitHub. Se houver
+rate limit, use a pagina da release para baixar manualmente; nao e necessario
+apagar saves ou caches.
 
 Build Windows e 48 suites C/C++ passaram; a suite Python executou 316 testes,
 com 39 skips e nenhuma falha. O teste automatizado usa controle SDL virtual e
