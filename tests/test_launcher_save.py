@@ -248,6 +248,7 @@ class EverySettingSavesTest(LauncherOverTemporaryFiles):
         expected = {key: var.get() for key, var in app.vars.items()}
         self.assertEqual(len(expected), len([k for k in launcher.INI_DEFAULTS if k in app.vars]) +
                          len([k for k in launcher.APP_DEFAULTS if k in app.vars]))
+        expected['check_updates'] = True
         self.close_window()
         self.root = tk.Tk()
         reopened = launcher.Launcher(self.root, tk, ttk, filedialog, messagebox)

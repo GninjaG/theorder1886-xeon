@@ -75,6 +75,39 @@ int main() {
         assert(compiler.QueueWaitNs() > 0);
     }
     {
+        AsyncCompiler compiler(1, 4);
+        std::promise<void> entered, release;
+        auto gate = release.get_future().share();
+        std::vector<int> order;
+        assert(compiler.Submit([&] { entered.set_value(); gate.wait(); }));
+        entered.get_future().wait();
+        assert(compiler.Submit([&] { order.push_back(1); }));
+        AsyncJob<int> visible;
+        assert(visible.Start(compiler, [&] { order.push_back(2); return 42; }));
+        assert(compiler.Submit([&] { order.push_back(3); }, true));
+        assert(visible.Prioritize(compiler));
+        assert(!visible.Prioritize(compiler));
+        assert(compiler.Depth() == 3);
+        release.set_value();
+        visible.Wait();
+        compiler.Stop();
+        assert((order == std::vector<int>{3, 2, 1}));
+        assert(visible.Poll() == 42);
+        assert(!visible.Prioritize(compiler));
+    }
+    {
+        AsyncCompiler compiler(1);
+        AsyncJob<int> job;
+        auto resource = std::make_shared<int>(42);
+        std::weak_ptr<int> lifetime = resource;
+        assert(job.Start(compiler, [resource] { return *resource; }));
+        resource.reset();
+        job.Wait();
+        compiler.Stop();
+        assert(job.Poll() == 42);
+        assert(lifetime.expired());
+    }
+    {
         std::atomic<unsigned> initialized{};
         AsyncCompiler compiler(2, 4, [&](unsigned) { ++initialized; });
         std::promise<void> entered[2], release;

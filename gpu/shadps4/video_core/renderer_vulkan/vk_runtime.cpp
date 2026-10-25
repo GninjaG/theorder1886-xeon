@@ -11,6 +11,7 @@
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/texture_cache/aliasing.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 
@@ -559,10 +560,19 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
     dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
 }
 
-void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
+bool Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
     // port: with THEORDER_NO_MSAA a guest multisampled depth target is single-sampled on the host; a
     // colour image aliasing it still holds the samples as channels, so sample 0 is channel 0.
     const bool guest_ms_depth = dst->info.props.is_depth && dst->info.guest_samples > 1;
+    if (!VideoCore::CanCopyColorAndDepth(src->info.num_samples, dst->info.num_samples,
+                                         dst->info.props.is_depth, dst->info.guest_samples)) {
+        LOG_WARNING(Render_Vulkan,
+                    "Unimplemented depth overlap copy (samples {} -> {}, depth {} -> {}, guest samples {})",
+                    src->info.num_samples, dst->info.num_samples,
+                    bool(src->info.props.is_depth), bool(dst->info.props.is_depth),
+                    dst->info.guest_samples);
+        return false;
+    }
     if (src->info.num_samples == 1 && dst->info.num_samples == 1 && !guest_ms_depth) {
         if ((instance.IsMaintenance8Supported() ||
              src->info.props.is_depth == dst->info.props.is_depth) &&
@@ -575,8 +585,7 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
                 staging_pool.Request(COPY_BUFFER_SIZE, VideoCore::MemoryType::DeviceLocal);
             CopyImageWithBuffer(src, dst, copy_ref.buffer, copy_ref.offset);
         }
-    } else if (src->info.num_samples == 1 && (dst->info.num_samples > 1 || guest_ms_depth) &&
-               dst->info.props.is_depth) {
+    } else {
         // Perform a rendering pass to transfer the channels of source as samples in dest.
         bool needs_flush =
             Transit(src, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -591,10 +600,10 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
 
         blit_helper->ReinterpretColorAsMsDepth(
             dst->info.size.width, dst->info.size.height, dst->info.num_samples,
+            src->info.num_samples > 1,
             src->info.pixel_format, dst->info.pixel_format, src->GetImage(), dst->GetImage());
-    } else {
-        LOG_WARNING(Render_Vulkan, "Unimplemented depth overlap copy");
     }
+    return true;
 }
 
 void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,

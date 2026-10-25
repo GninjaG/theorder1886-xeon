@@ -12,6 +12,8 @@
 
 #include "video_core/host_shaders/color_to_ms_depth_fallback_frag.h"
 #include "video_core/host_shaders/color_to_ms_depth_frag.h"
+#include "video_core/host_shaders/color_to_ms_depth_msaa_fallback_frag.h"
+#include "video_core/host_shaders/color_to_ms_depth_msaa_frag.h"
 #include "video_core/host_shaders/fs_tri_vert.h"
 #include "video_core/host_shaders/ms_image_blit_frag.h"
 #include "video_core/host_shaders/ms_image_blit_msaa_frag.h"
@@ -49,6 +51,7 @@ BlitHelper::~BlitHelper() {
     const auto device = instance.GetDevice();
     device.destroy(fs_tri_vertex);
     device.destroy(color_to_ms_depth_frag);
+    device.destroy(color_to_ms_depth_msaa_frag);
     device.destroy(src_msaa_copy_frag);
     device.destroy(src_non_msaa_copy_frag);
     for (const auto& modules : int_copy_frag) {
@@ -58,7 +61,7 @@ BlitHelper::~BlitHelper() {
     }
 }
 
-void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_samples,
+void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_samples, bool src_msaa,
                                            vk::Format src_pixel_format, vk::Format dst_pixel_format,
                                            vk::Image source, vk::Image dest) {
     const vk::ImageViewUsageCreateInfo color_usage_ci{.usage = vk::ImageUsageFlagBits::eSampled};
@@ -130,7 +133,7 @@ void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_sample
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *single_texture_pl_layout, 0U,
                                 texture_write);
 
-    const MsPipelineKey key{num_samples, dst_pixel_format, false};
+    const MsPipelineKey key{num_samples, dst_pixel_format, src_msaa};
     auto it = std::ranges::find(color_to_ms_depth_pl, key, &MsPipeline::first);
     if (it == color_to_ms_depth_pl.end()) {
         CreateColorToMSDepthPipeline(key);
@@ -268,6 +271,10 @@ void BlitHelper::CreateShaders() {
     color_to_ms_depth_frag = Vulkan::LightingTest::Current().msdepth
                                  ? Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_FALLBACK_FRAG, device)
                                  : Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_FRAG, device);
+    color_to_ms_depth_msaa_frag = Vulkan::LightingTest::Current().msdepth
+                                      ? Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_MSAA_FALLBACK_FRAG,
+                                                           device)
+                                      : Vulkan::CompileSPV(COLOR_TO_MS_DEPTH_MSAA_FRAG, device);
     src_msaa_copy_frag = Vulkan::CompileSPV(MS_IMAGE_BLIT_MSAA_FRAG, device);
     src_non_msaa_copy_frag = Vulkan::CompileSPV(MS_IMAGE_BLIT_FRAG, device);
     int_copy_frag = {{{Vulkan::CompileSPV(MS_IMAGE_BLIT_UINT_FRAG, device),
@@ -333,7 +340,7 @@ void BlitHelper::CreateColorToMSDepthPipeline(const MsPipelineKey& key) {
     };
     shader_stages[1] = {
         .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = color_to_ms_depth_frag,
+        .module = key.src_msaa ? color_to_ms_depth_msaa_frag : color_to_ms_depth_frag,
         .pName = "main",
     };
 

@@ -1,5 +1,152 @@
 # Performance baseline
 
+## 2026-10-25: copied current checkpoint, subtitle-diagnosis trace
+
+`out/20261025-subtitle-current/` records one isolated 130-second run using a
+copy of the packaged user profile and port caches. Game/driver identity matches
+the earlier local RTX 5060 run. The script reached the current Tesla-lab
+checkpoint, not the prologue; the captured guest and output buffers are
+1920x1080. Launcher-only display choices were not fully reproduced, so this is
+not an equivalent comparison with the user's 4K gameplay or evidence of a
+regression between builds.
+
+The CSV contains 9,029 captured guest intervals, 72.12 mean FPS and raw
+P95/P99 of 21.05/31.04 ms. The largest frame reported by the runtime windows
+was 911.70 ms. The run exited 0 without reported guest faults or VUIDs. The
+whole-trace threshold count is not interchangeable with the old short-window
+metric; a near-31 ms P99 does not exclude the much larger outliers. There is no
+matched before/after pair or subtitle fix here. Original saves/caches were not
+used as writable runtime directories, and no compilation default changed.
+
+## 2026-10-25: user-tested local package, uncontrolled run
+
+The user reports the game is very playable, with minor flicker and stutters.
+The package log identifies CUSA00035 01.02, RTX 5060 Laptop/NVIDIA 621.1.0.0,
+Vulkan 1.4.357, borderless 3840x2160, the 120 FPS patch, and FSR off. Startup
+used on-demand compilation plus a background warm-up of 2,000 recent pipelines
+over 36.06 s with six threads.
+
+The private log contains 59 stats/pacing windows. Median per-window FPS was
+78.7; the largest per-window P99 was 535.22 ms; the largest reported frame was
+1,316.7 ms. It contains 56 `Stall` records over 100 ms, with zero VUID and guest
+fault lines. Several stalls report zero synchronous compiles while driver time
+is high. Driver/worker timings can overlap; these numbers do not establish
+exclusive CPU time or the cause of the user's minor visual flicker. The short
+window `stutters/min` metric is not comparable to a whole-run frame-trace rate.
+No screenshot/capture was produced, and this is not a matched A/B benchmark.
+
+## 2026-10-25: recent-pipeline hot-list A/B, inconclusive
+
+Two interleaved 130-second prologue runs per condition compared
+`THEORDER_HOT_WARMUP=1` and `=0`, using isolated copies of the same warm
+profile, 4K borderless, and upscaling off. All four runs exited 0 without
+reported faults or VUIDs. The harness recorded no captures; OS/driver cache
+state was not controlled, and two repetitions are insufficient to separate
+the setting from run-to-run variation.
+
+| Condition | Median window FPS | Window P95/P99 of frame P99 (ms) | Maximum worst frame (ms) |
+| --- | ---: | ---: | ---: |
+| Hot-list enabled | 60.00 | 272.71 / 401.34 | 18,194.90 |
+| Hot-list disabled | 59.33 | 510.17 / 3,888.76 | 8,074.80 |
+
+The opposing extreme-frame results and noisy window tails make this A/B
+inconclusive. It does not justify changing the warm-up default or claiming a
+stutter reduction. Full run identities and per-run data are in the ignored
+`out/20261025-hot-warmup-ab/` report and CSVs.
+
+## 2026-10-25: warm-up A/B and overlap-copy smoke
+
+An exploratory A/B compared `on_demand` with `full_warmup` using one 100-second
+run per condition and isolated profile roots. Cache state was recorded as
+`unknown`; this is not a controlled performance result and does not justify a
+default change.
+
+| Mode | Median FPS | Worst frame (ms) | Stutters/min |
+| --- | ---: | ---: | ---: |
+| On-demand | 55.4 | 542.5 | 59.05 |
+| Full warm-up | 57.1 | 591.4 | 43.96 |
+
+Full warm-up had fewer thresholded stutters in this pair but a worse worst
+frame. The sample size and cache uncertainty prevent attributing that difference
+to warm-up. Keep the current default and retain visible-draw priority; neither
+approach can preempt a driver compile already in progress.
+
+The local color/depth overlap-copy build also completed isolated 130-second
+MSAA and no-MSAA smoke runs without crash/hang. In the MSAA run the measured
+worst frame was 681.8 ms, P99 44.52 ms and 53.86 thresholded stutters/min. There
+is no matched pre-change pacing baseline, so no stutter improvement is claimed.
+See `GRAPHICS_REGRESSIONS.md` for the graphics-specific scope and limitations.
+
+## 2026-10-25: reproduced stalls and pipeline queue priority
+
+Source base: `d5534c5`, Windows 11, RTX 5060 Laptop GPU, NVIDIA 621.1.0.0,
+Vulkan 1.4.357, CUSA00035 01.02. Built locally with MSYS2 CLANG64.
+All runs below use the existing 130-second scripted prologue route, private
+runtime directories and copies of `user`; original saves/caches were not cleared.
+
+The baseline executable SHA-256 is
+`78cad40b3c95578755f291db77a8be75141ba2772db1e249a69e9be61e51f08a`.
+`out/rea-stutter/baseline.json` records 6,698 captured intervals, 53.40 mean FPS,
+17.83/48.96 ms raw P95/P99 and a 1,324.628 ms worst interval. Of 50 intervals
+above 100 ms, 45 also contain more than 50 ms synchronous compilation wait.
+The worst interval contains 1,307.173 ms of that wait. This reproduces a
+compilation-related stall; it does not establish the cause of every hitch.
+
+REA opened and identified the baseline PE/x86-64 executable, but deep native
+analysis was unavailable: Ghidra/IDA were not configured and the other reported
+providers could not handle this target/host. REA process capture explicitly
+rejects native Windows PTY execution. Consequently the measurements here come
+from `tools/batch_runs.py`, not REA decompilation or runtime tracing. The exported
+`out/rea-stutter/rea-evidence.json` has zero retained records and is not native
+analysis evidence. The REA target was closed without changing server settings.
+
+Local code inspection found that a new graphics pipeline can remain in the
+ordinary compiler queue even after `WaitGraphics` needs it for a visible draw.
+`THEORDER_VISIBLE_PIPELINE_PRIORITY` promotes only that queued job into the
+existing priority queue before waiting. It cannot interrupt an already running
+driver compile. After the user's gameplay test reported a significant
+improvement, the default now enables this behavior; `=0` restores the old policy.
+No visible draw is dropped, no shader specialization is merged and no cache is
+invalidated. Job identity uses a weak reference to the existing packaged task,
+without another allocation or retaining captured resources after completion.
+
+Two interleaved repetitions per condition copied the same initial warm profile
+from the baseline. `out/rea-stutter/priority-ab.json` records the development
+build results below. These precede the final identity/lifetime refinements:
+
+| Condition / repeat | Mean FPS | Raw P99 ms | Worst ms | Intervals/min >1.5x median |
+| --- | ---: | ---: | ---: | ---: |
+| FIFO / 1 | 56.68 | 18.53 | 644.10 | 26.81 |
+| Priority / 1 | 57.95 | 18.34 | 594.70 | 23.48 |
+| FIFO / 2 | 56.30 | 18.53 | 513.10 | 25.80 |
+| Priority / 2 | 56.06 | 18.39 | 623.50 | 23.95 |
+
+The later lifetime-guarded runtime pair, `out/rea-stutter/final.json`, exits 0
+in both modes with no reported guest faults or hangs. FIFO records 56.99 mean
+FPS, 18.38 ms raw P99, 565.70 ms worst and 23.47 intervals/min; priority records
+56.04 FPS, 18.66 ms P99, 796.40 ms worst and 26.78 intervals/min. This pair
+does not support a consistent speedup. It predates the final weak-identity
+refinement; that refinement was rebuilt and checked with the focused tests,
+not re-benchmarked for performance.
+
+Captures show different dark cinematic/transitional positions, not matched
+free-movement gameplay. Inputs are wall-clock scheduled; OS/driver caches and
+physical input are not isolated. The earlier automated pairs do not establish
+a reproducible speedup; enabling the default records the user's direct
+gameplay observation and keeps the explicit rollback. This does not establish
+stutter elimination.
+
+Validation: `async-compiler-test`, `async-pipeline-cache-test` (real NVIDIA
+Vulkan device), `async-fetch-snapshot-test` and the runtime build pass. The
+compiler regression checks promotion order, no duplicated execution, unchanged
+queue depth, repeated/finished-job promotion and captured-resource release.
+
+Next gate: establish a visually verified repeatable gameplay checkpoint, then
+attribute visible waits to queue residence versus driver execution using the
+exact pipeline keys. Investigate why those exact resource-dependent combinations
+are not already warmed. Do not remove required waits or increase compiler
+concurrency on the strength of these results.
+
 ## Content-key reuse checkpoint (not a stutter fix)
 
 `out\checkpoint-20261022\compute-reuse-final.json`: final guarded build, two

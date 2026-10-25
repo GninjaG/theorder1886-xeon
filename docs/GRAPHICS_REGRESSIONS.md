@@ -1,5 +1,38 @@
 # Graphics regression checkpoint
 
+## 2026-10-25: user retest of the local package
+
+The user reports good gameplay with some remaining flicker. The corresponding
+private log identifies the local RTX 5060 Laptop setup, but the profile's
+capture and screenshot folders are empty. There is no chapter/checkpoint,
+camera, draw ID, or image evidence to connect the flicker to the color/depth
+change or another pass. Keep the visual issue open and do not add a broad
+shader/layout workaround from this report alone.
+
+## 2026-10-25: local color/depth overlap handling
+
+The renderer now reports whether the color-to-depth overlap copy actually
+completed. Unsupported copies no longer silently suppress the guest dispatch;
+the overlap resolver retains the original color image and uses the valid depth
+backing. A multisampled color-to-depth blit path was added with a cached pipeline
+keyed by sample count and format.
+
+`aliasing-test`, the full `tools/run_tests.sh` suite (48 C/C++ tests plus
+Python), and isolated 130-second MSAA/no-MSAA smokes passed. Both smokes exited
+0 without crash/hang and no reported VUIDs in captured logs; the MSAA capture
+showed rendered prologue characters. Validation layers were not established as
+active, so this is not a synchronization-validation pass. It does not validate
+Chapter 5/8/9, the reporters' GPUs, or the public black-screen
+issues. No release/package containing this local change has been tested by
+reporters.
+
+Current public evidence is negative for several v0.7.7 reports: #43 remains
+black/white on an RTX 3060 Ti (CUSA00035 01.02), #47 has a black-screen report
+on RX 6500 XT and an additional RX 560 report, #39 remains in Chapter 5 on RX
+9070, #63 remains in Chapters 8/9 on RX 9070, #26 sun shadows remain absent,
+and #36 lighting remains wrong on RX 6700 XT. Keep each symptom and hardware
+separate; local smoke success is not a fix confirmation.
+
 2026-10-22: preserve earlier correctness fixes while establishing measurement.
 
 | Area | Evidence / remaining gate |

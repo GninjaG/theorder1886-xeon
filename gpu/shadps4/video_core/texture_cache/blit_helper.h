@@ -26,7 +26,7 @@ public:
     explicit BlitHelper(const Vulkan::Instance& instance, Vulkan::Scheduler& scheduler);
     ~BlitHelper();
 
-    void ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_samples,
+    void ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_samples, bool src_msaa,
                                    vk::Format src_pixel_format, vk::Format dst_pixel_format,
                                    vk::Image source, vk::Image dest);
 
@@ -56,6 +56,7 @@ private:
     vk::UniquePipelineLayout single_texture_pl_layout;
     vk::ShaderModule fs_tri_vertex;
     vk::ShaderModule color_to_ms_depth_frag;
+    vk::ShaderModule color_to_ms_depth_msaa_frag;
     vk::ShaderModule src_msaa_copy_frag;
     vk::ShaderModule src_non_msaa_copy_frag;
     /// port: [0] unsigned, [1] signed integer formats; index 1 of each pair reads MSAA.

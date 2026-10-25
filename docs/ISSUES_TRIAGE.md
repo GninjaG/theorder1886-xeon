@@ -1,5 +1,14 @@
 # Triagem das issues abertas
 
+> **Atualização de 2026-10-25:** este documento contém abaixo um snapshot
+> histórico de 2026-10-20 e já não representa a lista atual. A consulta pública
+> atual encontrou 28 issues abertas. Use `docs/BACKLOG.md` como inventário e
+> prioridades vigentes. Retestes de v0.7.7 confirmaram que #43 (RTX 3060 Ti),
+> #39 e #63 (RX 9070) e #26 (sombras solares) continuam reproduzíveis; #36
+> também foi reportada como persistente em RX 6700 XT. #47 recebeu relato
+> adicional de tela preta em RX 560. Não classificar estes casos como resolvidos
+> por correções anteriores ou por smoke local em outra GPU/cena.
+
 Consulta: 2026-10-20. Fonte primária: GitHub CLI e páginas públicas de issues/comentários. `gh issue list -R mateussmeneses/theorder1886-port --state open --limit 100` retornou **24 de 24 issues abertas**. O GitHub não exigiu autenticação para essa leitura. Não baixei nem alterei anexos; links abaixo preservam o local original. Todas as issues listadas aparecem sem assignee atribuído. “Responsável” identifica quem precisa fornecer/executar a próxima ação, não uma atribuição feita no GitHub.
 
 O checkout local continua no commit `9173d6c` (`windows-v0.7.3`), enquanto a release mais recente observada nas issues é `windows-v0.7.5` (`b982483`). Referências de código são caminhos do checkout local e podem precisar ser comparadas com o delta dos dois commits antes de uma correção. Nenhuma issue foi fechada ou modificada por esta triagem.

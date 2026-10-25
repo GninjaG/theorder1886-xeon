@@ -29,6 +29,25 @@ BASE_SFO = sfo_bytes(TITLE_ID='CUSA00035', APP_VER='01.00')
 
 
 class ControlMapTest(unittest.TestCase):
+    def test_each_windows_start_checks_updates_even_if_previously_disabled(self):
+        for saved in ({}, {'check_updates': False}, {'check_updates': True}):
+            with self.subTest(saved=saved):
+                root = mock.MagicMock()
+                root.winfo_fpixels.return_value = 96.0
+                with mock.patch.object(launcher, 'WINDOWS', True), \
+                     mock.patch.object(launcher, 'load_json', return_value={**saved, 'language': '17'}), \
+                     mock.patch.object(launcher, 'load_ini', return_value=(dict(launcher.INI_DEFAULTS), [])), \
+                     mock.patch.multiple(launcher.Launcher, check_version_migration=mock.DEFAULT,
+                                         set_icon=mock.DEFAULT, style=mock.DEFAULT, build=mock.DEFAULT,
+                                         show=mock.DEFAULT, refresh_lists=mock.DEFAULT,
+                                         refresh_game_patches=mock.DEFAULT, gather=mock.DEFAULT), \
+                     mock.patch.object(launcher.threading, 'Thread') as worker:
+                    app = launcher.Launcher(root, mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock())
+                self.assertTrue(app.app['check_updates'])
+                self.assertEqual(app.app['language'], '17')
+                worker.assert_called_once_with(target=app.check_update, daemon=True)
+                worker.return_value.start.assert_called_once_with()
+
     def test_options_and_cross_keyboard_defaults(self):
         rows = {button: key for button, key, _pad in launcher.CONTROLS}
         self.assertEqual(rows['options'], 'Return')
@@ -597,7 +616,7 @@ class ReleaseVersionTest(unittest.TestCase):
                 self.assertEqual(url, 'https://example.test/release.zip')
 
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.7.7')
+        self.assertEqual(launcher.VERSION, '0.7.8')
         self.assertGreater(launcher.version_tuple('windows-v0.7.6'), launcher.version_tuple('0.7.6-rc.1'))
         self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v0.7.6-rc.1'))
         self.assertGreater(launcher.version_tuple('windows-v0.7.6-rc.2'), launcher.version_tuple('0.7.6-rc.1'))

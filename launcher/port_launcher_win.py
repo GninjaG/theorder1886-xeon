@@ -57,7 +57,9 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.7'
+VERSION = '0.7.8'
+REPOSITORY_PAGE = 'https://github.com/mateussmeneses/theorder1886-port'
+KOFI_PAGE = 'https://ko-fi.com/mateusmeneses'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
 RELEASES_PAGE = 'https://github.com/mateussmeneses/theorder1886-port/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'theorder1886-update'
@@ -271,7 +273,7 @@ APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('THEORDER_GAME_D
                 'gpu_id': '', 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True,
                 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False,
-                'check_updates': False, 'last_version': '', 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
+                'check_updates': True, 'last_version': '', 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and the left touchpad click (photo mode) from L1 + the right click's
@@ -810,7 +812,7 @@ class Launcher:
     def __init__(self, root, tk, ttk, filedialog, messagebox):
         self.tk, self.ttk, self.filedialog, self.messagebox = tk, ttk, filedialog, messagebox
         self.root = root
-        self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
+        self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {}), 'check_updates': True}
         self.check_version_migration()
         self.ini, self.ini_lines = load_ini()
         self.vars = {}
@@ -1225,11 +1227,23 @@ class Launcher:
             self.nav[name] = item
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
         self.update_box = None
-        kofi_frame = tk.Frame(side, bg=BG)
-        kofi_frame.pack(anchor='w', padx=22, pady=(0, 8))
-        kofi_btn = tk.Label(kofi_frame, text='☕ Apoiar no Ko-fi / Support', bg='#29abe0', fg='#ffffff', font=(UI_FONT, 8, 'bold'), cursor='hand2', padx=8, pady=3)
+        support = tk.Frame(side, bg=PANEL, padx=10, pady=9)
+        support.pack(fill='x', padx=14, pady=(0, 10))
+        tk.Label(support, text='Support development', bg=PANEL, fg=TEXT,
+             font=(UI_FONT, 9, 'bold'), anchor='w').pack(fill='x')
+        tk.Label(support, text='If this port helped, an optional Ko-fi tip supports ongoing work.',
+             bg=PANEL, fg=MUTED, font=(UI_FONT, 8), justify='left',
+             wraplength=self.px(174)).pack(fill='x', anchor='w', pady=(3, 8))
+        support_links = tk.Frame(support, bg=PANEL)
+        support_links.pack(anchor='w')
+        kofi_btn = tk.Label(support_links, text='☕ Ko-fi', bg='#29abe0', fg='#ffffff',
+                    font=(UI_FONT, 8, 'bold'), cursor='hand2', padx=8, pady=3)
         kofi_btn.pack(side='left')
-        kofi_btn.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
+        kofi_btn.bind('<Button-1>', lambda _e: open_url(KOFI_PAGE))
+        repo_btn = tk.Label(support_links, text='GitHub ↗', bg=PANEL, fg=ACCENT_HI,
+                    font=(UI_FONT, 8, 'underline'), cursor='hand2', padx=8, pady=3)
+        repo_btn.pack(side='left', padx=(4, 0))
+        repo_btn.bind('<Button-1>', lambda _e: open_url(REPOSITORY_PAGE))
         self.side_note = tk.Label(side, text=_('In the game: Insert or R3+L2\nopens the port\'s menu.',
                                                'В игре: Insert или R3+L2\nоткрывает меню порта.'),
                                   bg=BG, fg=MUTED, font=(UI_FONT, 9), justify='left', wraplength=self.px(210))
@@ -1242,9 +1256,6 @@ class Launcher:
         bar.pack_propagate(False)
         self.status = tk.Label(bar, text='', bg=BG, fg=MUTED, font=(UI_FONT, 10), anchor='w', justify='left')
         self.status.pack(side='left', padx=24)
-        kofi_bar_btn = tk.Label(bar, text='☕ Ko-fi', bg=BG, fg=ACCENT_HI, font=(UI_FONT, 9, 'bold'), cursor='hand2')
-        kofi_bar_btn.pack(side='left', padx=(0, 10))
-        kofi_bar_btn.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
         self.play_button = ttk.Button(bar, text=heading_text(_('PLAY', 'ИГРАТЬ')), style='Play.TButton', command=self.play)
         self.play_button.pack(side='right', padx=(self.px(10), self.px(24)), pady=self.px(11))
         self.save_button = ttk.Button(bar, text=_('Save', 'Сохранить'), command=self.save, state='disabled')
@@ -1744,7 +1755,7 @@ class Launcher:
         holder_kofi.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
         kofi_banner = tk.Label(holder_kofi, text='☕ ' + _('Support the port on Ko-fi (Apoiar no Ko-fi)'), bg='#29abe0', fg='#ffffff', font=(UI_FONT, 9, 'bold'), cursor='hand2', padx=10, pady=4)
         kofi_banner.pack(side='left')
-        kofi_banner.bind('<Button-1>', lambda _e: webbrowser.open('https://ko-fi.com/mateusmeneses'))
+        kofi_banner.bind('<Button-1>', lambda _e: open_url(KOFI_PAGE))
         ttk.Label(holder, text=_('If the game only shows a black screen, this usually helps.',
                                  'Если игра показывает только чёрный экран, обычно это помогает.'),
                   style='Muted.TLabel').pack(side='left', padx=10)

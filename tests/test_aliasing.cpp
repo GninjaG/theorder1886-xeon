@@ -22,6 +22,15 @@ static ImageInfo Make(Extent3D size, vk::Format format = vk::Format::eR8G8B8A8Un
 }
 
 int main() {
+    assert(CanCopyColorAndDepth(1, 1, false, 1));
+    assert(CanCopyColorAndDepth(1, 4, true, 4));
+    assert(CanCopyColorAndDepth(1, 1, true, 4));
+    assert(CanCopyColorAndDepth(2, 2, true, 2));
+    assert(CanCopyColorAndDepth(4, 4, true, 4));
+    assert(!CanCopyColorAndDepth(4, 1, true, 1));
+    assert(!CanCopyColorAndDepth(1, 4, false, 1));
+    assert(!CanCopyColorAndDepth(4, 1, false, 1));
+
     // Same format: the smaller image is fully covered by the larger one.
     {
         const ImageInfo src = Make({1920, 1088, 1}), dst = Make({1920, 1080, 1});

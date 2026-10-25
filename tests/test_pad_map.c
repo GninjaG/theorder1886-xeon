@@ -8,7 +8,8 @@
 
 int theordergpu_overlay_captures_input(void) { return 0; }
 /* This map-only executable links runtime_pad.c without the GPU shim. */
-void theordergpu_mouse_take(TheOrderMouse *out) { memset(out,0,sizeof(*out)); }
+static TheOrderMouse mouse_sample;
+void theordergpu_mouse_take(TheOrderMouse *out) { *out=mouse_sample; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;
@@ -19,6 +20,56 @@ static uint32_t pressed_by(const ButtonMap *map, int source) {
     uint32_t ps=0;
     for (size_t i=0;i<map->count;++i) if (map->entries[i].source==source) ps|=map->entries[i].ps;
     return ps;
+}
+
+static void test_mouse_sample_rate(void) {
+    const unsigned rates[]={30,60,120,1000};
+    int reference=0;
+    for (size_t rate_index=0;rate_index<sizeof(rates)/sizeof(*rates);++rate_index) {
+        mouse_sample=(TheOrderMouse){0};
+        PadData sample={.right_x=128,.right_y=128,.timestamp=1000000};
+        mouse_input(&sample);
+        mouse_sample=(TheOrderMouse){.captured=1,.sensitivity=1.0f,.sens_y=1.0f};
+        mouse_input(&sample);
+        uint64_t previous=sample.timestamp;
+        for (unsigned step=1;step<=rates[rate_index];++step) {
+            sample=(PadData){.right_x=128,.right_y=128,
+                .timestamp=1000000+(uint64_t)step*1000000/rates[rate_index]};
+            mouse_sample.dx=300.0f*(float)(sample.timestamp-previous)/1000000.0f;
+            mouse_input(&sample);
+            previous=sample.timestamp;
+        }
+        const int deflection=(int)sample.right_x-128;
+        printf("mouse sampling: %u Hz -> %d\n",rates[rate_index],deflection);
+        fflush(stdout);
+        if (!rate_index) reference=deflection;
+        if (abs(deflection-reference)>1) {
+            fprintf(stderr,"FAIL: mouse response changes with sampling rate\n");
+            exit(1);
+        }
+        mouse_sample.dx=0.0f;
+        for (unsigned stopped=1;stopped<=2;++stopped) {
+            sample=(PadData){.right_x=128,.right_y=128,.timestamp=previous+stopped*20000};
+            mouse_input(&sample);
+        }
+        assert(sample.right_x==128 && sample.right_y==128);
+    }
+    mouse_sample=(TheOrderMouse){0};
+    PadData sample={.right_x=128,.right_y=128,.timestamp=3000000};
+    mouse_input(&sample);
+    assert(mouse_window.sampled==0 && mouse_window.elapsed==0);
+    assert(mouse_window.x==0 && mouse_window.y==0);
+    mouse_sample=(TheOrderMouse){.dx=1.0f,.dy=1.0f,.captured=1,.sensitivity=1.0f,
+        .sens_y=2.0f,.invert_y=1,.buttons=SDL_BUTTON_LMASK};
+    mouse_input(&sample);
+    assert(sample.right_x>128 && sample.right_y<128);
+    assert(128-sample.right_y>sample.right_x-128);
+    assert(sample.buttons==BTN_R2 && sample.r2==255);
+    mouse_sample=(TheOrderMouse){0};
+    sample=(PadData){.right_x=128,.right_y=128,.timestamp=3001000};
+    mouse_input(&sample);
+    assert(sample.right_x==128 && sample.right_y==128 && sample.buttons==0);
+    assert(mouse_window.x==0 && mouse_window.y==0);
 }
 
 #ifdef _WIN32
@@ -65,6 +116,11 @@ static void test_same_second_pad_edits(void) {
 #endif
 
 int main(void) {
+#ifdef _WIN32
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
+#endif
+    test_mouse_sample_rate();
 #ifdef _WIN32
     test_same_second_pad_edits();
 #endif

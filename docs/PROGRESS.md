@@ -2,6 +2,144 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-25: v0.7.8 overlay fixes and authorized release preparation
+
+- **Menu fixes:** stable ImGui window ID preserves focus/scroll as input prompts
+  change; idle controller drift no longer takes the mouse's active-device state.
+  Left-stick navigation and right-stick content scrolling are forwarded to the
+  real menu. Mouse/keyboard takeover releases gamepad navigation and its active
+  widget. Wheel cursor position and inverted direction are handled.
+- **Adjacent bugs:** Ctrl+Shift+Tab selected the forward-tab branch; it now goes
+  backward. Focus loss now clears queued/processed input and R3/L2 chord state.
+  Existing close/reopen and chord-order regressions remain green.
+- **Evidence:** the virtual-controller/rendered-menu test reproduced drift and
+  window recreation before the fixes. At 640x480 the long Controls page scrolls
+  174 px with normal/inverted wheel input and 116 px with the right stick. Its
+  window and scroll survive prompt changes. This is not a physical-device or
+  final-swapchain screenshot validation.
+- **Gates:** full Windows build and all 48 C/C++ suites passed; Python ran 316
+  tests, with 39 skips and no failures. Launcher and version test now identify
+  `0.7.8`. Release publication is explicitly authorized by the user. Notes:
+  `release-notes-v0.7.8.md`. Subtitles remain deferred; no claim of stutter,
+  AMD/Intel graphics, lighting or full-campaign resolution is added.
+
+## 2026-10-25: runtime mouse-rate fix; full local gates passed
+
+- **Direction:** subtitle diagnosis is deferred at the user's request. Do not
+  spend further runs on subtitles until it is resumed.
+- **P2 input fix:** the real runtime accumulated mouse counts per pad read with
+  no elapsed-time normalization. A regression at 300 counts/s reproduced
+  deflection 68 at 30 Hz versus 48 at 60 Hz. The caller now uses a 16 ms window
+  and monotonic timestamps, retaining the previous 60 Hz curve. The real-path
+  regression now gives 48 at 30/60/120/1000 Hz; rest, capture loss, inversion,
+  independent Y sensitivity and mouse fire also pass. This is not native 1:1
+  camera input or gameplay calibration. Details: `INPUT_IMPROVEMENTS.md`.
+- **Validation:** `bash build.sh` and `bash tools/run_tests.sh` passed: all 48
+  C/C++ suites and the Python suite. Existing renderer/worktree changes were
+  preserved. Visible-pipeline priority and required waits/draws are unchanged.
+  The Windows package was regenerated and passed ZIP CRC checks. Its runtime
+  matches the stripped staging file; executable code sections and entry point
+  match the tested development build (debug symbols are removed by packaging).
+- **Remaining gates:** stutter elimination is not established by the earlier
+  unmatched traces, and public AMD/Intel/scene-specific graphics retests still
+  require the reported hardware and captures. #38 physical-keyboard pause and
+  #37 gameplay camera acceptance remain open. These are not closed by the
+  synthetic input tests or the full local test suite.
+
+## 2026-10-25: update checks on every launcher opening; subtitles pending
+
+- **Launcher updates:** the update checkbox now defaults to enabled and is
+  restored to enabled on every window opening, including profiles that saved
+  `check_updates=false`. The existing Windows background worker checks GitHub;
+  installation remains an explicit action. The startup regression failed for
+  new/disabled profiles before the fix. All 103 focused launcher tests now pass,
+  including the updated settings-reopen expectations.
+- **Subtitles:** the user reports dialogue subtitles have been absent for some
+  time, including before this launcher change. The package log and isolated run
+  both confirm `-language 0 -enablesubtitles -usedlc` reached the guest. A missing
+  startup flag is therefore not established as the cause. Copies of the current
+  profile reached the Tesla-lab checkpoint, with readable menu/tutorial text,
+  but no controlled dialogue or confirmed Subtitles setting. Menu-navigation
+  probes did not produce a reliable setting capture. No save bytes or rendering
+  behavior were changed; subtitle recovery is unverified. Diagnostic artifacts
+  remain ignored under `out/20261025-subtitle-*/`.
+- **Stutters:** the user reports additional stalls. The isolated trace below
+  records outliers but is not a matched 4K before/after comparison. No pipeline
+  or cache default changed. See `PERFORMANCE_BASELINE.md`.
+- **Next:** confirm the game's Subtitles setting and capture a repeatable spoken
+  line at the affected checkpoint, then compare equivalent scene intervals for
+  pacing. Keep #38's physical-keyboard pause retest pending; scripted Options
+  injection alone does not establish that workflow.
+
+## 2026-10-25: launcher support links and hot-list A/B
+
+- **Launcher:** the sidebar now presents Ko-fi as optional support and links
+  directly to the project repository. The duplicate Ko-fi action beside Play
+  was removed; the Advanced-menu action remains. All 102 focused launcher tests
+  pass. The Windows package was regenerated, its ZIP CRC check passed, and the
+  frozen executable archive contains `port_launcher_win`. Native visual review
+  of the launcher has not been performed.
+- **Stutter experiment:** two interleaved 130-second runs per condition compared
+  `THEORDER_HOT_WARMUP=1/0` with the same copied warm profile and upscaling off.
+  All exited 0 without reported faults/VUIDs, but there were no captures, only
+  two repetitions, uncontrolled OS/driver caches, and extreme worst-frame
+  outliers. Result is inconclusive; no warm-up default changed. See
+  `PERFORMANCE_BASELINE.md`.
+- **FSR status:** the local RTX 5060 run requested FSR 4.1.1 but fell back to
+  FSR 3.1. The code path remains gated by device support and provider assets;
+  the 120 FPS patch does not establish stable 120 FPS in 4K.
+
+## 2026-10-25: user test of the local package
+
+- **Reporter confirmation:** the user tested the generated `dist` package and
+  says gameplay is very good and not blocked. Some object flicker and small
+  stutters remain. This is confirmation for that local test setup only, not for
+  the GPUs/scenes in the public issues.
+- **Run identity:** the private `last_run.log` identifies CUSA00035 01.02 on an
+  RTX 5060 Laptop (NVIDIA 621.1.0.0, Vulkan 1.4.357), borderless 3840x2160,
+  120 FPS patch, FSR off. Pipeline startup was on-demand with 2,000 recent
+  pipelines warmed in the background over 36.06 s on six threads.
+- **Pacing evidence:** 59 five-second stats/pacing windows; median window FPS
+  78.7, maximum window P99 535.22 ms, maximum reported frame 1,316.7 ms, and
+  56 `Stall` records over 100 ms. There were no VUID or guest-fault lines. Some
+  stalls report zero synchronous compiles but substantial driver time; worker
+  timings overlap and are not exclusive wall time. These measurements warrant
+  investigation, not a claim that the game is uniformly stutter-free.
+- **Visual evidence:** capture and screenshot folders are empty. The remaining
+  flicker is not tied to a chapter, camera, draw, shader, or attachment, so no
+  graphics workaround is justified yet. The private log remains in `dist` and
+  is not added to source control.
+- **Next:** keep the v0.7.7 retest requests open for public AMD/NVIDIA reports;
+  test the updated Return/Options mapping for #38, then capture one repeatable
+  flicker scene with frame capture enabled before changing rendering behavior.
+
+## 2026-10-25: color/depth overlap copy and current issue retests
+
+- **Local change:** depth-color overlap copies now return an explicit success
+  result. Unsupported cases preserve the original color image and continue
+  through the guest dispatch; the Vulkan path includes a multisampled
+  color-to-depth blit. The aliasing regression test covers accepted/rejected
+  combinations.
+- **Validation:** `aliasing-test` and `bash tools/run_tests.sh` passed (48
+  C/C++ tests plus Python). Isolated 130-second MSAA and no-MSAA smoke runs
+  exited 0 without crash/hang or reported VUIDs in captured logs; the MSAA
+  capture showed the prologue character. Validation layers were not confirmed
+  active, so this is not a synchronization-validation pass. A local Windows
+  build and test ZIP have since been generated; public issue reporters have not
+  validated that package.
+- **Public status:** 28 GitHub issues are open. Reporters confirmed on v0.7.7
+  that #43 (RTX 3060 Ti, CUSA00035 01.02), #39 (RX 9070, Chapter 5), #63
+  (RX 9070, Chapters 8/9) and #26 (sun shadows) still reproduce; #36 also has
+  a negative v0.7.7 retest on RX 6700 XT. #47 has an additional black-screen
+  report on RX 560. These failures supersede any earlier “resolved” labels.
+- **Worktree:** local branch `master` is one commit behind `origin/master`;
+  the remote commit is documentation attribution for #69. The worktree has
+  existing local renderer/performance changes and remains dirty. No pull,
+  merge or reset was performed.
+- **Next:** review the complete renderer diff, update/package a separate test
+  build, and request scene-matched retests. Do not close the public issues based
+  on the local smoke runs.
+
 ## 2026-10-22: Remove runtime motion addresses from graphics specialization
 
 - **Diagnosis:** the vertex shader for object motion vectors used Vulkan

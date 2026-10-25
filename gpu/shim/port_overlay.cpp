@@ -84,17 +84,20 @@ float base_scale = 1.0f;
 std::chrono::steady_clock::time_point last_present{};
 float frame_ms_avg = 0.0f;
 
-void SetOpen(bool value) {
-    if (menu_open.exchange(value) == value) {
-        return;
-    }
+void ClearInput() {
     ImGuiIO& io = ImGui::GetIO();
-    // Releases while closed are not forwarded to ImGui. Retire both processed
-    // and queued presses so reopening cannot resume a key repeat or mouse drag.
     io.ClearEventsQueue();
     io.ClearInputKeys();
     io.ClearInputMouse();
     ImGui::ClearActiveID();
+}
+
+void SetOpen(bool value) {
+    if (menu_open.exchange(value) == value) {
+        return;
+    }
+    ClearInput();
+    ImGuiIO& io = ImGui::GetIO();
     io.MouseDrawCursor = value;
     if (value) {
         requested_tab = PortSettings::Get().menu_tab;
@@ -191,6 +194,26 @@ enum class ActiveInput {
     Keyboard,
 };
 static ActiveInput last_active_input = ActiveInput::Default;
+
+ActiveInput GamepadInput(SDL_JoystickID device) {
+    SDL_Gamepad* pad = SDL_GetGamepadFromID(device);
+    const SDL_GamepadType type = pad ? SDL_GetGamepadType(pad) : SDL_GAMEPAD_TYPE_UNKNOWN;
+    return type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5
+               ? ActiveInput::PlayStation : ActiveInput::Xbox;
+}
+
+void SelectInput(ActiveInput input) {
+    if (input == ActiveInput::Keyboard && last_active_input != input) {
+        ImGuiIO& io = ImGui::GetIO();
+        for (int key = ImGuiKey_GamepadStart; key <= ImGuiKey_GamepadRStickDown; ++key) {
+            io.AddKeyAnalogEvent(static_cast<ImGuiKey>(key), false, 0.0f);
+        }
+        if (ImGui::GetCurrentContext()->ActiveIdSource == ImGuiInputSource_Gamepad) {
+            ImGui::ClearActiveID();
+        }
+    }
+    last_active_input = input;
+}
 
 static const char* PadText(const char* playstation, const char* xbox, const char* nintendo, const char* kbm = nullptr) {
     if (last_active_input == ActiveInput::Keyboard && kbm) {
@@ -567,7 +590,8 @@ void Menu() {
     // port: the game's own title (param.sfo), dynamically formatted with active input prompts.
     const std::string_view title = Common::ElfInfo::Instance().Title();
     const std::string heading = std::string(title.empty() ? "The Order: 1886" : title) +
-                                PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)", "  (Insert)");
+                                PadText("  (Insert / R3+L2)", "  (Insert / RS+LT)", "  (Insert / RS+ZL)", "  (Insert)") +
+                                "###port_settings_menu";
     if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -577,7 +601,7 @@ void Menu() {
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) ||
-                         (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) ||
+                         (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) ||
                          ImGui::IsKeyPressed(ImGuiKey_PageDown, false)
                              ? 1
                          : ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ||
@@ -602,6 +626,14 @@ void Menu() {
                 dirty = true;
             }
             if (ImGui::BeginChild("##body", ImVec2(0, -footer))) {
+                const float scroll = ImGui::GetKeyMagnitude2d(ImGuiKey_GamepadRStickLeft,
+                    ImGuiKey_GamepadRStickRight, ImGuiKey_GamepadRStickUp, ImGuiKey_GamepadRStickDown).y;
+                if (last_active_input != ActiveInput::Keyboard && scroll != 0.0f &&
+                    ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                    !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
+                    ImGui::SetScrollY(ImGui::GetScrollY() +
+                        scroll * ImGui::GetTextLineHeightWithSpacing() * 20.0f * io.DeltaTime);
+                }
                 switch (tab) {
                 case 0: ImageTab(); break;
                 case 1: PerformanceTab(); break;
@@ -948,6 +980,16 @@ bool HandleEvent(const SDL_Event& event) {
     if (!initialized) {
         return false;
     }
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+        r3_down = l2_down = false;
+        ClearInput();
+        ImGui::GetIO().AddFocusEvent(false);
+        return false;
+    }
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+        ImGui::GetIO().AddFocusEvent(true);
+        return false;
+    }
     if (choice_active && !menu_open) {
         return HandleChoiceEvent(event);
     }
@@ -958,7 +1000,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
         if (down) {
-            last_active_input = ActiveInput::Keyboard;
+            SelectInput(ActiveInput::Keyboard);
         }
         static const bool capture_key = [] {
             const char* env = std::getenv("THEORDER_FRAME_CAPTURE_KEY");
@@ -995,16 +1037,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
         const bool down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
         if (down) {
-            if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gbutton.which)) {
-                const SDL_GamepadType type = SDL_GetGamepadType(pad);
-                if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
-                    last_active_input = ActiveInput::PlayStation;
-                } else {
-                    last_active_input = ActiveInput::Xbox;
-                }
-            } else {
-                last_active_input = ActiveInput::Xbox;
-            }
+            SelectInput(GamepadInput(event.gbutton.which));
         }
         const u8 button = event.gbutton.button;
         // R3+L2 opens the menu: L3+R3 is left to the game.
@@ -1024,13 +1057,10 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-        if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gaxis.which)) {
-            const SDL_GamepadType type = SDL_GetGamepadType(pad);
-            if (type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
-                last_active_input = ActiveInput::PlayStation;
-            } else {
-                last_active_input = ActiveInput::Xbox;
-            }
+        const bool trigger = event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ||
+                             event.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+        if (std::abs(static_cast<int>(event.gaxis.value)) > (trigger ? 16000 : 8000)) {
+            SelectInput(GamepadInput(event.gaxis.which));
         }
         if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
             const bool down = event.gaxis.value > 16000;
@@ -1041,7 +1071,27 @@ bool HandleEvent(const SDL_Event& event) {
             }
             l2_down = down;
         }
-        return false;
+        if (!is_open) {
+            return false;
+        }
+        ImGuiKey negative = ImGuiKey_None, positive = ImGuiKey_None;
+        switch (event.gaxis.axis) {
+        case SDL_GAMEPAD_AXIS_LEFTX:
+            negative = ImGuiKey_GamepadLStickLeft; positive = ImGuiKey_GamepadLStickRight; break;
+        case SDL_GAMEPAD_AXIS_LEFTY:
+            negative = ImGuiKey_GamepadLStickUp; positive = ImGuiKey_GamepadLStickDown; break;
+        case SDL_GAMEPAD_AXIS_RIGHTX:
+            negative = ImGuiKey_GamepadRStickLeft; positive = ImGuiKey_GamepadRStickRight; break;
+        case SDL_GAMEPAD_AXIS_RIGHTY:
+            negative = ImGuiKey_GamepadRStickUp; positive = ImGuiKey_GamepadRStickDown; break;
+        default: return true;
+        }
+        const float value = static_cast<float>(event.gaxis.value);
+        const float low = std::clamp((-value - 8000.0f) / (32768.0f - 8000.0f), 0.0f, 1.0f);
+        const float high = std::clamp((value - 8000.0f) / (32767.0f - 8000.0f), 0.0f, 1.0f);
+        io.AddKeyAnalogEvent(negative, low > 0.0f, low);
+        io.AddKeyAnalogEvent(positive, high > 0.0f, high);
+        return true;
     }
     case SDL_EVENT_TEXT_INPUT: {
         // Typed characters (Ctrl+click on a slider, a text field): key events alone erase but
@@ -1053,7 +1103,9 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_MOUSE_MOTION: {
-        last_active_input = ActiveInput::Keyboard;
+        if (event.motion.xrel != 0.0f || event.motion.yrel != 0.0f) {
+            SelectInput(ActiveInput::Keyboard);
+        }
         if (!is_open) {
             return false;
         }
@@ -1064,7 +1116,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP: {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            last_active_input = ActiveInput::Keyboard;
+            SelectInput(ActiveInput::Keyboard);
         }
         if (!is_open) {
             return false;
@@ -1078,12 +1130,19 @@ bool HandleEvent(const SDL_Event& event) {
         }
         return true;
     }
-    case SDL_EVENT_MOUSE_WHEEL:
+    case SDL_EVENT_MOUSE_WHEEL: {
+        if (event.wheel.x != 0.0f || event.wheel.y != 0.0f) {
+            SelectInput(ActiveInput::Keyboard);
+        }
         if (!is_open) {
             return false;
         }
-        io.AddMouseWheelEvent(event.wheel.x, event.wheel.y);
+        const float density = PixelDensity(event.wheel.windowID);
+        io.AddMousePosEvent(event.wheel.mouse_x * density, event.wheel.mouse_y * density);
+        const float direction = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+        io.AddMouseWheelEvent(event.wheel.x * direction, event.wheel.y * direction);
         return true;
+    }
     default:
         return false;
     }

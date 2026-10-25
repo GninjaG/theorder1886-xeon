@@ -991,6 +991,13 @@ const GraphicsPipeline* PipelineCache::WaitGraphics(const GraphicsPipelineKey& k
     auto build = it.value();
     {
         PhaseTimer waiting{g_port_compile_wait_ns};
+        static const bool prioritize = [] {
+            const auto* value = std::getenv("THEORDER_VISIBLE_PIPELINE_PRIORITY");
+            return !value || value[0] != '0';
+        }();
+        if (prioritize) {
+            build->job.Prioritize(*compiler);
+        }
         build->job.Wait();
     }
     if (last_lookup_pending && last_pending_key == key) {

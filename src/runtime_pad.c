@@ -218,12 +218,6 @@ static void load_button_maps(void) {
     if (pad || keys) printf("Runtime: pad map: %d gamepad and %d keyboard buttons remapped\n",pad,keys);
 }
 
-/* Mouse look: direct, responsive 1:1 camera response via calibrated velocity window
- * and anti-dead zone lifting (src/mouse_stick.h).
- * - Physical count rate integration (counts/sec) guarantees framerate independence (30/60/120 FPS).
- * - Direct deadzone bypass elevates subtle micro-movements past the engine deadzone (~24/128).
- * - Zero smoothing: instantaneous response with zero drift when the hand stops moving.
- * - Independent horizontal X and vertical Y sensitivity scaling. */
 static void mouse_to_stick(float dx, float dy, float speed_x, float speed_y, int *out_x, int *out_y) {
     const float abs_dx = fabsf(dx);
     const float abs_dy = fabsf(dy);
@@ -261,12 +255,13 @@ static void mouse_to_stick(float dx, float dy, float speed_x, float speed_y, int
     *out_x = (int)lroundf(dir_x * stick_mag);
     *out_y = (int)lroundf(dir_y * stick_mag);
 }
+static struct { uint64_t sampled, elapsed; float dx, dy; int x, y; } mouse_window;
 /* Buttons: left fires (R2), right aims (L2), middle R3, back/forward side buttons L1/R1. */
 static void mouse_input(PadData *d) {
     TheOrderMouse m;
     theordergpu_mouse_take(&m);
     if (!m.captured) {
-        
+        memset(&mouse_window,0,sizeof(mouse_window));
         return;
     }
     static const struct { uint32_t mask, ps; } buttons[]={
@@ -276,11 +271,22 @@ static void mouse_input(PadData *d) {
         if (m.buttons & buttons[i].mask) d->buttons|=buttons[i].ps;
     if (d->buttons & BTN_L2) d->l2=255;
     if (d->buttons & BTN_R2) d->r2=255;
-    int mx=0, my=0;
     float mdy = m.invert_y ? -m.dy : m.dy;
     float sy = m.sens_y > 0.0f ? m.sens_y : m.sensitivity;
-    mouse_to_stick(m.dx, mdy, m.sensitivity, sy, &mx, &my);
-    const int x=d->right_x-128+mx, y=d->right_y-128+my;
+    const uint64_t elapsed=mouse_window.sampled ?
+        (d->timestamp>mouse_window.sampled ? d->timestamp-mouse_window.sampled : 0) : 16667;
+    mouse_window.sampled=d->timestamp;
+    mouse_window.elapsed+=elapsed;
+    mouse_window.dx+=m.dx;
+    mouse_window.dy+=mdy;
+    if (mouse_window.elapsed>=16000) {
+        const float scale=(1000000.0f/60.0f)/(float)mouse_window.elapsed;
+        mouse_to_stick(mouse_window.dx*scale,mouse_window.dy*scale,m.sensitivity,sy,
+                       &mouse_window.x,&mouse_window.y);
+        mouse_window.elapsed=0;
+        mouse_window.dx=mouse_window.dy=0.0f;
+    }
+    const int x=d->right_x-128+mouse_window.x, y=d->right_y-128+mouse_window.y;
     d->right_x=(uint8_t)(128+(x<-128 ? -128 : x>127 ? 127 : x));
     d->right_y=(uint8_t)(128+(y<-128 ? -128 : y>127 ? 127 : y));
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <atomic>
 #include <cstdint>
@@ -51,15 +52,33 @@ public:
     }
     ~AsyncCompiler() { Stop(); }
 
-    bool Submit(std::function<void()> task, bool priority = false) {
+    bool Submit(std::function<void()> task, bool priority = false,
+                const void* identity = nullptr) {
         {
             std::scoped_lock lock{mutex};
             if (stopping || tasks.size() + urgent.size() >= capacity) {
                 return false;
             }
-            (priority ? urgent : tasks).push_back({std::move(task), std::chrono::steady_clock::now()});
+            (priority ? urgent : tasks).push_back(
+                {std::move(task), std::chrono::steady_clock::now(), identity});
         }
         cv.notify_one();
+        return true;
+    }
+    bool Prioritize(const void* identity) {
+        if (!identity) {
+            return false;
+        }
+        std::scoped_lock lock{mutex};
+        const auto found = std::find_if(tasks.begin(), tasks.end(),
+                                       [identity](const Task& task) {
+                                           return task.identity == identity;
+                                       });
+        if (found == tasks.end()) {
+            return false;
+        }
+        urgent.push_back(std::move(*found));
+        tasks.erase(found);
         return true;
     }
     bool HasCapacity() {
@@ -94,6 +113,7 @@ private:
     struct Task {
         std::function<void()> function;
         std::chrono::steady_clock::time_point enqueued;
+        const void* identity;
     };
     std::deque<Task> tasks, urgent;
     static inline thread_local unsigned worker_index = 0;
@@ -114,12 +134,17 @@ public:
         }
         auto task = std::make_shared<std::packaged_task<T()>>(std::forward<F>(function));
         auto completion = task->get_future();
-        if (!compiler.Submit([task] { (*task)(); }, priority)) {
+        if (!compiler.Submit([task] { (*task)(); }, priority, task.get())) {
             return false;
         }
+        task_identity = task;
         future = std::move(completion);
         started = true;
         return true;
+    }
+    bool Prioritize(AsyncCompiler& compiler) const {
+        const auto task = task_identity.lock();
+        return task && compiler.Prioritize(task.get());
     }
     bool Pending() const { return future.valid(); }
     bool Failed() const { return failed; }
@@ -146,6 +171,7 @@ public:
 
 private:
     std::future<T> future;
+    std::weak_ptr<void> task_identity;
     bool started = false;
     bool failed = false;
     std::string error;

@@ -1,5 +1,18 @@
 # Auditoria de estabilidade e priorizacao
 
+> **Atualização de 2026-10-25:** os dados abaixo são um snapshot histórico de
+> 2026-10-20 e não descrevem o worktree/estado público atual. A lista pública
+> agora tem 28 issues abertas; v0.7.7 recebeu retestes negativos para #43, #39,
+> #63, #26 e #36, além de novo relato relacionado a #47. A correção local de
+> cópia color→depth/MSAA ainda não está no pacote publicado e não foi validada
+> nos hardwares reportados. Veja `docs/BACKLOG.md`, `docs/PROGRESS.md` e
+> `docs/GRAPHICS_REGRESSIONS.md` para o estado atual.
+
+O checkout local está um commit atrás de `origin/master`; a diferença remota é
+o commit documental `1d265b8` sobre atribuição de origem (#69). O worktree tem
+mudanças locais rastreadas e arquivos não rastreados; elas foram preservadas.
+Não houve pull, merge ou reset nesta atualização.
+
 Data da consulta: 2026-10-20. Auditoria somente de leitura; a unica mudanca desta tarefa e este documento.
 
 ## Resumo executivo
