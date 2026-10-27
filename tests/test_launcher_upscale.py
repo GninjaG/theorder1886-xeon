@@ -19,7 +19,7 @@ class UpscalerSettingsTest(unittest.TestCase):
         for key in ('fsr1', 'sharpen', 'sharpness', 'rcas', 'rcas_strength'):
             self.assertNotIn(key, launcher.INI_DEFAULTS)
 
-    def test_graphics_page_offers_only_native_backend_output_sizes(self):
+    def test_graphics_page_offers_ultrawide_and_native_output_sizes(self):
         class Page:
             def __init__(self):
                 self.choices = []
@@ -52,11 +52,14 @@ class UpscalerSettingsTest(unittest.TestCase):
                          [('upscaler', 'ini'), ('preset', 'ini'), ('output_res', 'ini')])
         self.assertTrue(page.preserve_unknown)
         self.assertEqual([value for value, _label in page.choices[2][2]],
-                         ['1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160'])
+                         ['1280x720', '1600x900', '1920x1080', '2560x1440', '3440x1440',
+                          '3840x1080', '3840x2160', '5120x1440'])
         self.assertEqual([value for value, _label in launcher.OUTPUTS],
                          ['1280x720', '1600x900', '1920x1080', '2560x1440', '3440x1440',
-                          '3840x2160', '5120x1440'])
-        self.assertIn('post-processing', page.rows[2][2])
+                          '3840x1080', '3840x2160', '5120x1440'])
+        self.assertIn('not the monitor desktop mode', page.rows[2][2])
+        self.assertIn('does not change the desktop mode or guarantee a window resize', page.rows[2][2])
+        self.assertIn('32:9 aspect and 32:9 output are separate', page.rows[2][2])
 
     def test_output_choice_round_trips_without_changing_saved_upscaler(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -66,14 +69,14 @@ class UpscalerSettingsTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {'THEORDER_CONFIG': str(config)}):
                 initial, lines = launcher.load_ini()
                 self.assertEqual(initial['output_res'], '1920x1080')
-                launcher.save_ini({'output_res': '1600x900'}, lines)
+                launcher.save_ini({'output_res': '3840x1080'}, lines)
                 saved, _lines = launcher.load_ini()
-                self.assertEqual(saved['output_res'], '1600x900')
+                self.assertEqual(saved['output_res'], '3840x1080')
                 self.assertEqual(saved['upscaler'], 'fsr4')
                 self.assertEqual(saved['preset'], '3')
                 self.assertEqual(saved['external_runtime_key'], 'keep')
 
-    def test_unavailable_saved_output_is_not_reset_when_the_selector_opens(self):
+    def test_ultrawide_output_is_available_and_selected(self):
         class Variable:
             def __init__(self, value):
                 self.value, self.callback = value, None
@@ -111,12 +114,12 @@ class UpscalerSettingsTest(unittest.TestCase):
             box = app.choice(None, 'output_res', 'ini', launcher.NATIVE_OUTPUTS,
                              var=saved, preserve_unknown=True)
             self.assertEqual(saved.get(), '3440x1440')
-            self.assertEqual(box.current(), -1)
-            self.assertIn('3440x1440', box.label)
-            self.assertEqual(len(box.values), 5)
-            box.current(4)
+            self.assertEqual(box.current(), 4)
+            self.assertIn('3440 × 1440', box.label)
+            self.assertEqual(len(box.values), len(launcher.OUTPUTS))
+            box.current(5)
             box.on_select(None)
-            self.assertEqual(saved.get(), '3840x2160')
+            self.assertEqual(saved.get(), '3840x1080')
 
 
 if __name__ == '__main__':

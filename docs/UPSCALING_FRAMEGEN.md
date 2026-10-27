@@ -1,6 +1,6 @@
 # Upscaling, resolution and frame generation
 
-2026-10-22 checkpoint: preserve existing renderer; no unvalidated provider toggle added.
+Updated 2026-10-26. Preserve the existing renderer; do not infer image quality or performance from a setting alone.
 
 The consolidated history includes #59 (native output settings) and #61 (explicit
 DLSS retry), plus their launcher/settings/support regression tests.
@@ -19,6 +19,39 @@ of successful GPU execution, HUD correctness or image quality in gameplay.
 Resolution meanings must stay separate: guest scene/internal targets, temporal
 input, temporal output/UI, window and swapchain extent. Do not infer internal
 resolution from window size.
+
+The output selector sets the host render/presentation target, not the monitor's
+desktop mode. At launch it also supplies the requested window size; changing it
+in-game does not change the desktop mode and does not guarantee that the window
+is resized. The upscaler preset determines internal scene raster size when a
+temporal upscaler is active; Native AA (1.0x) does not reduce that size. With
+upscaling off, the scene target follows the selected output target. The in-game
+Image tab reports render resolution, target output, window size and active
+upscaler separately. Unsupported providers visibly fall back (for example FSR
+4 to FSR 3.1 when device/assets are unsupported); check the active provider
+before judging a selection as placebo.
+
+Issue #35 reports that the internal resolution and FSR 4.1.1 looked unchanged
+beside an external PS5 4K patch comparison. This is a real visual report, not
+yet proof of a no-op: the post contains no exact game SKU/PC GPU/build identity,
+and the selected output, preset, and active fallback must be read separately.
+The host output selector is not the external guest-resolution patch and does
+not claim a 4K guest framebuffer. A matched render/output capture and an
+Image-tab report are needed before claiming internal 4K or an upscale-quality
+difference.
+
+The Windows launcher and overlay now list all eight output sizes supported by
+the C++ runtime, including 3440x1440, 3840x1080 and 5120x1440. Existing numeric
+indices remain stable; new modes were appended. Synthetic tests cover 3440x1440
+and 3840x1080 settings round-trips and selector mapping. This proves the chosen
+target reaches the runtime, not correct framing, HUD or image quality on an
+ultrawide monitor. Issue #27 remains open for the reporter's gameplay retest.
+
+Warm-up controls are wired to both relevant paths: background warm-up controls
+the on-demand recent-session list and full-cache background loading; the
+parallel option selects one or multiple background workers. Unit tests cover
+the mapping and worker policy. No performance gain is claimed without a matched
+first-visit/warm-cache gameplay comparison.
 
 ## 1600x900 output checkpoint
 

@@ -57,7 +57,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 UI_FONT, MONO_FONT, SERIF_FONT = 'Segoe UI', 'Consolas', 'Georgia'
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '0.7.8'
+VERSION = '0.7.9'
 REPOSITORY_PAGE = 'https://github.com/mateussmeneses/theorder1886-port'
 KOFI_PAGE = 'https://ko-fi.com/mateusmeneses'
 RELEASES_API = 'https://api.github.com/repos/mateussmeneses/theorder1886-port/releases/latest'
@@ -344,10 +344,10 @@ PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('B
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1600x900', ('1600 × 900',)),
            ('1920x1080', ('1920 × 1080',)),
            ('2560x1440', ('2560 × 1440',)), ('3440x1440', ('3440 × 1440 (21:9 Ultrawide)',)),
+           ('3840x1080', ('3840 × 1080 (32:9 Ultrawide)',)),
            ('3840x2160', ('3840 × 2160 (4K)',)), ('5120x1440', ('5120 × 1440 (32:9 Super Ultrawide)',))]
-# Offer the five 16:9 sizes here; keep the separate ultrawide/aspect choices in OUTPUTS.
-NATIVE_OUTPUTS = [option for option in OUTPUTS
-                  if option[0] in ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')]
+# Every output mode supported by PortSettings::OutputWidths is selectable in the launcher.
+NATIVE_OUTPUTS = OUTPUTS
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
 # The PS4 system language ids (sceSystemServiceParamGetInt LANG): the game shows the ones its
@@ -743,6 +743,7 @@ def game_environment(s):
     if gpu_id.isdigit():
         env['THEORDER_GPU_ID'] = gpu_id
     env['THEORDER_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
+    env['THEORDER_HOT_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
     env['THEORDER_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
     env['THEORDER_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'
     env['THEORDER_PERF_DIAG'] = '1' if s.get('perf_diag', False) else '0'
@@ -1363,16 +1364,22 @@ class Launcher:
         self.build_display(f)
         self.section(f, _('Upscaling (DLSS / FSR / TAA)', 'Апскейлинг'))
         self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
-                 _('DLSS (NVIDIA RTX), FSR 3.1, FSR 4 or TAA. Renders at lower resolution and scales up to output for higher FPS.',
-                   'DLSS, FSR 3.1, FSR 4 или TAA. Рендерит в меньшем разрешении для повышения FPS.'), key='upscaler')
+                                 _('DLSS, FSR 3.1/4 or TAA. Unsupported providers fall back to FSR 3.1; check the in-game '
+                                     'Active upscaler and Render resolution rows. Native AA (1.0x) does not reduce render resolution.',
+                                     'DLSS, FSR 3.1/4 или TAA. При отсутствии поддержки используется FSR 3.1; активный апскейлер '
+                                     'и разрешение рендера показаны в игровом меню.'), key='upscaler')
         self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
                  _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
                    'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
         self.section(f, _('Output resolution', 'Разрешение вывода'))
         self.row(f, _('Output resolution', 'Разрешение вывода'),
                  self.choice(f, 'output_res', 'ini', NATIVE_OUTPUTS, preserve_unknown=True),
-                 _('With upscaling off, the 3D scene and HUD use this output size. 4K costs more GPU time and memory; some game post-processing may stay at its original resolution.',
-                   'Без апскейлинга 3D-сцена и интерфейс используют это разрешение. 4K требует больше ресурсов видеокарты и памяти; часть постобработки игры может остаться в исходном разрешении.'))
+                                 _('Host render/output target, not the monitor desktop mode. On launch the window requests this size; '
+                                     'changing it in-game does not change the desktop mode or guarantee a window resize. Check Render '
+                                     'resolution and Window size in the in-game Image tab. 32:9 aspect and 32:9 output are separate.',
+                                     'Размер целевого рендера/вывода, а не режим монитора. При запуске окно запрашивает этот размер; '
+                                     'изменение в игре не меняет режим рабочего стола и не гарантирует изменение окна. Проверяйте '
+                                     'разрешение рендера и окна в игровом меню. Пропорция 32:9 и разрешение 32:9 задаются отдельно.'))
         self.add_tab_reset_bar(f, 'graphics')
 
     def build_display(self, f):
@@ -1406,14 +1413,16 @@ class Launcher:
         self.check(f, 'pipeline_binary_cache', 'app', _('Use pipeline binary cache (A/B test)'),
                    _('Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. '
                      'Takes effect on the next launch; saved caches are preserved.'))
-        self.check(f, 'background_warmup', 'app', _('Load shader cache in the background'),
-                   _('The game opens at once and the saved shaders load while you play; a small note in the '
-                     'corner shows the progress. Switch it off to wait on the loading screen instead.'))
+        self.check(f, 'background_warmup', 'app', _('Warm cached pipelines in the background'),
+                                     _('On-demand mode warms pipelines from recent sessions while you play. With the full cache, '
+                                         'this selects background loading instead of a loading screen. Off stops background warm-up; '
+                                         'new pipelines still compile when needed.'))
         self.check(f, 'async_shaders', 'ini', _('Compile new shaders in the background'),
                    _('Fewer stutters in new areas: the game keeps running while new shaders compile. An object '
                      'or effect may appear a moment later. Switch it off if something stays missing.'))
-        self.check(f, 'parallel_warmup', 'app', _('Fast shader cache loading (parallel)'),
-                   _('Loading screen only: builds the cached pipelines on several CPU threads.'))
+        self.check(f, 'parallel_warmup', 'app', _('Parallel pipeline warm-up'),
+                                     _('Uses several workers for background or loading-screen cache builds. Off uses one worker '
+                                         'and may take longer.'))
         self.section(f, _('GPU data'))
         gpus = list_gpus()
         cards = [('', ('Automatic',))] + [(row[0], (row[1],)) for row in gpus]

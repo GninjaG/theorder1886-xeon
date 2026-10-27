@@ -1381,6 +1381,11 @@ struct PipelineCache::BackgroundWarmup {
 namespace {
 // Pipelines kept in the list: about what a few chapters use (~650 on the London rooftop).
 constexpr size_t HotListMax = 2000;
+
+u32 BackgroundWarmupThreads(u32 cores) {
+    const char* parallel = std::getenv("THEORDER_PARALLEL_WARMUP");
+    return BackgroundWarmupThreadCount(cores, !parallel || *parallel != '0');
+}
 } // namespace
 
 void PipelineCache::StartHotWarmUp() {
@@ -1429,7 +1434,7 @@ void PipelineCache::StartHotWarmUp() {
     background = new BackgroundWarmup;
     auto& warm = *background;
     warm.started = std::chrono::steady_clock::now();
-    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    warm.threads = BackgroundWarmupThreads(std::max(1u, std::thread::hardware_concurrency()));
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     warm.total = u32(keys.size());
     // Most recent first: the scene the last session ended in is likely the next one's start.
@@ -1480,7 +1485,7 @@ bool PipelineCache::StartBackgroundWarmUp() {
     background = new BackgroundWarmup;
     auto& warm = *background;
     warm.started = std::chrono::steady_clock::now();
-    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    warm.threads = BackgroundWarmupThreads(std::max(1u, std::thread::hardware_concurrency()));
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     // The first job reads the whole store; with one thread the builds queue behind it.
     warm.pool->Push([this, &warm] {

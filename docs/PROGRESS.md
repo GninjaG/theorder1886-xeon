@@ -2,6 +2,59 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-27: v0.7.9 release candidate validated
+
+- **Output targets:** launcher and in-game selector now expose all eight runtime
+  output sizes, including 3440x1440 and the reporter's 3840x1080. The output
+  table appends new indices; old preset-diagnostic indices remain stable. The
+  UI distinguishes host output/window target from monitor desktop mode, internal
+  render raster and aspect ratio.
+- **Warm-up:** background toggle gates recent-session hot-list work on the
+  on-demand path; parallel toggle now chooses one versus multiple background
+  workers. Unit tests cover settings round-trip, launcher mapping and thread
+  policy. No performance gain is claimed without a matched scene A/B.
+- **Upscaler placebo review:** FSR 3.1, FSR 4/4.1.1, TAA and DLSS reach separate
+  code paths, with capability/provider fallback visible. Native AA 1.0x is not
+  spatial upscaling. Issue #35's PS5 comparison remains unverified without the
+  exact PC SKU/GPU/build and matched render/output captures.
+- **Validation:** Windows CLANG64 build, all 48 C/C++ suites and 316 Python tests
+  (39 skipped) pass. ZIP CRC and privacy checks pass; launcher is v0.7.9 and
+  packaged runtime code matches the validated build. ZIP SHA-256:
+  `0358f98cd0a9d7686b332cf1b6d2e961e799b22cc2eef8247026da9e4ae8c2ba`.
+- **Limits:** no ultrawide monitor or PS4 image reference was available. Issues
+  #27 and #35 remain open for visual confirmation. This release claims no
+  stutter reduction, internal 4K rendering, FSR quality parity, or new PS4
+  graphical parity. No new release has been published yet.
+
+## 2026-10-26: stability-first audit of ultrawide, warm-up and upscalers
+
+- **#27 resolution report:** `3440x1440` was offered by the launcher but rejected
+  by the C++ settings parser; the reporter's `3840x1080` output was missing from
+  both selectors. Both modes are now appended to the runtime table (old numeric
+  indices preserved) and exposed in the launcher and in-game overlay. Synthetic
+  tests cover parsing, persistence, selector mapping and launcher save. This
+  does not validate HUD/framing/image quality on a 32:9 display; keep #27 open.
+- **Placebo audit:** issue #35 does contain a report that internal resolution and
+  FSR 4.1.1 looked unchanged beside a PS5 4K patch. The output selector is the
+  host/window target; internal scene raster is separately controlled by the
+  temporal preset and shown in the in-game Image status. Native AA 1.0x is not
+  spatial upscaling. FSR 3.1, FSR 4/4.1.1, TAA and DLSS have separate dispatch
+  paths; unsupported providers visibly fall back to FSR 3.1. The report still
+  needs SKU/GPU/build identity and matched source/output captures to distinguish
+  fallback, Native AA, and a scene-target scaling defect. Do not label #35 fixed.
+- **Warm-up controls:** `background_warmup` now gates recent-session hot-list
+  warm-up in on-demand mode as well as full-cache background loading.
+  `parallel_warmup` now selects one or multiple workers in both background
+  paths. Unit tests cover launcher environment mapping and worker policy; no FPS
+  improvement is claimed without a matched gameplay A/B.
+- **Reuse review:** TOport/shadPS4 patterns were compared, but game-hash-specific
+  face, aim, post-pass and resolution patches were not copied without matching
+  evidence. Stability/per-frame timing and PS4-matched visual fidelity remain
+  the primary work; toggles are not a substitute for scene captures.
+- **Validation:** Windows build, 48 C/C++ suites and 316 Python tests (39 skips)
+  pass. Physical ultrawide, provider image-quality and stutter retests remain
+  pending.
+
 ## 2026-10-25: Windows v0.7.8 published
 
 - **Release:** https://github.com/mateussmeneses/theorder1886-port/releases/tag/windows-v0.7.8

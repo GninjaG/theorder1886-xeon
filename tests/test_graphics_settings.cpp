@@ -47,12 +47,14 @@ int main() {
     const auto full_ultrawide = G::PictureRect(5120, 1440, G::AspectValues[4]);
     assert(full_ultrawide.x == 0 && full_ultrawide.y == 0 &&
            full_ultrawide.w == 5120 && full_ultrawide.h == 1440);
-    assert(PortSettings::OutputCount == 6 && PortSettings::OutputDefault == 1);
+    assert(PortSettings::OutputCount == 8 && PortSettings::OutputDefault == 1);
     assert(PortSettings::OutputWidths[0] == 1280 && PortSettings::OutputHeights[0] == 720);
     assert(PortSettings::OutputWidths[1] == 1920 && PortSettings::OutputHeights[1] == 1080);
     assert(PortSettings::OutputWidths[2] == 2560 && PortSettings::OutputHeights[2] == 1440);
     assert(PortSettings::OutputWidths[3] == 3840 && PortSettings::OutputHeights[3] == 2160);
     assert(PortSettings::OutputWidths[4] == 5120 && PortSettings::OutputHeights[4] == 1440);
+    assert(PortSettings::OutputWidths[6] == 3440 && PortSettings::OutputHeights[6] == 1440);
+    assert(PortSettings::OutputWidths[7] == 3840 && PortSettings::OutputHeights[7] == 1080);
     assert(G::ParseEngineFps(240) == 240 && G::ParseEngineFps(90) == 120);
     assert(G::ParseFramesQueued(2) == 2 && G::ParseFramesQueued(0) == 0 && G::ParseFramesQueued(5) == 1);
     assert(G::ParseRcasStrength(100) == 100 && G::ParseRcasStrength(101) == 75 && G::ParseRcasStrength(-1) == 75);
@@ -126,6 +128,26 @@ int main() {
     v.output_res = PortSettings::OutputDefault;
     PortSettings::Load();
     assert(v.aspect == 4 && v.startup_aspect == 4 && v.output_res == 4 && v.startup_output_res == 4);
+
+    {
+        std::ofstream out(path);
+        out << "output_res=3440x1440\n";
+    }
+    PortSettings::Load();
+    assert(v.output_res == 6 && PortSettings::OutputWidths[v.output_res] == 3440 &&
+           PortSettings::OutputHeights[v.output_res] == 1440);
+    PortSettings::Save();
+    assert(Read(path).find("output_res=3440x1440\n") != std::string::npos);
+
+    {
+        std::ofstream out(path);
+        out << "output_res=3840x1080\n";
+    }
+    PortSettings::Load();
+    assert(v.output_res == 7 && PortSettings::OutputWidths[v.output_res] == 3840 &&
+           PortSettings::OutputHeights[v.output_res] == 1080);
+    PortSettings::Save();
+    assert(Read(path).find("output_res=3840x1080\n") != std::string::npos);
 
     {
         std::ofstream out(path);

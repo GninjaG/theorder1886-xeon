@@ -118,6 +118,7 @@ class ControlMapTest(unittest.TestCase):
         self.assertNotIn('THEORDER_PAD_MAP', env)
         self.assertEqual(env['THEORDER_PARALLEL_WARMUP'], '1')
         self.assertEqual(env['THEORDER_BACKGROUND_WARMUP'], '1')
+        self.assertEqual(env['THEORDER_HOT_WARMUP'], '1')
         self.assertEqual(env['THEORDER_PERF_DIAG'], '0')
         self.assertNotIn('THEORDER_FRAME_CAPTURE_KEY', {k for k in env if k not in __import__('os').environ})
         self.assertEqual(launcher.game_environment({**settings, 'frame_capture_key': True})['THEORDER_FRAME_CAPTURE_KEY'], '1')
@@ -129,6 +130,7 @@ class ControlMapTest(unittest.TestCase):
         self.assertNotIn('THEORDER_DRAW_PIPE', old)  # the old free-text field is ignored
         self.assertEqual(launcher.game_environment({**settings, 'parallel_warmup': False})['THEORDER_PARALLEL_WARMUP'], '0')
         self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_BACKGROUND_WARMUP'], '0')
+        self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_HOT_WARMUP'], '0')
 
     def test_temporal_upscaler_stays_off_with_saved_or_inherited_choices(self):
         # When default launcher settings are used, upscaler defaults to off
@@ -616,7 +618,7 @@ class ReleaseVersionTest(unittest.TestCase):
                 self.assertEqual(url, 'https://example.test/release.zip')
 
     def test_the_order_release_version(self):
-        self.assertEqual(launcher.VERSION, '0.7.8')
+        self.assertEqual(launcher.VERSION, '0.7.9')
         self.assertGreater(launcher.version_tuple('windows-v0.7.6'), launcher.version_tuple('0.7.6-rc.1'))
         self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v0.7.6-rc.1'))
         self.assertGreater(launcher.version_tuple('windows-v0.7.6-rc.2'), launcher.version_tuple('0.7.6-rc.1'))

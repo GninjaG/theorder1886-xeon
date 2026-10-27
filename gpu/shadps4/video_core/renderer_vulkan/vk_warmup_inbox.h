@@ -21,6 +21,10 @@ inline unsigned WarmupThreadCount(unsigned cores) {
     return cores <= 4 ? 1u : std::min(cores - 2, 6u);
 }
 
+inline unsigned BackgroundWarmupThreadCount(unsigned cores, bool parallel) {
+    return parallel ? WarmupThreadCount(cores) : 1u;
+}
+
 /// Items made on worker threads, handed to the GPU thread a few at a time so that a frame
 /// never pays for the whole cache at once.
 template <typename T>

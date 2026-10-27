@@ -353,9 +353,10 @@ void ImageTab() {
     if (BeginRows("##upscaling")) {
         static const char* const res_labels[] = {
             "1280 x 720 (720p)", "1600 x 900 (900p)", "1920 x 1080 (1080p)", "2560 x 1440 (1440p)",
+            "3440 x 1440 (21:9 Ultrawide)", "3840 x 1080 (32:9 Ultrawide)",
             "3840 x 2160 (4K)", "5120 x 1440 (32:9 Super Ultrawide)"
         };
-        static const int res_values[] = {0, 5, 1, 2, 3, 4};
+        static const int res_values[] = {0, 5, 1, 2, 6, 7, 3, 4};
         ChoiceRow("Output resolution", s.output_res, res_labels, res_values, PortSettings::OutputCount,
                   "Output render and presentation target size.");
 
