@@ -26,6 +26,7 @@ int main() {
     assert(NeedsFormattedSsboBarrierCacheVersion(values));
     values[0].is_written = false;
     assert(!NeedsFormattedSsboBarrierCacheVersion(values));
+    values[1].is_written = false;
     assert(!NeedsWrittenSsboBarrierCacheVersion(values));
     values[1].is_written = true;
     assert(NeedsWrittenSsboBarrierCacheVersion(values));
