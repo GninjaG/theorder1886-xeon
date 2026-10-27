@@ -29,6 +29,44 @@ int main() {
     static_assert(Reject(186ULL << 20, true, CurrentMaxGuestBytes));
     static_assert(Reject(186ULL << 20, true, LegacyMaxGuestBytes));
 
+    // Real encoded T# boundaries: identical rejection helpers on both paths.
+    using Vulkan::TextureRejectDiag::EarlySharpReason;
+    using Vulkan::TextureRejectDiag::MappingSharpReason;
+    static_assert(EarlySharpReason(0x0fff, false, false, 1, false, false) ==
+                  Reason::LowAddress);
+    static_assert(EarlySharpReason(0x10000, false, false, 1, false, false) ==
+                  Reason::Count);
+    static_assert(EarlySharpReason(0x10000, true, false, 1, false, false) ==
+                  Reason::InvalidDataFormat);
+    static_assert(EarlySharpReason(0x10000, false, true, 1, false, false) ==
+                  Reason::FmaskDescriptor);
+    static_assert(EarlySharpReason(0x10000, false, false, 2049, false, false) ==
+                  Reason::ExcessiveLayers);
+    static_assert(EarlySharpReason(0x10000, false, false, 2048, false, false) ==
+                  Reason::Count);
+    static_assert(EarlySharpReason(0x10000, false, false, 1, true, false) ==
+                  Reason::InvalidArrayRange);
+    static_assert(EarlySharpReason(0x10000, false, false, 1, false, true) ==
+                  Reason::InvalidMipRange);
+    static_assert(MappingSharpReason(false, true, 1, 1, 1) ==
+                  Reason::UnmappedAddress);
+    static_assert(MappingSharpReason(true, false, 1, 1, 1) ==
+                  Reason::UnsupportedFormat);
+    static_assert(MappingSharpReason(true, true, 8191, 8191, 1) ==
+                  Reason::Count);
+    static_assert(MappingSharpReason(true, true, 8192, 1, 1) ==
+                  Reason::ExcessiveDimensions);
+    static_assert(MappingSharpReason(true, true, 1, 8192, 1) ==
+                  Reason::ExcessiveDimensions);
+    static_assert(MappingSharpReason(true, true, 1, 1, 2049) ==
+                  Reason::ExcessiveLayers);
+    static_assert(MappingSharpReason(true, true, 8191, 8191, 5) ==
+                  Reason::ExcessiveTexels);
+    static_assert(MappingSharpReason(true, true, 2048, 1, 17) ==
+                  Reason::ExcessiveLayerDimensions);
+    static_assert(MappingSharpReason(true, true, 2047, 2047, 16) ==
+                  Reason::Count);
+
     static_assert(Vulkan::TextureRejectDiag::ReasonCount == 13);
     static_assert(!ShouldLog(0));
     static_assert(ShouldLog(1) && ShouldLog(8));

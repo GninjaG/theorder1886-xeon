@@ -73,6 +73,28 @@ constexpr Reason MappingReason(bool unmapped, bool unsupported_format,
     return excessive_layer_dimensions ? Reason::ExcessiveLayerDimensions : Reason::Count;
 }
 
+// Shared guards for the asynchronous image-binding helper and normal Vulkan path.
+// Width/height are the PS4 descriptor's encoded value minus one.
+constexpr Reason EarlySharpReason(std::uint64_t address, bool invalid_format, bool is_fmask,
+                                  std::uint64_t layers, bool invalid_array,
+                                  bool invalid_mip) noexcept {
+    return EarlyReason(address < 0x10000ULL, invalid_format, is_fmask,
+                       layers > 2048, invalid_array, invalid_mip);
+}
+
+constexpr Reason MappingSharpReason(bool address_mapped, bool format_known,
+                                    std::uint64_t width_minus_one,
+                                    std::uint64_t height_minus_one,
+                                    std::uint64_t layers) noexcept {
+    return MappingReason(!address_mapped, !format_known,
+                         width_minus_one >= 8192 || height_minus_one >= 8192,
+                         layers > 2048,
+                         width_minus_one * height_minus_one * layers >
+                             256ULL * 1024 * 1024,
+                         layers > 16 &&
+                             (width_minus_one >= 2048 || height_minus_one >= 2048));
+}
+
 constexpr bool ShouldLog(std::uint64_t count) noexcept {
     // First eight, then exponentially sparse. 8 + log2(count) per reason,
     // rather than thousands of logs per frame during broken rendering.

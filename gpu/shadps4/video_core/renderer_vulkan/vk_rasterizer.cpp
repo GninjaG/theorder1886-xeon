@@ -1864,18 +1864,31 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
-            AmdGpu::IsFmask(data_fmt) ||
-            !memory->IsValidGpuMapping(tsharp.Address(), 1) ||
-            !IsKnownFormat(data_fmt, num_fmt)) {
-            continue; // null descriptor
+        const auto early_reason = TextureRejectDiag::EarlySharpReason(
+            tsharp.Address(), data_fmt == AmdGpu::DataFormat::FormatInvalid,
+            AmdGpu::IsFmask(data_fmt), tsharp.NumLayers(),
+            tsharp.last_array < tsharp.base_array,
+            tsharp.base_level > tsharp.last_level);
+        if (early_reason != TextureRejectDiag::Reason::Count) {
+            continue; // same null-descriptor decision as BindTextures
+        }
+        const auto mapping_reason = TextureRejectDiag::MappingSharpReason(
+            memory->IsValidGpuMapping(tsharp.Address(), 1),
+            IsKnownFormat(data_fmt, num_fmt), tsharp.width, tsharp.height, tsharp.NumLayers());
+        if (mapping_reason != TextureRejectDiag::Reason::Count) {
+            continue; // do not construct ImageInfo for invalid geometry or mappings
         }
         const auto& entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        if (!memory->IsValidGpuMapping(entry.desc.info.guest_address, entry.desc.info.guest_size) ||
-            ImplausibleTexture(entry.desc.info)) {
-            continue; // null descriptor, as in BindTextures
+        if (ImplausibleTexture(entry.desc.info)) {
+            continue; // null in both paths
+        }
+        if (!memory->IsValidGpuMapping(entry.desc.info.guest_address, entry.desc.info.guest_size)) {
+            // The main path checks the base address only, so it may still bind
+            // this image. Do not silently substitute a null descriptor on the
+            // helper: defer to the normal GPU thread.
+            return false;
         }
         if (entry.found_generation != generation) {
             return false;
@@ -2733,18 +2746,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                         tsharp.NumLayers(), u32(data_fmt), u32(num_fmt), guest_bytes);
         };
         // port: an FMask T# is read as constants by the shader (resource_patching_pass.cpp).
-        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
-            AmdGpu::IsFmask(data_fmt) ||
-            tsharp.NumLayers() > 2048 || tsharp.last_array < tsharp.base_array ||
-            tsharp.base_level > tsharp.last_level) {
-            if (TextureRejectDiag::Enabled()) {
-                const auto reason = TextureRejectDiag::EarlyReason(
-                    tsharp.Address() < 0x10000ULL, data_fmt == AmdGpu::DataFormat::FormatInvalid,
-                    AmdGpu::IsFmask(data_fmt), tsharp.NumLayers() > 2048,
-                    tsharp.last_array < tsharp.base_array,
-                    tsharp.base_level > tsharp.last_level);
-                trace_null(reason);
-            }
+        const auto early_reason = TextureRejectDiag::EarlySharpReason(
+            tsharp.Address(), data_fmt == AmdGpu::DataFormat::FormatInvalid,
+            AmdGpu::IsFmask(data_fmt), tsharp.NumLayers(),
+            tsharp.last_array < tsharp.base_array,
+            tsharp.base_level > tsharp.last_level);
+        if (early_reason != TextureRejectDiag::Reason::Count) {
+            trace_null(early_reason);
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2781,24 +2789,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         }
 
 
-        if (!memory->IsValidGpuMapping(tsharp.Address(), 1) ||
-            !IsKnownFormat(data_fmt, num_fmt) ||
-            tsharp.width >= 8192 || tsharp.height >= 8192 ||
-            tsharp.NumLayers() > 2048 ||
-            ((u64)tsharp.width * tsharp.height * tsharp.NumLayers() > 256 * 1024 * 1024) ||
-            (tsharp.NumLayers() > 16 && (tsharp.width >= 2048 || tsharp.height >= 2048))) {
-            if (TextureRejectDiag::Enabled()) {
-                const auto reason = TextureRejectDiag::MappingReason(
-                    !memory->IsValidGpuMapping(tsharp.Address(), 1),
-                    !IsKnownFormat(data_fmt, num_fmt),
-                    tsharp.width >= 8192 || tsharp.height >= 8192,
-                    tsharp.NumLayers() > 2048,
-                    u64(tsharp.width) * tsharp.height * tsharp.NumLayers() >
-                        256ULL * 1024 * 1024,
-                    tsharp.NumLayers() > 16 &&
-                        (tsharp.width >= 2048 || tsharp.height >= 2048));
-                trace_null(reason);
-            }
+        const auto mapping_reason = TextureRejectDiag::MappingSharpReason(
+            memory->IsValidGpuMapping(tsharp.Address(), 1),
+            IsKnownFormat(data_fmt, num_fmt), tsharp.width, tsharp.height, tsharp.NumLayers());
+        if (mapping_reason != TextureRejectDiag::Reason::Count) {
+            trace_null(mapping_reason);
             LOG_DEBUG(Render_Vulkan,
                         "Rejecting invalid T# address={:#x}, pitch={}, width={}, height={}, layers={}, "
                         "data_format={}, num_format={}",
