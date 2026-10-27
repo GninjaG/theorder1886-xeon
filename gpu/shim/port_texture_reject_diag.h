@@ -49,6 +49,30 @@ constexpr const char* Name(Reason reason) noexcept {
     return "invalid-reason";
 }
 
+// Pure precedence rules, separately verified with synthetic descriptor flags.
+// Called only after the original renderer decided a texture must bind as null.
+constexpr Reason EarlyReason(bool low_address, bool invalid_format, bool is_fmask,
+                             bool excessive_layers, bool invalid_array,
+                             bool invalid_mip) noexcept {
+    if (low_address) return Reason::LowAddress;
+    if (invalid_format) return Reason::InvalidDataFormat;
+    if (is_fmask) return Reason::FmaskDescriptor;
+    if (excessive_layers) return Reason::ExcessiveLayers;
+    if (invalid_array) return Reason::InvalidArrayRange;
+    return invalid_mip ? Reason::InvalidMipRange : Reason::Count;
+}
+
+constexpr Reason MappingReason(bool unmapped, bool unsupported_format,
+                               bool oversized_dimensions, bool excessive_layers,
+                               bool excessive_texels, bool excessive_layer_dimensions) noexcept {
+    if (unmapped) return Reason::UnmappedAddress;
+    if (unsupported_format) return Reason::UnsupportedFormat;
+    if (oversized_dimensions) return Reason::ExcessiveDimensions;
+    if (excessive_layers) return Reason::ExcessiveLayers;
+    if (excessive_texels) return Reason::ExcessiveTexels;
+    return excessive_layer_dimensions ? Reason::ExcessiveLayerDimensions : Reason::Count;
+}
+
 constexpr bool ShouldLog(std::uint64_t count) noexcept {
     // First eight, then exponentially sparse. 8 + log2(count) per reason,
     // rather than thousands of logs per frame during broken rendering.

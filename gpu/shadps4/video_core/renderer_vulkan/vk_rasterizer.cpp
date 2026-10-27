@@ -2726,13 +2726,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             tsharp.NumLayers() > 2048 || tsharp.last_array < tsharp.base_array ||
             tsharp.base_level > tsharp.last_level) {
             if (TextureRejectDiag::Enabled()) {
-                using R = TextureRejectDiag::Reason;
-                const R reason = tsharp.Address() < 0x10000ULL ? R::LowAddress
-                                 : data_fmt == AmdGpu::DataFormat::FormatInvalid ? R::InvalidDataFormat
-                                 : AmdGpu::IsFmask(data_fmt) ? R::FmaskDescriptor
-                                 : tsharp.NumLayers() > 2048 ? R::ExcessiveLayers
-                                 : tsharp.last_array < tsharp.base_array ? R::InvalidArrayRange
-                                 : R::InvalidMipRange;
+                const auto reason = TextureRejectDiag::EarlyReason(
+                    tsharp.Address() < 0x10000ULL, data_fmt == AmdGpu::DataFormat::FormatInvalid,
+                    AmdGpu::IsFmask(data_fmt), tsharp.NumLayers() > 2048,
+                    tsharp.last_array < tsharp.base_array,
+                    tsharp.base_level > tsharp.last_level);
                 trace_null(reason);
             }
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
@@ -2778,17 +2776,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             ((u64)tsharp.width * tsharp.height * tsharp.NumLayers() > 256 * 1024 * 1024) ||
             (tsharp.NumLayers() > 16 && (tsharp.width >= 2048 || tsharp.height >= 2048))) {
             if (TextureRejectDiag::Enabled()) {
-                using R = TextureRejectDiag::Reason;
-                const R reason = !memory->IsValidGpuMapping(tsharp.Address(), 1)
-                                     ? R::UnmappedAddress
-                                 : !IsKnownFormat(data_fmt, num_fmt) ? R::UnsupportedFormat
-                                 : tsharp.width >= 8192 || tsharp.height >= 8192
-                                     ? R::ExcessiveDimensions
-                                 : tsharp.NumLayers() > 2048 ? R::ExcessiveLayers
-                                 : u64(tsharp.width) * tsharp.height * tsharp.NumLayers() >
-                                           256ULL * 1024 * 1024
-                                     ? R::ExcessiveTexels
-                                 : R::ExcessiveLayerDimensions;
+                const auto reason = TextureRejectDiag::MappingReason(
+                    !memory->IsValidGpuMapping(tsharp.Address(), 1),
+                    !IsKnownFormat(data_fmt, num_fmt),
+                    tsharp.width >= 8192 || tsharp.height >= 8192,
+                    tsharp.NumLayers() > 2048,
+                    u64(tsharp.width) * tsharp.height * tsharp.NumLayers() >
+                        256ULL * 1024 * 1024,
+                    tsharp.NumLayers() > 16 &&
+                        (tsharp.width >= 2048 || tsharp.height >= 2048));
                 trace_null(reason);
             }
             LOG_DEBUG(Render_Vulkan,

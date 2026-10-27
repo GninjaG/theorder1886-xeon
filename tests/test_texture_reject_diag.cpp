@@ -18,6 +18,36 @@ int main() {
     static_assert(ShouldLog(16) && ShouldLog(32));
     static_assert(!ShouldLog(33));
 
+    using Vulkan::TextureRejectDiag::EarlyReason;
+    using Vulkan::TextureRejectDiag::MappingReason;
+    static_assert(EarlyReason(true, true, true, true, true, true) == Reason::LowAddress);
+    static_assert(EarlyReason(false, true, false, false, false, false) ==
+                  Reason::InvalidDataFormat);
+    static_assert(EarlyReason(false, false, true, false, false, false) ==
+                  Reason::FmaskDescriptor);
+    static_assert(EarlyReason(false, false, false, true, false, false) ==
+                  Reason::ExcessiveLayers);
+    static_assert(EarlyReason(false, false, false, false, true, false) ==
+                  Reason::InvalidArrayRange);
+    static_assert(EarlyReason(false, false, false, false, false, true) ==
+                  Reason::InvalidMipRange);
+    static_assert(EarlyReason(false, false, false, false, false, false) ==
+                  Reason::Count);
+    static_assert(MappingReason(true, true, true, true, true, true) ==
+                  Reason::UnmappedAddress);
+    static_assert(MappingReason(false, true, false, false, false, false) ==
+                  Reason::UnsupportedFormat);
+    static_assert(MappingReason(false, false, true, false, false, false) ==
+                  Reason::ExcessiveDimensions);
+    static_assert(MappingReason(false, false, false, true, false, false) ==
+                  Reason::ExcessiveLayers);
+    static_assert(MappingReason(false, false, false, false, true, false) ==
+                  Reason::ExcessiveTexels);
+    static_assert(MappingReason(false, false, false, false, false, true) ==
+                  Reason::ExcessiveLayerDimensions);
+    static_assert(MappingReason(false, false, false, false, false, false) ==
+                  Reason::Count);
+
     Sampler sample;
     assert(sample.Observe(Reason::LowAddress, 0x1234, false) == 0);
     assert(sample.Count(Reason::LowAddress) == 0);
