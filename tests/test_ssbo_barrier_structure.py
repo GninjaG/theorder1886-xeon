@@ -33,6 +33,13 @@ class SsboBarrierStageTests(unittest.TestCase):
                         recompiler.index('LowerBufferFormatToRaw(program)'))
         self.assertIn('if (!profile.needs_ssbo_store_load_barrier)', pass_source)
 
+    def test_targeted_shader_cache_version(self):
+        cache = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
+                 / 'vk_pipeline_serialization.cpp').read_text(encoding='utf-8')
+        self.assertIn('NeedsFormattedSsboBarrierCacheVersion(info.buffers)', cache)
+        self.assertIn('version += 1u << 18;', cache)
+        self.assertIn('ShaderBinaryVersion = 15u', cache)
+
     def test_real_ir_regression_test_is_in_full_native_suite(self):
         cmake = (ROOT / 'gpu/CMakeLists.txt').read_text(encoding='utf-8')
         runner = (ROOT / 'tools/run_tests.sh').read_text(encoding='utf-8')

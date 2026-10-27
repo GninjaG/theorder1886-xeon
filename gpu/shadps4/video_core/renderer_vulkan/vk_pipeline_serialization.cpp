@@ -31,6 +31,7 @@
 #include "bb_face_depth_fix.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
+#include "shader_recompiler/ssbo_barrier_cache_version.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -75,6 +76,11 @@ u32 ShaderBinaryVersionFor(const Shader::Info& info,
     if (spec.runtime_info.hw_stage == Shader::HwStage::Vertex &&
         spec.runtime_info.hw.vs.motion_vectors) {
         version += 1u << 17; // motion addresses moved from specialization constants to push data
+    }
+    if (Shader::NeedsFormattedSsboBarrierCacheVersion(info.buffers)) {
+        // Only formatted writable resource permutations require retranslation.
+        // Keep the remaining SPIR-V/pipeline cache warm after this fix.
+        version += 1u << 18;
     }
     return version;
 }

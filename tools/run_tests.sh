@@ -17,6 +17,14 @@ if ! ninja -C out/gpu "${tests[@]/%/-test}" > out/tests-build.log 2>&1; then
     grep -E 'error:|FAILED' out/tests-build.log | head -20; echo 'test build failed (out/tests-build.log)'; exit 1
 fi
 failed=()
+# Dependency-free shader cache salt test: do not invalidate all warmed shaders.
+if ! clang++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
+    tests/test_ssbo_barrier_cache.cpp -o out/ssbo-barrier-cache-test \
+    > out/test-ssbo-barrier-cache.log 2>&1 ||
+   ! timeout 300 out/ssbo-barrier-cache-test >> out/test-ssbo-barrier-cache.log 2>&1; then
+    failed+=(ssbo-barrier-cache)
+    tail -5 out/test-ssbo-barrier-cache.log
+fi
 # Dependency-free diagnostic sampler test (no Vulkan device or copyrighted assets needed).
 if ! clang++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread -Igpu/shim \
     tests/test_texture_reject_diag.cpp -o out/texture-reject-diag-test \

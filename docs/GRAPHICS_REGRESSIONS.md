@@ -16,6 +16,13 @@ resource binding and conservatively inserts after stores when that binding
 is loaded anywhere in the shader; this does **not** prove a same-address
 dependence and may increase work on affected shaders.
 
+Shader meta cache entries now use a selective per-shader binary version salt
+(`1 << 18`) when the saved resource list contains a formatted and writable
+binding. This avoids globally invalidating warmed SPIR-V for unaffected
+shaders, but the affected subset still recompiles on first use. The salt is
+independent of existing motion/float-atomic revisions and does not change the
+base ShaderBinaryVersion. A dependency-free C++ test covers this predicate.
+
 `tests/test_formatted_ssbo_barriers.cpp` runs the real IR pass on
 formatted/ordinary store/load pairs and verifies exact barrier placement,
 different bindings, disabled profiles, and existing conservative ordering.
