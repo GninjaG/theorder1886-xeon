@@ -1,0 +1,32 @@
+name: Portable game folder discovery
+
+on:
+  pull_request:
+    paths:
+      - 'run.py'
+      - 'tests/test_run_isa.py'
+      - '.github/workflows/portable-game-folder.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'run.py'
+      - 'tests/test_run_isa.py'
+      - '.github/workflows/portable-game-folder.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  portable-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test game-folder selection without installed game
+        env:
+          PYTHONPATH: tests
+        run: |
+          python -m unittest -v \
+            test_run_isa.RunIsaTests.test_game_folder_selection_never_uses_private_developer_fallback

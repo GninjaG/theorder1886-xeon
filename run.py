@@ -113,6 +113,21 @@ def get_env(env, key, default=None):
     return env.get(f'THEORDER_{key}', default)
 
 
+
+def select_game_folder(env, port_root=None):
+    """Prefer the user-configured game, then the neighboring CUSA00035.
+
+    Never probe a developer's home directory. Preserve the caller's explicit
+    path for the eventual missing-eboot error if neither candidate is usable.
+    """
+    root = PORT if port_root is None else Path(port_root)
+    configured = get_env(env, 'GAME_DIR')
+    fallback = root.parent / 'CUSA00035'
+    for candidate in (configured, fallback):
+        if candidate and (Path(candidate) / 'eboot.bin').is_file():
+            return Path(candidate)
+    return Path(configured) if configured else fallback
+
 def find_executable(name):
     """bin/ (packaged), else out/ (built with build.sh)."""
     for candidate in (PORT / 'bin' / name, PORT / 'out' / name):
@@ -320,18 +335,7 @@ def main():
              'check that its DLLs match the executable and the CLANG64 toolchain.')
     missing = parse_cpu_features(features.stdout)
 
-    candidates = [
-        get_env(env, 'GAME_DIR'),
-        r'C:\Users\Mateus\Downloads\games\CUSA00035',
-        PORT.parent / 'CUSA00035',
-    ]
-    game = None
-    for c in candidates:
-        if c and (Path(c) / 'eboot.bin').is_file():
-            game = Path(c)
-            break
-    if not game:
-        game = Path(get_env(env, 'GAME_DIR', PORT.parent / 'CUSA00035'))
+    game = select_game_folder(env)
     if not (game / 'eboot.bin').is_file():
         fail(f'No eboot.bin in {game} (set THEORDER_GAME_DIR).')
     update_view = None
