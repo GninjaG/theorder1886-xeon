@@ -1,50 +1,79 @@
-name: Game won't launch / crashes on startup
-description: Black screen, instant close, "prepare failed", param.sfo errors, etc.
+name: Game won't launch / Jogo não inicia
+description: Startup crash, blank screen at boot, missing game files or preparation failure
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Most launch failures come from an incomplete or misplaced game dump (missing `param.sfo`,
-        wrong update version, wrong folder selected). Check the README's setup section before
-        filing, it covers the folder layout the launcher expects.
-
+        Confirm your selected game folder contains eboot.bin, sce_sys and sce_module.
+        Never upload copyrighted game files. Redact private paths from logs.
+        If audio and UI render but the scene is black, describe that explicitly.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Crash or freeze
+        - Launcher or installation
+        - Graphics or visual glitch
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
       label: Port version
-      placeholder: v2.1.7
+      placeholder: windows-v0.7.9
     validations:
       required: true
-
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - SteamOS
+    validations:
+      required: true
   - type: input
     id: game_version
     attributes:
       label: Game build / update version
-      description: e.g. 01.00, 01.02, region (CUSA00035, CUSA00070, CUSA00076...)
+      placeholder: CUSA00035 01.02
     validations:
       required: true
-
-  - type: textarea
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      placeholder: RTX 3060 Ti, driver version
+    validations:
+      required: true
+  - type: input
     id: folder
     attributes:
-      label: Selected game folder
-      description: Screenshot of the folder you pointed the launcher at, showing eboot.bin, sce_sys and sce_module.
+      label: Game folder status (no private paths)
+      description: Are eboot.bin, sce_sys and sce_module present?
     validations:
       required: true
-
   - type: textarea
-    id: error
+    id: behavior
     attributes:
-      label: Exact error message
-      description: Copy the full text shown by the launcher or the game window, don't paraphrase it.
+      label: Exact failure or message
+      description: Does the launcher close? Blank window? Audio? Error code?
     validations:
       required: true
-
   - type: textarea
-    id: log
+    id: repro
     attributes:
-      label: user/last_run.log
-      description: Attach the file from the port's folder.
+      label: Steps to reproduce
     validations:
       required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log / diagnostic report
+      description: Attach redacted user/last_run.log or Export Bug Report ZIP
+    validations:
+      required: false

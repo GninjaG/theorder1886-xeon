@@ -1,68 +1,125 @@
-name: Bug report
-description: Visual glitch, crash, audio issue, or anything that doesn't behave as expected
+name: Bug report / Relato de bug
+description: Report graphics, performance, gameplay, controls, audio or stability problems
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Before opening: search existing issues for your GPU/error first, it may already be tracked.
-
-  - type: input
-    id: version
+        Search existing issues first. Include the last working version if you know it.
+        Attach a redacted last_run.log or use Export Bug Report in the launcher.
+        Do not upload game dumps, saves, personal file paths or access tokens.
+  - type: dropdown
+    id: category
     attributes:
-      label: Port version
-      description: Shown in the launcher title bar (e.g. v2.1.7)
-      placeholder: v2.1.7
+      label: Category
+      options:
+        - Graphics or visual glitch
+        - Performance (FPS, stutter, CPU/GPU/RAM)
+        - Crash or freeze
+        - Launcher or installation
+        - Controls or input
+        - Audio or subtitles
+        - Gameplay or progression
+        - Save or load
+        - Hardware or platform compatibility
     validations:
       required: true
-
+  - type: input
+    id: port_version
+    attributes:
+      label: Port version
+      description: Exact release tag and the last working version if known
+      placeholder: windows-v0.7.9 (worked in windows-v0.6.1)
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - SteamOS
+    validations:
+      required: true
+  - type: input
+    id: game_version
+    attributes:
+      label: Game build / update version
+      description: CUSA, update and eboot SHA-256 if known (do not upload the executable)
+      placeholder: CUSA00035 01.02
+    validations:
+      required: true
   - type: input
     id: gpu
     attributes:
       label: GPU and driver version
-      placeholder: "RX 6600, Adrenalin 26.8.1"
+      placeholder: RTX 3060 Ti, driver 621.xx
     validations:
       required: true
-
   - type: input
     id: cpu
     attributes:
       label: CPU
-      placeholder: "Ryzen 7 5700X"
+      placeholder: Intel Core i5-9600K
     validations:
       required: true
-
+  - type: input
+    id: checkpoint
+    attributes:
+      label: Chapter / checkpoint / scene
+      placeholder: Chapter 8, checkpoint name; or main menu
+    validations:
+      required: true
+  - type: input
+    id: rendering
+    attributes:
+      label: Rendering configuration
+      description: FPS patch, output resolution, aspect, active upscaler, preset, MSAA
+      placeholder: 1080p, 16:9, 30 FPS, FSR off, MSAA on
+    validations:
+      required: true
+  - type: dropdown
+    id: cache
+    attributes:
+      label: When does the problem happen?
+      options:
+        - First visit and warm revisit
+        - First visit only
+        - Warm revisit only
+        - Cannot determine
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:
-      label: What happened
-      description: What you expected vs what actually happened
+      label: What happened, and what should happen?
+      description: Describe actual versus expected and any known last-good release
     validations:
       required: true
-
   - type: textarea
     id: repro
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1.
-        2.
-        3.
+        1. Start the game.
+        2. Load chapter/checkpoint.
+        3. Move camera to ...
+        4. Observe ...
     validations:
       required: true
-
   - type: textarea
-    id: log
+    id: logs
     attributes:
-      label: user/last_run.log
-      description: Attach the file from the port's folder (drag and drop it here). Required for crashes, black screens, graphics glitches and performance issues.
+      label: Log / diagnostic report
+      description: Attach redacted user/last_run.log or Export Bug Report ZIP
     validations:
       required: false
-
   - type: textarea
-    id: screenshots
+    id: captures
     attributes:
-      label: Screenshots or video
-      description: Especially for visual glitches, attach the raw in-game capture, not a photo of the screen when possible.
+      label: Screenshots, recording and raw frame-time trace
+      description: Matching camera captures for graphics or raw frame times for stutters
     validations:
       required: false
