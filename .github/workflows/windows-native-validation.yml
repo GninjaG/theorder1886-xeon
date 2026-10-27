@@ -83,6 +83,7 @@ jobs:
       - name: Build port for Windows (no game data)
         run: |
           set -euo pipefail
+          mkdir -p out
           echo "Native build begins; verbose shell trace enabled for unexpected exit codes"
           if ! bash -x build.sh > out/ci-build-trace.log 2>&1; then
             echo "::error::build.sh failed; last shell commands:"
