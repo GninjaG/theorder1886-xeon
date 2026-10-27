@@ -27,7 +27,12 @@ MINGW*|MSYS*)
         tail -40 out/gpu-build.log >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
-    cp out/gpu/theorder-probe.exe out/gpu/theorder-gpu-capabilities.exe out/gpu/theorder-play.exe out/
+    # Some clean CLANG64 CI images do not expose a working MSYS2 cp executable.
+    # CMake is already a required tool and copies these Windows binaries reliably.
+    for exe in theorder-probe.exe theorder-gpu-capabilities.exe theorder-play.exe; do
+        [[ -s "out/gpu/$exe" ]] || { echo "Missing built executable: out/gpu/$exe" >&2; exit 1; }
+        cmake -E copy_if_different "out/gpu/$exe" "out/$exe"
+    done
     # Loaded instead of FFmpeg's real librsvg, which brings GIO in (packaging/windows/rsvg_stub.c).
     clang -shared -O2 -Wall -Wextra -Werror packaging/windows/rsvg_stub.c -o out/librsvg-2-2.dll
     echo "Built $PWD/out/theorder-probe.exe"
