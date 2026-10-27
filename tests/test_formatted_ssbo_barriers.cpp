@@ -26,10 +26,18 @@ static std::vector<Opcode> Apply(Opcode write, Opcode read, bool same_binding,
     const Value addr{std::uint32_t{0}};
     const Value payload{1.0f};
     const auto append_store = [&] {
-        block.AppendNewInst(write, {write_binding, addr, payload});
+        if (write == Opcode::BufferAtomicIAdd32) {
+            block.AppendNewInst(write, {write_binding, addr, Value{std::uint32_t{1}}});
+        } else {
+            block.AppendNewInst(write, {write_binding, addr, payload});
+        }
     };
     const auto append_load = [&] {
-        block.AppendNewInst(read, {read_binding, addr});
+        if (read == Opcode::BufferAtomicIAdd32) {
+            block.AppendNewInst(read, {read_binding, addr, Value{std::uint32_t{1}}});
+        } else {
+            block.AppendNewInst(read, {read_binding, addr});
+        }
     };
     if (store_first) {
         append_store();
@@ -63,6 +71,21 @@ int main() {
             std::vector<Opcode>{raw_write, barrier, formatted_read}));
     assert((Apply(raw_write, raw_read, true, true) ==
             std::vector<Opcode>{raw_write, barrier, raw_read}));
+    const auto atomic = Opcode::BufferAtomicIAdd32;
+    // Atomic read-modify-write must be ordered both before later loads and
+    // after earlier stores on the same binding.
+    assert((Apply(atomic, raw_read, true, true) ==
+            std::vector<Opcode>{atomic, barrier, raw_read}));
+    assert((Apply(raw_write, atomic, true, true) ==
+            std::vector<Opcode>{raw_write, barrier, atomic, barrier}));
+    // Two standalone atomic RMWs need no additional non-atomic coherence
+    // barrier. The pass does not try to replace the atomicity guarantee.
+    assert((Apply(atomic, atomic, true, true) ==
+            std::vector<Opcode>{atomic, atomic}));
+    assert((Apply(atomic, raw_read, false, true) ==
+            std::vector<Opcode>{atomic, raw_read}));
+    assert((Apply(atomic, raw_read, true, false) ==
+            std::vector<Opcode>{atomic, raw_read}));
     // Distinct bindings are unrelated and never gain the barrier.
     assert((Apply(formatted_write, formatted_read, false, true) ==
             std::vector<Opcode>{formatted_write, formatted_read}));
