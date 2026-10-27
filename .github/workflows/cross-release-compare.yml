@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'tools/regression_report.py'
+      - 'tools/batch_runs.py'
       - 'tests/test_regression_harness.py'
       - 'docs/CROSS_RELEASE_COMPARISON.md'
       - '.github/workflows/cross-release-compare.yml'
@@ -11,6 +12,7 @@ on:
     branches: [master]
     paths:
       - 'tools/regression_report.py'
+      - 'tools/batch_runs.py'
       - 'tests/test_regression_harness.py'
       - 'docs/CROSS_RELEASE_COMPARISON.md'
       - '.github/workflows/cross-release-compare.yml'
@@ -31,4 +33,5 @@ jobs:
           PYTHONPATH: tests
         run: |
           python -m unittest -v \
-            test_regression_harness.RegressionReportTest.test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames
+            test_regression_harness.RegressionReportTest.test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames \
+            test_regression_harness.RegressionReportTest.test_batch_runner_portable_default_and_redacted_env
