@@ -56,12 +56,11 @@ class SsboBarrierStageTests(unittest.TestCase):
     def test_every_shader_meta_writer_uses_the_active_profile_gate(self):
         source = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
                   / 'vk_pipeline_cache.cpp').read_text(encoding='utf-8')
-        # Three paths publish SPIR-V metadata: async completion, first
-        # synchronous compilation and a later new specialization.
-        calls = re.findall(r'\\bRegisterShaderMeta\\s*\\((.*?)\\);', source, re.S)
+        # All three paths must serialize the active GPU profile.
+        calls = re.findall(r'\bRegisterShaderMeta\s*\((.*?)\);', source, re.S)
         self.assertEqual(len(calls), 3)
         for call in calls:
-            self.assertRegex(call, r',\\s*profile\\.needs_ssbo_store_load_barrier\\s*
+            self.assertRegex(call, r',\s*profile\.needs_ssbo_store_load_barrier\s*
         barrier = (ROOT / 'gpu/shadps4/shader_recompiler/ir/passes'
                    / 'insert_ssbo_store_load_barrier.cpp').read_text(encoding='utf-8')
         self.assertIn('#include "shader_recompiler/ir/passes/resource_pass.h"', barrier)
