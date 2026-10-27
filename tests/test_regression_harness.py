@@ -253,6 +253,60 @@ Fault: access violation at guest offset 0x1234
         self.assertIn('not collected', md)
         self.assertIn('not an automatic pass', page)
 
+    def test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames(self):
+        def build(hash_, gpu='RTX 3060 Ti', update='01.02', cache='cold',
+                  upscaler='off', count=5):
+            return {
+                'build': {'exe_sha256': hash_},
+                'host': {'platform': 'Windows-11', 'machine': 'AMD64'},
+                'duration_seconds': 120, 'pad_script': '', 'game_args': '',
+                'scenario': 'issue43 fixed camera', 'cache_state': cache,
+                'runs': [{
+                    'condition': 'base', 'scene': 'issue43 fixed camera',
+                    'cache_state': cache,
+                    'measurements': {
+                        'game': {'cusa': 'CUSA00035', 'version': update,
+                                 'eboot_sha256': 'deadbeef'},
+                        'gpu': gpu, 'driver': '621.1.0.0',
+                        'summary': {'fps_median': 60 if hash_ == 'old' else 55},
+                    },
+                    'settings': {'config': {'values': {
+                        **{key: '1' for key in regression_report._CROSS_SETTINGS},
+                        'upscaler': upscaler,
+                    }}},
+                    'frame_trace': {'fps_mean': 60 if hash_ == 'old' else 55,
+                                    'frame_p95_ms': 20 if hash_ == 'old' else 22,
+                                    'frame_p99_ms': 40 if hash_ == 'old' else 48,
+                                    'worst_frame_ms': 150 if hash_ == 'old' else 180},
+                } for _ in range(count)],
+            }
+
+        old, new = build('old'), build('new')
+        result = regression_report.compare_release_manifests(old, new)
+        self.assertEqual(result['status'], 'review-required')
+        self.assertEqual(result['performance_deltas']['fps_median']['delta'], -5)
+        self.assertEqual(result['performance_deltas']['median_run_frame_p99_ms']['delta'], 8)
+        md = regression_report.render_release_comparison(result)
+        self.assertIn('Identities/settings match', md)
+        self.assertIn('not evidence of a visual fix', md)
+
+        for changed in (build('new', gpu='RX 560'), build('new', update='01.01'),
+                        build('new', upscaler='taa'), build('new', cache='unknown'),
+                        build('old')):
+            blocked = regression_report.compare_release_manifests(old, changed)
+            self.assertEqual(blocked['status'], 'blocked')
+            self.assertEqual(blocked['performance_deltas'], {})
+            self.assertIn('No FPS/frametime delta', regression_report.render_release_comparison(blocked))
+        missing = build('new')
+        missing['runs'][0]['measurements']['game'].pop('eboot_sha256')
+        blocked = regression_report.compare_release_manifests(old, missing)
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertIn('not-collected', [gate['status'] for gate in blocked['checks']])
+        short = regression_report.compare_release_manifests(build('old', count=1),
+                                                            build('new', count=2))
+        self.assertEqual(short['status'], 'review-required')
+        self.assertTrue(any('Fewer than five' in c for c in short['caveats']))
+
     def test_ab_comparison_reports_directional_signals_only_from_measured_values(self):
         def run(condition, fps, p99):
             return {'condition': condition, 'measurements': {'summary': {

@@ -541,6 +541,162 @@ def _format(value, digits=2):
     return 'not collected' if value is None else f'{value:.{digits}f}'
 
 
+# Cross-build comparison: only compare matching recorded identities and settings.
+_CROSS_SETTINGS = ('upscaler', 'preset', 'output_res', 'aspect_ratio', 'engine_fps',
+                   'fps_limit', 'vsync', 'async_shaders', 'deferred_readback',
+                   'stale_readback', 'frames_queued')
+_RAW_FIELDS = ('fps_mean', 'frame_p95_ms', 'frame_p99_ms', 'worst_frame_ms')
+
+
+def _consistent(values):
+    """No imputation: every run must contain the same meaningful value."""
+    if not values or any(v is None or str(v).strip().lower() in ('', 'unknown')
+                         for v in values):
+        return None
+    return values[0] if all(v == values[0] for v in values[1:]) else None
+
+
+def _cross_value(manifest, field):
+    runs = manifest.get('runs') or []
+    if field.startswith('game.'):
+        key = field.partition('.')[2]
+        return _consistent([(r.get('measurements', {}).get('game') or {}).get(key)
+                            for r in runs])
+    if field.startswith('settings.'):
+        key = field.partition('.')[2]
+        return _consistent([((r.get('settings') or {}).get('config') or {})
+                            .get('values', {}).get(key) for r in runs])
+    if field in ('gpu', 'driver'):
+        return _consistent([r.get('measurements', {}).get(field) for r in runs])
+    if field == 'scene':
+        return _consistent([r.get('scene') or manifest.get('scenario') for r in runs])
+    if field == 'cache_state':
+        return _consistent([r.get('cache_state', manifest.get('cache_state'))
+                            for r in runs])
+    if field.startswith('host.'):
+        return (manifest.get('host') or {}).get(field.partition('.')[2])
+    return manifest.get(field)
+
+
+def compare_release_manifests(baseline, candidate):
+    """Cross-executable comparisons, guarded against mismatched/missing evidence."""
+    base_runs = baseline.get('runs') or []
+    new_runs = candidate.get('runs') or []
+    gates = []
+
+    def check(name, old, new, different=False):
+        if old is None or new is None or old == '' or new == '':
+            status = 'not-collected'
+        elif (old != new) if different else (old == new):
+            status = 'match'
+        else:
+            status = 'mismatch'
+        gates.append({'field': name, 'baseline': old, 'candidate': new,
+                      'status': status})
+
+    check('different_executable_sha256',
+          (baseline.get('build') or {}).get('exe_sha256'),
+          (candidate.get('build') or {}).get('exe_sha256'), different=True)
+    old_conditions = {r.get('condition') for r in base_runs}
+    new_conditions = {r.get('condition') for r in new_runs}
+    check('single_condition', len(old_conditions) if base_runs else None,
+          len(new_conditions) if new_runs else None)
+    if gates[-1]['status'] == 'match' and gates[-1]['baseline'] != 1:
+        gates[-1]['status'] = 'mismatch'
+
+    for field in ('game.cusa', 'game.version', 'game.eboot_sha256', 'scene',
+                  'host.platform', 'host.machine', 'gpu', 'driver', 'cache_state',
+                  'duration_seconds', 'pad_script', 'game_args'):
+        check(field, _cross_value(baseline, field), _cross_value(candidate, field))
+    for field in _CROSS_SETTINGS:
+        key = 'settings.' + field
+        check(key, _cross_value(baseline, key), _cross_value(candidate, key))
+
+    # Empty strings are intentional valid values for no pad input/extra game args.
+    for item in gates:
+        if item['field'] in ('pad_script', 'game_args') and (
+                item['baseline'] == item['candidate'] == ''):
+            item['status'] = 'match'
+
+    blocked = any(g['status'] != 'match' for g in gates)
+    caveats = []
+    if len(base_runs) < 5 or len(new_runs) < 5:
+        caveats.append('Fewer than five runs on one or both builds: exploratory only.')
+    if len(base_runs) != len(new_runs):
+        caveats.append('Run counts differ: replicate with matched sample sizes.')
+    caveats.append('OS/driver shader caches are not controlled by the isolated profile runner.')
+    caveats.append('A numerical delta is not a visual-correctness verdict or proof of causality.')
+    result = {
+        'status': 'blocked' if blocked else 'review-required',
+        'checks': gates, 'baseline_runs': len(base_runs),
+        'candidate_runs': len(new_runs), 'caveats': caveats,
+        'performance_deltas': {},
+    }
+    if blocked:
+        return result
+
+    # Reuse the existing within-manifest aggregation without mutating its input.
+    combined = {'runs': [
+        {**r, 'condition': 'baseline'} for r in base_runs
+    ] + [
+        {**r, 'condition': 'candidate'} for r in new_runs
+    ]}
+    comparison = compare_conditions(combined)
+    if comparison:
+        result['performance_deltas'].update(comparison[0]['metrics'])
+
+    # Medians of independent run-level whole-trace percentiles; NOT a
+    # percentile calculated across all raw frames pooled together.
+    for field in _RAW_FIELDS:
+        before = [r.get('frame_trace', {}).get(field) for r in base_runs
+                  if isinstance(r.get('frame_trace'), dict)]
+        after = [r.get('frame_trace', {}).get(field) for r in new_runs
+                 if isinstance(r.get('frame_trace'), dict)]
+        before = [v for v in before if isinstance(v, (int, float)) and
+                  not isinstance(v, bool) and math.isfinite(v)]
+        after = [v for v in after if isinstance(v, (int, float)) and
+                 not isinstance(v, bool) and math.isfinite(v)]
+        if before and after:
+            old, new = statistics.median(before), statistics.median(after)
+            result['performance_deltas']['median_run_' + field] = {
+                'baseline': old, 'condition': new, 'delta': new - old,
+                'delta_percent': ((new - old) * 100 / abs(old)) if old else None,
+                'baseline_samples': len(before), 'candidate_samples': len(after),
+            }
+    return result
+
+
+def render_release_comparison(result):
+    lines = [
+        '# Cross-release regression comparison', '',
+        '**Status: ' + result['status'] + '**', '',
+        f"Runs: baseline {result['baseline_runs']}; candidate {result['candidate_runs']}.",
+        '', '| Gate | Baseline | Candidate | Status |',
+        '| --- | --- | --- | --- |',
+    ]
+    for item in result['checks']:
+        fields = [str(item[k] if item[k] is not None else 'not-collected')
+                  for k in ('field', 'baseline', 'candidate', 'status')]
+        fields = [v.replace('|', '\\|').replace('\n', ' ') for v in fields]
+        lines.append('| ' + ' | '.join(fields) + ' |')
+    lines += ['', '## Interpretation', '']
+    if result['status'] == 'blocked':
+        lines.append('**BLOCKED.** Required identity/configuration checks failed '
+                     'or were not collected. No FPS/frametime delta is displayed.')
+    else:
+        lines.append('Identities/settings match; review the evidence, not just the '
+                     'numbers. This is not evidence of a visual fix or of causality.')
+        if not result['performance_deltas']:
+            lines.append('No common performance metrics were collected.')
+        for field, values in result['performance_deltas'].items():
+            lines.append(f"- {field}: {values['baseline']:.3f} -> "
+                         f"{values['condition']:.3f} "
+                         f"(delta {values['delta']:+.3f}); review only.")
+    lines += ['', '## Limitations', '']
+    lines.extend('- ' + warning for warning in result['caveats'])
+    return '\n'.join(lines).rstrip() + '\n'
+
+
 def render_markdown(manifest, report_dir=None):
     report_dir = Path(report_dir or ROOT).resolve()
 
@@ -743,12 +899,24 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('manifest', type=Path)
+    parser.add_argument('manifest', type=Path, help='candidate when using --compare-with')
+    parser.add_argument('--compare-with', type=Path, metavar='BASELINE',
+                        help='cross-build comparison with identity/configuration gates')
     parser.add_argument('--out', type=Path, help='report directory (defaults beside the manifest)')
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text(encoding='utf-8'))
-    md_path, html_path = write_reports(manifest, args.out or args.manifest.parent)
+    report_dir = args.out or args.manifest.parent
+    md_path, html_path = write_reports(manifest, report_dir)
     print(f'Wrote {md_path} and {html_path}')
+    if args.compare_with:
+        baseline = json.loads(args.compare_with.read_text(encoding='utf-8'))
+        comparison = compare_release_manifests(baseline, manifest)
+        output = Path(report_dir)
+        json_path = output / 'cross-release.json'
+        cross_md_path = output / 'cross-release.md'
+        json_path.write_text(json.dumps(comparison, indent=2) + '\n', encoding='utf-8')
+        cross_md_path.write_text(render_release_comparison(comparison), encoding='utf-8')
+        print(f'Wrote {json_path} and {cross_md_path} (status: {comparison["status"]})')
 
 
 if __name__ == '__main__':
