@@ -71,3 +71,52 @@ capture, not proven causes.
 Do not mark an issue fixed from unrelated hardware smoke tests.
 Do not commit proprietary assets, private logs or dumped game files.
 Maintain upstream credits and licenses when adapting source.
+
+## First code-archeology checkpoint: v0.6.1 to v0.7.1 (2026-10-27)
+
+GitHub tag comparison shows **four commits / 36 changed files** from
+windows-v0.6.1 to windows-v0.7.0, and **one commit / 13 changed files** from
+windows-v0.7.0 to windows-v0.7.1. This is a search window, not a proven bad commit.
+
+| Commit | Candidate behavior to isolate | Mechanism to measure |
+| --- | --- | --- |
+| b333700d79 | Shader resource handling, barriers and DrawPipe changes | Presence of expected bound resources, correct barriers, render output |
+| 7b67a84fc2 | New graphics/launcher options and anti-flicker toggles | Effective launch environment and renderer flags |
+| 2e2b9e397c | Render target clear handling | Correct clear/load and contents of final color targets |
+| 8bdf10d8fc | Buffer-cache memoization and black-screen changes | Buffer data version/dirty state vs GPU writes |
+| 276495a6ba | Additional resource/format changes in v0.7.1 | Changed image format/depth/tiling interpretation |
+
+High-signal source deltas requiring **reversible, isolated A/B**:
+
+- In gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp,
+  ImplausibleTexture's MaxTextureGuestSize changed from **512 MiB to 256 MiB**
+  in v0.7.0. Count rejected descriptors per stage/draw; do not raise the bound
+  globally without proving that rejected descriptors refer to valid game data.
+- The same file added a hard-coded list of stage.pgm_hash values whose
+  textures are bound as null. Verify a real T# descriptor and its guest mapping
+  before removing any skip or allowing a previously rejected binding.
+- In gpu/shadps4/video_core/texture_cache/image_view.cpp, undefined/unknown
+  image formats now fall back to R32G32B32A32Sfloat. Capture format pairs,
+  actual image bytes and the consuming shader. A fallback is not automatically
+  layout-compatible with the original guest format.
+- In gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp, the
+  0x9846aaff compute shader path forces special VSM coverage values. Compare
+  resulting shadow tiles against the reference pass without disabling all
+  shadow work.
+- In the v0.7.0 -> v0.7.1 diff, run.py changed the default
+  THEORDER_READBACK_LINEAR value from 1 to 0. Record whether an override is
+  active and test both modes with identical resources/caches.
+- In the same v0.7.1 diff, AmdGpu::Image::NumLayers, new 3D tile modes, and
+  a larger volumetric-clear heuristic changed. Compare decoded descriptors
+  and image dimensions before making any source-level fix.
+
+Suggested observation fields: port SHA/tag; game SKU/update/eboot SHA-256;
+shader hash; draw/dispatch ID; descriptor address, size and format; reason for
+rejection; target image layout; produced color/depth hashes; first and warm
+visit; driver/GPU. Do not write raw copyrighted game data to public logs.
+
+A 0.7.x black-screen symptom accompanied by audio and readable UI is consistent
+with missing/incorrect scene composition, but does not identify any one
+shader, driver, clear, cache or texture bug. Require matching capture and a
+positive/negative A/B on the affected hardware before editing the default
+render path.
