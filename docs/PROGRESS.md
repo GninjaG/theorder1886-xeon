@@ -2,6 +2,22 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-27: launcher upscaler override regression fix (PR pending)
+
+- Root cause confirmed by source inspection: `game_environment(self.app)` received only
+  the launcher JSON settings, while `upscaler` is a `theorder.ini` field. The absent JSON
+  key produced `THEORDER_UPSCALER=off` on every GUI and `--play` start. The C++ settings
+  loader reads the INI first and applies that environment variable afterwards, so
+  the default launcher path overrode even an explicit DLSS/FSR/TAA selection.
+- The launcher now removes inherited `THEORDER_UPSCALER` and does not set a new one.
+  The native renderer reads `upscaler` from `theorder.ini`; direct `run.py` invocations
+  may still pass an environment override for explicit A/B tests.
+- Focused tests cover each supported INI provider, configuration path forwarding,
+  inherited overrides and obsolete JSON keys. This tests configuration propagation,
+  not actual DLSS provider availability, GPU rendering or visual correctness.
+- Issues #43/#47 remain open for scene black/white output investigation. A wrong
+  upscaler cannot be assumed to explain those symptoms.
+
 ## 2026-10-27: v0.7.9 release candidate validated
 
 - **Output targets:** launcher and in-game selector now expose all eight runtime

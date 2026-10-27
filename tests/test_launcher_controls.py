@@ -132,12 +132,35 @@ class ControlMapTest(unittest.TestCase):
         self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_BACKGROUND_WARMUP'], '0')
         self.assertEqual(launcher.game_environment({**settings, 'background_warmup': False})['THEORDER_HOT_WARMUP'], '0')
 
-    def test_temporal_upscaler_stays_off_with_saved_or_inherited_choices(self):
-        # When default launcher settings are used, upscaler defaults to off
-        for saved in (True, False, None):
-            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'experimental_upscaler': saved})
-            self.assertEqual(env['THEORDER_UPSCALER'], 'off')
-            self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
+    def test_upscaler_selection_comes_from_ini_not_launch_environment(self):
+        # Both the GUI Play button and --play use game_environment(settings.json).
+        # upscaler is an INI key; it was absent from the app dictionary, so the
+        # old launcher always passed THEORDER_UPSCALER=off to the native renderer.
+        from pathlib import Path
+        import tempfile
+        for requested in ('off', 'fsr3', 'fsr4', 'fsr411', 'taa', 'dlss'):
+            with self.subTest(requested=requested), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'theorder.ini'
+                path.write_text('upscaler=' + requested + '\n', encoding='utf-8')
+                with mock.patch.dict(launcher.os.environ, {
+                    'THEORDER_UPSCALER': 'off' if requested != 'off' else 'dlss',
+                    'THEORDER_CONFIG': str(path),
+                }), mock.patch.object(launcher, 'game_profile_of', return_value=(None, None)):
+                    ini, _lines = launcher.load_ini()
+                    self.assertEqual(ini['upscaler'], requested)
+                    # Mimic the launcher JSON: there is no upscaler field in it.
+                    self.assertNotIn('upscaler', launcher.APP_DEFAULTS)
+                    env = launcher.game_environment(dict(launcher.APP_DEFAULTS))
+                    self.assertNotIn('THEORDER_UPSCALER', env)
+                    self.assertEqual(env['THEORDER_CONFIG'], str(path))
+                    self.assertEqual(env['THEORDER_EXPERIMENTAL_UPSCALER'], '0')
+
+    def test_launcher_ignores_stale_upscaler_in_json_too(self):
+        # A stray legacy field must not silently override the current INI.
+        with mock.patch.dict(launcher.os.environ, {'THEORDER_UPSCALER': 'fsr3'}), \
+             mock.patch.object(launcher, 'game_profile_of', return_value=(None, None)):
+            env = launcher.game_environment({**launcher.APP_DEFAULTS, 'upscaler': 'dlss'})
+        self.assertNotIn('THEORDER_UPSCALER', env)
 
     def test_settings_keys_kept(self):
         # The redesign hides some options (player name) but keeps every saved setting working.
