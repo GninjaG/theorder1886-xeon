@@ -17,6 +17,14 @@ if ! ninja -C out/gpu "${tests[@]/%/-test}" > out/tests-build.log 2>&1; then
     grep -E 'error:|FAILED' out/tests-build.log | head -20; echo 'test build failed (out/tests-build.log)'; exit 1
 fi
 failed=()
+# Dependency-free diagnostic sampler test (no Vulkan device or copyrighted assets needed).
+if ! clang++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread -Igpu/shim \
+    tests/test_texture_reject_diag.cpp -o out/texture-reject-diag-test \
+    > out/test-texture-reject-diag.log 2>&1 ||
+   ! timeout 300 out/texture-reject-diag-test >> out/test-texture-reject-diag.log 2>&1; then
+    failed+=(texture-reject-diag)
+    tail -5 out/test-texture-reject-diag.log
+fi
 for t in "${tests[@]}"; do
     if ! timeout 300 "out/gpu/$t-test" ${args[$t]:-} > "out/test-$t.log" 2>&1; then
         failed+=("$t"); tail -3 "out/test-$t.log"

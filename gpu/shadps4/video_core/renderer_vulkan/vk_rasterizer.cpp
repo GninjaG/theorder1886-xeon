@@ -6,6 +6,7 @@
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "port_toggles.h"
+#include "port_texture_reject_diag.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
@@ -2707,11 +2708,33 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
+        // Diagnostic only: samples null-image decisions; accepted bindings remain unchanged.
+        const trace_null = [&](TextureRejectDiag::Reason reason, u64 guest_bytes = 0) {
+            const u64 count = TextureRejectDiag::Record(reason, stage.pgm_hash);
+            if (!count) return;
+            LOG_WARNING(Render_Vulkan,
+                        "T# null binding: reason={} count={} shader={:#x} slot={} "
+                        "address={:#x} dimensions={}x{} layers={} data_format={} "
+                        "num_format={} guest_bytes={}",
+                        TextureRejectDiag::Name(reason), count, stage.pgm_hash, image_index,
+                        tsharp.Address(), u64(tsharp.width) + 1, u64(tsharp.height) + 1,
+                        tsharp.NumLayers(), u32(data_fmt), u32(num_fmt), guest_bytes);
+        };
         // port: an FMask T# is read as constants by the shader (resource_patching_pass.cpp).
         if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
             AmdGpu::IsFmask(data_fmt) ||
             tsharp.NumLayers() > 2048 || tsharp.last_array < tsharp.base_array ||
             tsharp.base_level > tsharp.last_level) {
+            if (TextureRejectDiag::Enabled()) {
+                using R = TextureRejectDiag::Reason;
+                const R reason = tsharp.Address() < 0x10000ULL ? R::LowAddress
+                                 : data_fmt == AmdGpu::DataFormat::FormatInvalid ? R::InvalidDataFormat
+                                 : AmdGpu::IsFmask(data_fmt) ? R::FmaskDescriptor
+                                 : tsharp.NumLayers() > 2048 ? R::ExcessiveLayers
+                                 : tsharp.last_array < tsharp.base_array ? R::InvalidArrayRange
+                                 : R::InvalidMipRange;
+                trace_null(reason);
+            }
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2734,6 +2757,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             spec.num_bindings = (*expected_images)[image_index].num_bindings;
             spec.is_fmask = AmdGpu::IsFmask(tsharp.GetDataFmt());
             if (spec != (*expected_images)[image_index]) {
+                trace_null(TextureRejectDiag::Reason::ComputeFallbackMismatch);
                 set_ok = false;
                 const u32 count = std::max(spec.num_bindings, 1u);
                 for (u32 i = 0; i < count; ++i) {
@@ -2753,6 +2777,20 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             tsharp.NumLayers() > 2048 ||
             ((u64)tsharp.width * tsharp.height * tsharp.NumLayers() > 256 * 1024 * 1024) ||
             (tsharp.NumLayers() > 16 && (tsharp.width >= 2048 || tsharp.height >= 2048))) {
+            if (TextureRejectDiag::Enabled()) {
+                using R = TextureRejectDiag::Reason;
+                const R reason = !memory->IsValidGpuMapping(tsharp.Address(), 1)
+                                     ? R::UnmappedAddress
+                                 : !IsKnownFormat(data_fmt, num_fmt) ? R::UnsupportedFormat
+                                 : tsharp.width >= 8192 || tsharp.height >= 8192
+                                     ? R::ExcessiveDimensions
+                                 : tsharp.NumLayers() > 2048 ? R::ExcessiveLayers
+                                 : u64(tsharp.width) * tsharp.height * tsharp.NumLayers() >
+                                           256ULL * 1024 * 1024
+                                     ? R::ExcessiveTexels
+                                 : R::ExcessiveLayerDimensions;
+                trace_null(reason);
+            }
             LOG_DEBUG(Render_Vulkan,
                         "Rejecting invalid T# address={:#x}, pitch={}, width={}, height={}, layers={}, "
                         "data_format={}, num_format={}",
@@ -2780,6 +2818,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
         if (ImplausibleTexture(desc_entry.desc.info)) {
+            trace_null(TextureRejectDiag::Reason::ImplausibleImage,
+                       desc_entry.desc.info.guest_size);
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
