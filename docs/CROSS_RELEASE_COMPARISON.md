@@ -65,5 +65,13 @@ instrumentation may have unavailable telemetry: the report does not invent it.
 If an old release cannot be executed by the newer harness (ABI/probe
 mismatch), do not force the mix and do not claim comparability. Use
 separate compatible checkouts and manually verify the resulting manifests.
-Only share redacted logs/manifests; avoid personal paths, private saves,
+**Privacy boundary:** the changes in this PR redact the *environment
+provenance field*, not the complete manifest. Raw `batch_runs.py` manifests
+still contain machine-local `log_path`, `data_dir`, `user_profile`,
+`capture_dir`, capture references and potentially arbitrary scene/reference
+notes. They are local diagnostic artifacts, **not files safe for automatic
+publication**. Review and remove private paths, names, notes and source material
+before attaching any raw manifest or rendered report to a public issue.
+
+Only share manually redacted logs/manifests; avoid personal paths, private saves,
 copyrighted binaries or game assets.
