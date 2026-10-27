@@ -56,31 +56,11 @@ class SsboBarrierStageTests(unittest.TestCase):
     def test_every_shader_meta_writer_uses_the_active_profile_gate(self):
         source = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
                   / 'vk_pipeline_cache.cpp').read_text(encoding='utf-8')
-        # All three paths must serialize the active GPU profile.
+        # Asynchronous publication, first sync compile and later permutations.
         calls = re.findall(r'\bRegisterShaderMeta\s*\((.*?)\);', source, re.S)
         self.assertEqual(len(calls), 3)
         for call in calls:
-            self.assertRegex(call, r',\s*profile\.needs_ssbo_store_load_barrier\s*
-        barrier = (ROOT / 'gpu/shadps4/shader_recompiler/ir/passes'
-                   / 'insert_ssbo_store_load_barrier.cpp').read_text(encoding='utf-8')
-        self.assertIn('#include "shader_recompiler/ir/passes/resource_pass.h"', barrier)
-        self.assertIn('const bool is_atomic = IsBufferAtomic(inst);', barrier)
-        self.assertIn('if (IsStoreBuffer(inst) || is_atomic)', barrier)
-        self.assertIn('if (IsLoadBuffer(inst) || is_atomic)', barrier)
-        self.assertIn('!IsStoreBuffer(inst) && !IsBufferAtomic(inst)', barrier)
-        self.assertIn('plain_loaded_buffers.count(binding) != 0', barrier)
-
-    def test_real_ir_regression_test_is_in_full_native_suite(self):
-        cmake = (ROOT / 'gpu/CMakeLists.txt').read_text(encoding='utf-8')
-        runner = (ROOT / 'tools/run_tests.sh').read_text(encoding='utf-8')
-        self.assertIn('add_executable(formatted-ssbo-barriers-test ', cmake)
-        self.assertIn('../tests/test_formatted_ssbo_barriers.cpp', cmake)
-        self.assertIn('multiwave-barriers formatted-ssbo-barriers)', runner)
-
-
-if __name__ == '__main__':
-    unittest.main()
-)
+            self.assertRegex(call, r',\s*profile\.needs_ssbo_store_load_barrier\s*$')
 
     def test_atomic_rmw_is_classified_as_read_and_write(self):
         barrier = (ROOT / 'gpu/shadps4/shader_recompiler/ir/passes'
