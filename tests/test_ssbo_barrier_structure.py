@@ -38,7 +38,19 @@ class SsboBarrierStageTests(unittest.TestCase):
                  / 'vk_pipeline_serialization.cpp').read_text(encoding='utf-8')
         self.assertIn('NeedsFormattedSsboBarrierCacheVersion(info.buffers)', cache)
         self.assertIn('version += 1u << 18;', cache)
+        self.assertIn('NeedsWrittenSsboBarrierCacheVersion(info.buffers)', cache)
+        self.assertIn('version += 1u << 19;', cache)
         self.assertIn('ShaderBinaryVersion = 15u', cache)
+
+    def test_atomic_rmw_is_classified_as_read_and_write(self):
+        barrier = (ROOT / 'gpu/shadps4/shader_recompiler/ir/passes'
+                   / 'insert_ssbo_store_load_barrier.cpp').read_text(encoding='utf-8')
+        self.assertIn('#include "shader_recompiler/ir/passes/resource_pass.h"', barrier)
+        self.assertIn('const bool is_atomic = IsBufferAtomic(inst);', barrier)
+        self.assertIn('if (IsStoreBuffer(inst) || is_atomic)', barrier)
+        self.assertIn('if (IsLoadBuffer(inst) || is_atomic)', barrier)
+        self.assertIn('!IsStoreBuffer(inst) && !IsBufferAtomic(inst)', barrier)
+        self.assertIn('plain_loaded_buffers.count(binding) != 0', barrier)
 
     def test_real_ir_regression_test_is_in_full_native_suite(self):
         cmake = (ROOT / 'gpu/CMakeLists.txt').read_text(encoding='utf-8')

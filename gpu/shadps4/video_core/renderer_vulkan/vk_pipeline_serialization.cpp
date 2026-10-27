@@ -82,6 +82,11 @@ u32 ShaderBinaryVersionFor(const Shader::Info& info,
         // Keep the remaining SPIR-V/pipeline cache warm after this fix.
         version += 1u << 18;
     }
+    if (Shader::NeedsWrittenSsboBarrierCacheVersion(info.buffers)) {
+        // Selective conservative superset: cached metadata marks atomic RMW
+        // as written, alongside ordinary stores. Read-only shaders stay warm.
+        version += 1u << 19;
+    }
     return version;
 }
 } // namespace

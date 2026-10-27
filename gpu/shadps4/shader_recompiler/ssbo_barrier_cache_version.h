@@ -11,4 +11,14 @@ constexpr bool NeedsFormattedSsboBarrierCacheVersion(const BufferRange& buffers)
     }
     return false;
 }
+
+template <typename BufferRange>
+constexpr bool NeedsWrittenSsboBarrierCacheVersion(const BufferRange& buffers) noexcept {
+    // Cached resources mark atomics as written, but cannot distinguish them
+    // from ordinary SSBO stores. Recompile this safe subset, not all shaders.
+    for (const auto& buffer : buffers) {
+        if (buffer.is_written) return true;
+    }
+    return false;
+}
 } // namespace Shader

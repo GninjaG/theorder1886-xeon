@@ -1,5 +1,30 @@
 # Graphics regression checkpoint
 
+## 2026-10-27: atomic SSBO read-modify-write barrier coverage (draft)
+
+The existing InsertSsboStoreLoadBarrier pass ignored `BufferAtomic*`
+instructions even though they read and write the same resource. They now
+participate in both read/write sets; barriers are added after atomics
+only when there is a non-atomic load of the same binding, and after raw
+stores when an atomic may read that binding. Two atomic-only operations do
+not require extra barriers from this pass. This is restricted to
+NVIDIA compatibility profiles that already enable this pass. Other GPUs
+retain their behavior. Dependence analysis remains conservative by binding,
+not a proof of access to an identical element.
+
+Cached Shader::Info metadata marks atomics as written but does not distinguish
+them from plain stores. A new additive per-shader binary salt (`1 << 19`)
+recompiles all shaders with writable bindings as a safe conservative subset,
+without invalidating read-only shader caches or deleting existing user data.
+This can increase first-use compilation cost for writable shaders.
+
+Focused real IR tests now cover atomic-to-load, store-to-atomic,
+atomic-to-atomic, distinct bindings and profile-disabled behavior.
+Windows CLANG64 build, full IR suite, hardware Vulkan validation and
+matching reporter scene captures are still required. No fix for #43/#47
+has been demonstrated.
+
+
 ## 2026-10-27: formatted SSBO store/load barrier coverage (PR pending)
 
 Code review found that `InsertSsboStoreLoadBarrier` runs **before**
