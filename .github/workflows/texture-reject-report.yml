@@ -1,0 +1,32 @@
+name: Texture rejection report tests
+
+on:
+  pull_request:
+    paths:
+      - 'tools/regression_report.py'
+      - 'tests/test_regression_harness.py'
+      - '.github/workflows/texture-reject-report.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'tools/regression_report.py'
+      - 'tests/test_regression_harness.py'
+      - '.github/workflows/texture-reject-report.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  parse-samples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Parse sampled counters and render report
+        env:
+          PYTHONPATH: tests
+        run: |
+          python -m unittest -v \
+            test_regression_harness.RegressionReportTest.test_texture_rejection_samples_are_lower_bounds_not_exact_counts
