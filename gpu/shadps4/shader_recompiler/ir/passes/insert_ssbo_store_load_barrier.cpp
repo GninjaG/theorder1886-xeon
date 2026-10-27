@@ -28,6 +28,9 @@ bool IsStoreBuffer(const IR::Inst& inst) {
     case IR::Opcode::StoreBufferF32x2:
     case IR::Opcode::StoreBufferF32x3:
     case IR::Opcode::StoreBufferF32x4:
+    // This pass runs before LowerBufferFormatToRaw. Formatted stores can
+    // alias ordinary SSBO loads and require the same ordering protection.
+    case IR::Opcode::StoreBufferFormatF32:
         return true;
     default:
         return false;
@@ -47,6 +50,7 @@ bool IsLoadBuffer(const IR::Inst& inst) {
     case IR::Opcode::LoadBufferF32x2:
     case IR::Opcode::LoadBufferF32x3:
     case IR::Opcode::LoadBufferF32x4:
+    case IR::Opcode::LoadBufferFormatF32:
         return true;
     default:
         return false;
@@ -60,6 +64,7 @@ void InsertSsboStoreLoadBarrier(IR::Program& program, const Profile& profile) {
     // dispatch, so the original shader relies on that implicit forwarding. NVIDIA drivers do not
     // guarantee it for non-coherent SSBO accesses, making the load observe stale data. Insert a
     // device memory barrier after stores of any buffer that is both stored and loaded.
+    // Both formatted and raw buffer operations are still present at this pass.
     if (!profile.needs_ssbo_store_load_barrier) {
         return;
     }

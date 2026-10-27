@@ -1,0 +1,52 @@
+"""Check the IR pass stage and opcode coverage without Vulkan/MSYS2.
+
+The behavioral/native IR test is test_formatted_ssbo_barriers.cpp and is
+compiled by tools/run_tests.sh. This only checks the source-level preconditions
+required by the stage at which the real pass executes.
+"""
+from pathlib import Path
+import re
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class SsboBarrierStageTests(unittest.TestCase):
+    def test_formatted_ops_are_classified_before_format_lowering(self):
+        pass_source = (ROOT / 'gpu/shadps4/shader_recompiler/ir/passes'
+                       / 'insert_ssbo_store_load_barrier.cpp').read_text(encoding='utf-8')
+        recompiler = (ROOT / 'gpu/shadps4/shader_recompiler'
+                      / 'recompiler.cpp').read_text(encoding='utf-8')
+        def switch_body(name):
+            match = re.search(r'bool ' + name +
+                              r'\(const IR::Inst& inst\)\s*\{(.*?)\n\}', pass_source, re.S)
+            self.assertIsNotNone(match, name)
+            return match.group(1)
+
+        stores = switch_body('IsStoreBuffer')
+        loads = switch_body('IsLoadBuffer')
+        self.assertIn('case IR::Opcode::StoreBufferFormatF32:', stores)
+        self.assertIn('case IR::Opcode::LoadBufferFormatF32:', loads)
+        self.assertIn('case IR::Opcode::StoreBufferU32:', stores)
+        self.assertIn('case IR::Opcode::LoadBufferU32:', loads)
+        self.assertLess(recompiler.index('InsertSsboStoreLoadBarrier(program, profile)'),
+                        recompiler.index('LowerBufferFormatToRaw(program)'))
+        self.assertIn('if (!profile.needs_ssbo_store_load_barrier)', pass_source)
+
+    def test_targeted_shader_cache_version(self):
+        cache = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
+                 / 'vk_pipeline_serialization.cpp').read_text(encoding='utf-8')
+        self.assertIn('NeedsFormattedSsboBarrierCacheVersion(info.buffers)', cache)
+        self.assertIn('version += 1u << 18;', cache)
+        self.assertIn('ShaderBinaryVersion = 15u', cache)
+
+    def test_real_ir_regression_test_is_in_full_native_suite(self):
+        cmake = (ROOT / 'gpu/CMakeLists.txt').read_text(encoding='utf-8')
+        runner = (ROOT / 'tools/run_tests.sh').read_text(encoding='utf-8')
+        self.assertIn('add_executable(formatted-ssbo-barriers-test ', cmake)
+        self.assertIn('../tests/test_formatted_ssbo_barriers.cpp', cmake)
+        self.assertIn('multiwave-barriers formatted-ssbo-barriers)', runner)
+
+
+if __name__ == '__main__':
+    unittest.main()
