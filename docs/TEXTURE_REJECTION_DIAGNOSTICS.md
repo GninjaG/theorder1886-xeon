@@ -83,3 +83,40 @@ The rate limiter emits the first eight occurrences and then powers of two.
 The count is per reason across all shaders, **not per shader**. An empty
 section can mean disabled diagnostics, truncated logs or no detected rejection;
 it cannot prove graphics correctness.
+## A/B test: v0.6.1 texture guest-size cap (experimental)
+
+Code archaeology confirmed a **single cap change** between
+`windows-v0.6.1` (512 MiB) and `windows-v0.7.0` (256 MiB) in
+`Rasterizer::ImplausibleTexture`. It is a candidate for the black/white
+scene reports #43/#47/#24, **not a proven root cause**.
+
+The default stays **256 MiB**. To restore **only this one legacy cap**
+for one run of a test build:
+
+```powershell
+$env:THEORDER_TEXTURE_MAX_MIB = '512'
+$env:THEORDER_DIAG_TEXTURE_REJECTS = '1'
+python run.py
+```
+
+Use `256` or unset the variable for the baseline. Only the exact value
+`512` is accepted; other values leave the default at 256. The diagnostic
+prints `Texture-size A/B: LEGACY 512 MiB cap active` when used. The rule
+rejecting extremely excessive padding remains enabled in both modes;
+unmapped, malformed and unsupported descriptors remain rejected. This
+experiment can permit larger texture allocations than the default,
+so monitor RAM/VRAM and stop if memory pressure or hangs occur. **Do not
+benchmark FPS with diagnostic logs enabled.**
+
+To isolate the single-variable change, run the **same build** and
+checkpoint with the existing batch runner, using one condition with
+`THEORDER_TEXTURE_MAX_MIB=256` and another with `=512` via
+`--cond`, isolated `--profile-root` and `--data-root`, the same
+game/eboot/update/GPU/driver/settings/camera and repeat count.
+Record whether the resulting `T# null binding` events with
+`reason=implausible-guest-image` change and capture final output.
+An unchanged log is not proof no textures are missing: the renderer has
+other guards and may use memoized bindings.
+
+**Do not recommend 512 as a default unless a matched image capture
+demonstrates recovery without new corruption or memory issues.**

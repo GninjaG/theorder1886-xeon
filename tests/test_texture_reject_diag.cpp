@@ -5,12 +5,30 @@
 #include <thread>
 #include <vector>
 #include "port_texture_reject_diag.h"
+#include "port_texture_size_ab.h"
 
 using Vulkan::TextureRejectDiag::Reason;
 using Vulkan::TextureRejectDiag::Sampler;
 using Vulkan::TextureRejectDiag::ShouldLog;
 
 int main() {
+    using namespace Vulkan::TextureSizeAb;
+    static_assert(SelectLimit("") == CurrentMaxGuestBytes);
+    static_assert(SelectLimit("256") == CurrentMaxGuestBytes);
+    static_assert(SelectLimit("512") == LegacyMaxGuestBytes);
+    static_assert(SelectLimit("1024") == CurrentMaxGuestBytes);
+    static_assert(SelectLimit("512 ") == CurrentMaxGuestBytes);
+    static_assert(SelectLimit("0") == CurrentMaxGuestBytes);
+    static_assert(!Reject(CurrentMaxGuestBytes, false, CurrentMaxGuestBytes));
+    static_assert(Reject(CurrentMaxGuestBytes + 1, false, CurrentMaxGuestBytes));
+    static_assert(!Reject(384ULL << 20, false, LegacyMaxGuestBytes));
+    static_assert(Reject(384ULL << 20, false, CurrentMaxGuestBytes));
+    static_assert(!Reject(LegacyMaxGuestBytes, false, LegacyMaxGuestBytes));
+    static_assert(Reject(LegacyMaxGuestBytes + 1, false, LegacyMaxGuestBytes));
+    // The pathological padded guest image must remain rejected in both modes.
+    static_assert(Reject(186ULL << 20, true, CurrentMaxGuestBytes));
+    static_assert(Reject(186ULL << 20, true, LegacyMaxGuestBytes));
+
     static_assert(Vulkan::TextureRejectDiag::ReasonCount == 13);
     static_assert(!ShouldLog(0));
     static_assert(ShouldLog(1) && ShouldLog(8));

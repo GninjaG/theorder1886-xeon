@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'gpu/shim/port_texture_reject_diag.h'
+      - 'gpu/shim/port_texture_size_ab.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
       - 'tests/test_texture_reject_diag.cpp'
       - 'tools/run_tests.sh'
@@ -12,6 +13,7 @@ on:
     branches: [master]
     paths:
       - 'gpu/shim/port_texture_reject_diag.h'
+      - 'gpu/shim/port_texture_size_ab.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
       - 'tests/test_texture_reject_diag.cpp'
       - 'tools/run_tests.sh'
