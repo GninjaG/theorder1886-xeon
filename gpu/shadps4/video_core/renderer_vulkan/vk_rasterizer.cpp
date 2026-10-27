@@ -7,6 +7,7 @@
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "port_toggles.h"
 #include "port_texture_reject_diag.h"
+#include "port_texture_size_ab.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
@@ -120,14 +121,25 @@ bool IsKnownFormat(AmdGpu::DataFormat data_fmt, AmdGpu::NumberFormat num_fmt) {
 /// uploaded gigabytes of guest memory in one frame (1-3 s stalls), again on every write to
 /// that range. Real textures stay far below this (8K x 8K x 4 bytes is 256 MiB).
 bool ImplausibleTexture(const VideoCore::ImageInfo& info) {
-    constexpr u64 MaxTextureGuestSize = 256ULL << 20;
+    const u64 limit = TextureSizeAb::LimitBytes();
+    // A/B restores ONLY the old 512 MiB size threshold; the strict padding
+    // rejection and all invalid descriptor/mapping guards stay in force.
+    if (limit == TextureSizeAb::LegacyMaxGuestBytes) {
+        static const bool announced = [] {
+            LOG_WARNING(Render_Vulkan,
+                        "Texture-size A/B: LEGACY 512 MiB cap active (v0.6.1); "
+                        "default 256 MiB cap remains unchanged. Experimental.");
+            return true;
+        }();
+        (void)announced;
+    }
     // Or a pitch that dwarfs the texture: a 1x1x913 BC4 volume with a pitch of 12737 texels
     // spanned 186 MiB. Tiling pads small textures many times over, but not to 16 MiB.
     const u64 texels = u64(info.size.width) * info.size.height * info.size.depth *
                        info.resources.layers;
     const bool padded = info.guest_size > (16ULL << 20) &&
                         info.guest_size / 64 > texels * std::max(info.num_bits, 8u) / 8;
-    if (info.guest_size <= MaxTextureGuestSize && !padded) {
+    if (!TextureSizeAb::Reject(info.guest_size, padded, limit)) {
         return false;
     }
     static std::atomic<u32> reported{0};
