@@ -1,0 +1,34 @@
+name: Cross-release regression comparison
+
+on:
+  pull_request:
+    paths:
+      - 'tools/regression_report.py'
+      - 'tests/test_regression_harness.py'
+      - 'docs/CROSS_RELEASE_COMPARISON.md'
+      - '.github/workflows/cross-release-compare.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'tools/regression_report.py'
+      - 'tests/test_regression_harness.py'
+      - 'docs/CROSS_RELEASE_COMPARISON.md'
+      - '.github/workflows/cross-release-compare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cross-build gate/percentile tests
+        env:
+          PYTHONPATH: tests
+        run: |
+          python -m unittest -v \
+            test_regression_harness.RegressionReportTest.test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames
