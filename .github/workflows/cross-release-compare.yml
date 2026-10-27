@@ -28,10 +28,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Cross-build gate/percentile tests
+      - name: Run the full regression harness Python suite
         env:
           PYTHONPATH: tests
         run: |
-          python -m unittest -v \
-            test_regression_harness.RegressionReportTest.test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames \
-            test_regression_harness.RegressionReportTest.test_batch_runner_portable_default_and_redacted_env
+          python -m unittest -v test_regression_harness
