@@ -120,3 +120,22 @@ other guards and may use memoized bindings.
 
 **Do not recommend 512 as a default unless a matched image capture
 demonstrates recovery without new corruption or memory issues.**
+
+## Async texture helper parity
+
+The asynchronous helper previously checked only the image base address and
+format before constructing ImageInfo. The main BindTextures path also rejected
+inverted array/mip ranges, excessive layers, encoded dimensions >= 8192,
+excessive texels, and large layer/dimension combinations. Both paths now use
+the same pure rejection predicates and therefore skip malformed descriptors
+in the same way.
+
+A second mismatch was the full-range guest mapping test: the helper treated
+an image as null if the entire computed byte range was not mapped, whereas
+the main path only checks the base address before binding. Rather than
+silently substitute null on the helper, that case is now deferred to the
+normal GPU-thread path. This may decrease helper eligibility but preserves
+the main thread's decision and avoids unsound background work.
+
+The default cap of 256 MiB and experimental 512 MiB A/B remain unchanged.
+This is a code-path consistency fix, not a confirmed black-screen repair.
