@@ -701,8 +701,11 @@ def game_environment(s):
     env = dict(os.environ)
     env['THEORDER_GAME_DIR'] = s['game_dir']
     env.pop('THEORDER_PATCH_DIR', None)
-    upscaler_choice = s.get('upscaler', 'off')
-    env['THEORDER_UPSCALER'] = upscaler_choice
+    # The upscaler is saved in theorder.ini, not settings.json. A launcher override here
+    # used to force 'off' on every start, shadowing the saved DLSS/FSR/TAA selection.
+    # Drop even an inherited environment value so the selected INI setting wins.
+    # Direct run.py invocations may still use THEORDER_UPSCALER for A/B testing.
+    env.pop('THEORDER_UPSCALER', None)
     env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'  # legacy launcher switch
     if s.get('update_dir'):
         env['THEORDER_PATCH_DIR'] = s['update_dir']
