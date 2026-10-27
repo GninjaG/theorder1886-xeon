@@ -1,5 +1,29 @@
 # Graphics regression checkpoint
 
+## 2026-10-27: formatted SSBO store/load barrier coverage (PR pending)
+
+Code review found that `InsertSsboStoreLoadBarrier` runs **before**
+`LowerBufferFormatToRaw`, but its read/write opcode sets did not include
+`LoadBufferFormatF32` or `StoreBufferFormatF32`. Consequently a shader with
+a formatted store followed by a formatted or ordinary load on the same
+resource binding could miss the device memory barrier that this
+NVIDIA-specific compatibility pass is intended to add.
+
+The patch adds those two opcodes to the existing classification **only**.
+No barrier is added on hosts with
+`Profile::needs_ssbo_store_load_barrier == false`. The pass still matches by
+resource binding and conservatively inserts after stores when that binding
+is loaded anywhere in the shader; this does **not** prove a same-address
+dependence and may increase work on affected shaders.
+
+`tests/test_formatted_ssbo_barriers.cpp` runs the real IR pass on
+formatted/ordinary store/load pairs and verifies exact barrier placement,
+different bindings, disabled profiles, and existing conservative ordering.
+The test must be built on Windows/MSYS2 CLANG64 with the rest of the GPU
+suite; it does not prove Vulkan synchronization validation or #43/#47.
+A matching hardware/capture retest remains mandatory.
+
+
 ## 2026-10-25: user retest of the local package
 
 The user reports good gameplay with some remaining flicker. The corresponding
