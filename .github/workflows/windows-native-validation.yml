@@ -83,7 +83,17 @@ jobs:
       - name: Build port for Windows (no game data)
         run: |
           set -euo pipefail
-          bash build.sh
+          echo "Native build begins; verbose shell trace enabled for unexpected exit codes"
+          if ! bash -x build.sh > out/ci-build-trace.log 2>&1; then
+            echo "::error::build.sh failed; last shell commands:"
+            tail -100 out/ci-build-trace.log || true
+            echo "Outputs available after failure:"
+            ls -lh out/gpu/*.exe out/*.exe 2>/dev/null || true
+            echo "Ninja log tail:"
+            tail -70 out/gpu-build.log || true
+            exit 1
+          fi
+          echo "build.sh completed; checking required native products"
           test -s out/theorder-probe.exe
           test -s out/theorder-gpu-capabilities.exe
 
@@ -99,6 +109,7 @@ jobs:
           name: windows-native-failure-logs
           path: |
             out/gpu-build.log
+            out/ci-build-trace.log
             out/tests-build.log
             out/test-*.log
           if-no-files-found: ignore
