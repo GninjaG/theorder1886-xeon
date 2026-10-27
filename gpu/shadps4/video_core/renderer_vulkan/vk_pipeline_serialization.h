@@ -52,7 +52,7 @@ void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
 void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash, size_t perm_idx,
-                        u64 spv_hash);
+                        u64 spv_hash, bool needs_ssbo_barriers);
 /// Returns the SPIR-V hash its meta records (SpvHash).
 u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx);
 /// port: a meta and its SPIR-V are separate files, written by a queue that is not drained at
