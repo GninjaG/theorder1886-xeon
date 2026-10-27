@@ -37,6 +37,10 @@ COMPUTE_REUSE = re.compile(
     r'Compute pipeline reuse: shader ([0-9a-f]{16}) permutation (\d+) -> (\d+) '
     r'\(SPIR-V ([0-9a-f]{16})\)'
 )
+TEXTURE_REJECT = re.compile(
+    r'T# null binding: reason=([a-z][a-z0-9-]*) count=(\d+) '
+    r'shader=(0x[0-9a-fA-F]+) slot=(\d+) address=(0x[0-9a-fA-F]+)'
+)
 GAME_IDENTITY = re.compile(
     r'Patches: (CUSA\d+) (\d{2}\.\d{2}), eboot\.bin sha256 ([0-9a-fA-F]{64})'
 )
@@ -75,6 +79,35 @@ def verify_game_identity(observed, expected_cusa=None, expected_version=None):
     status = ('not-specified' if not checks else 'mismatch' if 'mismatch' in states else
               'not-collected' if 'not-collected' in states else 'match')
     return {'status': status, 'checks': checks}
+
+
+def parse_texture_rejections(text):
+    """Summarize sampled rejected texture bindings, never an exact event count.
+
+    The rasterizer logs the first eight events per reason and then powers of
+    two. Its counters cover all shaders, not separate per shader/slot counts.
+    """
+    groups = {}
+    for match in TEXTURE_REJECT.finditer(text):
+        reason, count_str, shader, slot_str, address = match.groups()
+        count = int(count_str)
+        if count < 1:
+            continue
+        group = groups.setdefault(reason, {
+            'sampled_log_lines': 0,
+            'last_observed_count_lower_bound': 0,
+            'shader_slot_examples': [],
+        })
+        group['sampled_log_lines'] += 1
+        group['last_observed_count_lower_bound'] = max(
+            group['last_observed_count_lower_bound'], count)
+        pair = (shader.lower(), int(slot_str))
+        examples = group['shader_slot_examples']
+        if len(examples) < 8 and not any(
+                (sample['shader'], sample['slot']) == pair for sample in examples):
+            examples.append({'shader': pair[0], 'slot': pair[1],
+                             'guest_address': address.lower()})
+    return dict(sorted(groups.items()))
 
 
 def parse_frame_trace(stream):
@@ -180,6 +213,7 @@ def parse_log(text, seconds):
         'memory_samples': memory,
         'process_metrics': process_metrics,
         'pipeline_binary_cache': pipeline_cache[-1] if pipeline_cache else None,
+        'texture_rejections': parse_texture_rejections(text),
         'compute_pipeline_reuse_events': [
             {'shader': shader, 'permutation': int(index), 'pipeline_permutation': int(canonical),
              'spirv_hash': spirv}
@@ -593,6 +627,21 @@ def render_markdown(manifest, report_dir=None):
             f"VUIDs: {', '.join(metrics.get('validation_vuids', [])) or 'none recorded'}",
             f"- Log: `{run.get('log_path', 'not recorded')}`; captures: `{run.get('capture_dir', 'none')}`",
         ]
+        rejections = metrics.get('texture_rejections') or {}
+        if rejections:
+            lines.append('- Texture rejection diagnostics: sampled, **not exact total counts** '
+                         '(last observed count is a lower bound per reason):')
+            for reason, entry in sorted(rejections.items()):
+                examples = ', '.join(
+                    f"{sample['shader']} slot {sample['slot']}"
+                    for sample in entry.get('shader_slot_examples', []))
+                lines.append(
+                    f"  - `{reason}`: {entry['sampled_log_lines']} log lines; "
+                    f"at least {entry['last_observed_count_lower_bound']} occurrences "
+                    f"observed for this reason; examples: {examples or 'not collected'}.")
+        else:
+            lines.append('- Texture rejection diagnostics: no samples collected; '
+                         'this does not establish that all texture bindings succeeded.')
         trace = run.get('frame_trace')
         if run.get('frame_trace_error'):
             lines.append(f"- Frame trace unavailable: {run['frame_trace_error']}")

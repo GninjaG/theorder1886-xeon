@@ -69,3 +69,17 @@ clang++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread -Igpu/shim \
 The full MSYS2 test runner also builds/runs the same standalone test; the
 small GitHub CI job checks this header and sampler, **not** the full renderer
 compilation or game rendering.
+
+## Aggregating sampled rejects in regression reports
+
+The existing `tools/regression_report.py` parser recognizes `T# null binding`
+warnings and includes categories in the manifest and Markdown from
+`tools/batch_runs.py`. The analyzer reports per reason the number of logged
+lines, the **lower bound** derived from the largest observed sample count, and
+up to eight distinct shader/slot examples.
+
+**Never sum sampled log lines as if every rejection were logged.**
+The rate limiter emits the first eight occurrences and then powers of two.
+The count is per reason across all shaders, **not per shader**. An empty
+section can mean disabled diagnostics, truncated logs or no detected rejection;
+it cannot prove graphics correctness.

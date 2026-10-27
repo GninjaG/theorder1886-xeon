@@ -38,6 +38,35 @@ class RegressionReportTest(unittest.TestCase):
              'pipeline_permutation': 7, 'spirv_hash': 'fedcba9876543210'}])
         self.assertEqual(regression_report.parse_log('', 10)['compute_pipeline_reuse_events'], [])
 
+    def test_texture_rejection_samples_are_lower_bounds_not_exact_counts(self):
+        text = (
+            '[Renderer] T# null binding: reason=unmapped-address count=1 '
+            'shader=0x00ABcd12 slot=4 address=0x12345 dimensions=64x64\n'
+            '[Renderer] T# null binding: reason=unmapped-address count=8 '
+            'shader=0x00ABcd12 slot=4 address=0x12345 dimensions=64x64\n'
+            '[Renderer] T# null binding: reason=unmapped-address count=16 '
+            'shader=0x00beef00 slot=3 address=0x67890 dimensions=128x128\n'
+            '[Renderer] T# null binding: reason=invalid-mip-range count=2 '
+            'shader=0x0000F00D slot=0 address=0x43210 dimensions=16x16\n'
+            'T# null binding: reason=unmapped-address count=nan shader=0x12 slot=0 address=0x0\n'
+        )
+        result = regression_report.parse_log(text, 10)
+        grouped = result['texture_rejections']
+        self.assertEqual(sorted(grouped), ['invalid-mip-range', 'unmapped-address'])
+        self.assertEqual(grouped['unmapped-address']['sampled_log_lines'], 3)
+        self.assertEqual(grouped['unmapped-address']['last_observed_count_lower_bound'], 16)
+        self.assertEqual(grouped['unmapped-address']['shader_slot_examples'], [
+            {'shader': '0x00abcd12', 'slot': 4, 'guest_address': '0x12345'},
+            {'shader': '0x00beef00', 'slot': 3, 'guest_address': '0x67890'},
+        ])
+        self.assertEqual(grouped['invalid-mip-range']['last_observed_count_lower_bound'], 2)
+        self.assertEqual(regression_report.parse_log('', 10)['texture_rejections'], {})
+        manifest = {'runs': [{'condition': 'cold', 'measurements': result}]}
+        markdown = regression_report.render_markdown(manifest)
+        self.assertIn('sampled, **not exact total counts**', markdown)
+        self.assertIn('at least 16 occurrences', markdown)
+        self.assertIn('0x00abcd12 slot 4', markdown)
+
     def test_cache_counters_are_cumulative_not_summed(self):
         result = regression_report.parse_log(
             "Pipeline binary cache: 10 hits, 2 compiled, 1 rejected, 2 saved, 0 cache errors\n"
