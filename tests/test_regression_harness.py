@@ -304,7 +304,8 @@ Fault: access violation at guest offset 0x1234
             self.assertEqual(blocked['performance_deltas'], {})
             self.assertIn('No FPS/frametime delta', regression_report.render_release_comparison(blocked))
         changed_env = build('new')
-        changed_env['runs'][0]['settings']['environment']['THEORDER_NO_MSAA'] = '1'
+        for run in changed_env['runs']:
+            run['settings']['environment']['THEORDER_NO_MSAA'] = '1'
         blocked_env = regression_report.compare_release_manifests(old, changed_env)
         self.assertEqual(blocked_env['status'], 'blocked')
         self.assertEqual(blocked_env['performance_deltas'], {})
