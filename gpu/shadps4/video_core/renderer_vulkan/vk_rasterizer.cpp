@@ -2734,7 +2734,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         // Diagnostic only: samples null-image decisions; accepted bindings remain unchanged.
-        const trace_null = [&](TextureRejectDiag::Reason reason, u64 guest_bytes = 0) {
+        const auto trace_null = [&](TextureRejectDiag::Reason reason, u64 guest_bytes = 0) {
             const u64 count = TextureRejectDiag::Record(reason, stage.pgm_hash);
             if (!count) return;
             LOG_WARNING(Render_Vulkan,

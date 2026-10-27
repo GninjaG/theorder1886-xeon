@@ -936,7 +936,8 @@ void PipelineCache::PublishShaders(bool wait) {
             }
             build->spec.info = &program->info;
             RegisterShaderMeta(program->info, build->spec.fetch_shader_data, build->spec,
-                               perm_hash, build->permutation, spv_hash);
+                               perm_hash, build->permutation, spv_hash,
+                               profile.needs_ssbo_store_load_barrier);
             program->AddPermut(build->module, std::move(build->spec), spv_hash);
             build->module = nullptr;
             program->pending.reset();
@@ -1985,7 +1986,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         const auto perm_hash = HashCombine(params.hash, 0);
 
         RegisterShaderMeta(new_program->info, spec.fetch_shader_data, spec, perm_hash, 0,
-                           spv_hash);
+                           spv_hash, profile.needs_ssbo_store_load_barrier);
         new_program->AddPermut(module, std::move(spec), spv_hash);
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
