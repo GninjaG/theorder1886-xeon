@@ -36,7 +36,13 @@ class SsboBarrierStageTests(unittest.TestCase):
     def test_targeted_shader_cache_version(self):
         cache = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
                  / 'vk_pipeline_serialization.cpp').read_text(encoding='utf-8')
-        self.assertIn('NeedsFormattedSsboBarrierCacheVersion(info.buffers)', cache)
+        # Cache salts now live in a pure, profile-gated helper rather than
+        # directly in vk_pipeline_serialization.cpp.
+        salt = (ROOT / 'gpu/shadps4/shader_recompiler'
+                / 'ssbo_barrier_cache_version.h').read_text(encoding='utf-8')
+        self.assertIn('NeedsFormattedSsboBarrierCacheVersion(buffers)', salt)
+        self.assertIn('NeedsWrittenSsboBarrierCacheVersion(buffers)', salt)
+        self.assertIn('if (!needs_ssbo_barriers) return 0;', salt)
         self.assertIn('SsboBarrierCacheSalt(needs_ssbo_barriers, info.buffers)', cache)
         self.assertIn('ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers)', cache)
         self.assertIn('profile.needs_ssbo_store_load_barrier', cache)
