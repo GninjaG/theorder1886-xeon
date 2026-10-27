@@ -19,6 +19,20 @@ static_assert(!NeedsWrittenSsboBarrierCacheVersion(std::array{Flags{false, false
 static_assert(NeedsWrittenSsboBarrierCacheVersion(std::array{Flags{false, true}}));
 static_assert(NeedsWrittenSsboBarrierCacheVersion(std::array{Flags{true, true}}));
 
+
+static_assert(Shader::SsboBarrierCacheSalt(false, std::array<Flags, 0>{}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(false, std::array{Flags{true, true}}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(false, std::array{Flags{false, true}}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(true, std::array<Flags, 0>{}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(true, std::array{Flags{false, false}}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(true, std::array{Flags{true, false}}) == 0);
+static_assert(Shader::SsboBarrierCacheSalt(true, std::array{Flags{false, true}}) ==
+              (1u << 19));
+static_assert(Shader::SsboBarrierCacheSalt(true, std::array{Flags{true, true}}) ==
+              ((1u << 18) | (1u << 19)));
+static_assert(Shader::SsboBarrierCacheSalt(
+                  true, std::array{Flags{false, true}, Flags{true, false}}) == (1u << 19));
+
 int main() {
     std::array<Flags, 2> values{{{true, false}, {false, true}}};
     assert(!NeedsFormattedSsboBarrierCacheVersion(values));
@@ -30,5 +44,7 @@ int main() {
     assert(!NeedsWrittenSsboBarrierCacheVersion(values));
     values[1].is_written = true;
     assert(NeedsWrittenSsboBarrierCacheVersion(values));
-    std::puts("selective formatted/atomic SSBO shader cache revision: OK");
+    assert(Shader::SsboBarrierCacheSalt(false, values) == 0);
+    assert(Shader::SsboBarrierCacheSalt(true, values) == (1u << 19));
+    std::puts("profile-gated formatted/atomic SSBO shader cache revision: OK");
 }

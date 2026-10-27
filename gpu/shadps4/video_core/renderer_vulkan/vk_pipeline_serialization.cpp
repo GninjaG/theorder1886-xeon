@@ -68,7 +68,8 @@ u32 CurrentShaderBinaryVersion() {
 // port: a translation fix that only some shaders meet raises their version alone, so only they
 // are translated again (a ShaderBinaryVersion bump rebuilds every pipeline: a cold-cache session).
 u32 ShaderBinaryVersionFor(const Shader::Info& info,
-                           const Shader::StageSpecialization& spec) {
+                           const Shader::StageSpecialization& spec,
+                           bool needs_ssbo_barriers) {
     u32 version = CurrentShaderBinaryVersion();
     if (info.uses_buffer_atomic_float_min_max || info.uses_image_atomic_float_min_max) {
         version += 1u << 16; // the float atomic min/max fallback runs one atomic (2026-10-18)
@@ -77,16 +78,9 @@ u32 ShaderBinaryVersionFor(const Shader::Info& info,
         spec.runtime_info.hw.vs.motion_vectors) {
         version += 1u << 17; // motion addresses moved from specialization constants to push data
     }
-    if (Shader::NeedsFormattedSsboBarrierCacheVersion(info.buffers)) {
-        // Only formatted writable resource permutations require retranslation.
-        // Keep the remaining SPIR-V/pipeline cache warm after this fix.
-        version += 1u << 18;
-    }
-    if (Shader::NeedsWrittenSsboBarrierCacheVersion(info.buffers)) {
-        // Selective conservative superset: cached metadata marks atomic RMW
-        // as written, alongside ordinary stores. Read-only shaders stay warm.
-        version += 1u << 19;
-    }
+    // These extra barriers only run on NVIDIA profiles. Do not retranslate
+    // writable shaders on AMD/Intel, where IR and SPIR-V are unaffected.
+    version += Shader::SsboBarrierCacheSalt(needs_ssbo_barriers, info.buffers);
     return version;
 }
 } // namespace
@@ -767,7 +761,7 @@ void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
 void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash,
-                        size_t perm_idx, u64 spv_hash) {
+                        size_t perm_idx, u64 spv_hash, bool needs_ssbo_barriers) {
     if (!Storage::DataBase::Instance().IsOpened()) {
         return;
     }
@@ -776,7 +770,7 @@ void RegisterShaderMeta(const Shader::Info& info,
     Serialization::Writer meta{ar};
 
     meta.Write(Serialization::ShaderMetaVersion);
-    meta.Write(ShaderBinaryVersionFor(info, spec));
+    meta.Write(ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers));
 
     meta.Write(perm_hash);
     meta.Write(perm_idx);
@@ -806,7 +800,8 @@ u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) 
 }
 
 bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
-                    Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash) {
+                    Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash,
+                    bool needs_ssbo_barriers) {
     Serialization::Reader meta{ar};
 
     u32 meta_version{};
@@ -829,7 +824,7 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
-    if (binary_version != ShaderBinaryVersionFor(info, spec)) {
+    if (binary_version != ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers)) {
         return false;
     }
     return true;
@@ -999,7 +994,8 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     spec.info = &program->info;
     size_t perm_idx{};
     u64 spv_hash{};
-    if (!LoadShaderMeta(ar, program->info, spec, perm_idx, spv_hash)) {
+    if (!LoadShaderMeta(ar, program->info, spec, perm_idx, spv_hash,
+                        profile.needs_ssbo_store_load_barrier)) {
         return false;
     }
 
@@ -1103,7 +1099,8 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         Shader::StageSpecialization spec{};
         size_t perm_idx{};
         u64 spv_hash{};
-        if (!LoadShaderMeta(meta_ar, *info, spec, perm_idx, spv_hash)) {
+        if (!LoadShaderMeta(meta_ar, *info, spec, perm_idx, spv_hash,
+                            profile.needs_ssbo_store_load_barrier)) {
             stop = "meta version";
             break;
         }
@@ -1575,7 +1572,7 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->spec, stage->perm_idx,
-                                   stage->spv_hash)) {
+                                   stage->spv_hash, profile.needs_ssbo_store_load_barrier)) {
                     if (!stage->spec.fetch_shader_data.Empty()) {
                         stage->fetch = stage->spec.fetch_shader_data;
                     }

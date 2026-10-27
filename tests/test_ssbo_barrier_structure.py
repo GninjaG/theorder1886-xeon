@@ -37,9 +37,14 @@ class SsboBarrierStageTests(unittest.TestCase):
         cache = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
                  / 'vk_pipeline_serialization.cpp').read_text(encoding='utf-8')
         self.assertIn('NeedsFormattedSsboBarrierCacheVersion(info.buffers)', cache)
-        self.assertIn('version += 1u << 18;', cache)
-        self.assertIn('NeedsWrittenSsboBarrierCacheVersion(info.buffers)', cache)
-        self.assertIn('version += 1u << 19;', cache)
+        self.assertIn('SsboBarrierCacheSalt(needs_ssbo_barriers, info.buffers)', cache)
+        self.assertIn('ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers)', cache)
+        self.assertIn('profile.needs_ssbo_store_load_barrier', cache)
+        self.assertEqual(cache.count('profile.needs_ssbo_store_load_barrier'), 3)
+        pipeline = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan'
+                    / 'vk_pipeline_cache.cpp').read_text(encoding='utf-8')
+        self.assertIn('RegisterShaderMeta(info, spec.fetch_shader_data', pipeline)
+        self.assertIn('profile.needs_ssbo_store_load_barrier);', pipeline)
         self.assertIn('ShaderBinaryVersion = 15u', cache)
 
     def test_atomic_rmw_is_classified_as_read_and_write(self):

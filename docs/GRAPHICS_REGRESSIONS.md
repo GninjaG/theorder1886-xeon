@@ -1,5 +1,29 @@
 # Graphics regression checkpoint
 
+## 2026-10-27: profile-gate the selective SSBO shader cache revisions (draft)
+
+The prior #80/#81 revisions salted disk shader versions for every formatted
+writable/writable SSBO even on hosts that never enable
+`Profile::needs_ssbo_store_load_barrier`. That flag is currently enabled
+for NVIDIA proprietary drivers, **not for AMD or Intel**. On the latter,
+the serialized meta versions could reject reusable shaders despite generating
+identical IR/SPIR-V, triggering avoidable shader translation/first-use stalls.
+
+The cache metadata reader, warm-up path, pipeline-stage loader and shader-meta
+writer now all receive the **same active device profile's gate** explicitly.
+The salt is zero on profiles without this barrier requirement. On enabled
+profiles it preserves the two additive salts: formatted writable (`1 << 18`)
+and any writable buffer (`1 << 19`). The global shader binary format/layout
+version stays unchanged. Standalone C++ tests cover all combinations and Python
+source checks guard plumbing across save/reload/warm-up.
+
+**One-time cache migration caveat:** AMD/Intel shader-meta blobs written under
+the previous unconditional salt may be rejected and recompiled **once** because
+their version changes back to unsalted; thereafter the new profile-appropriate
+version is reusable. No user cache/saves are deleted or forcibly reset.
+The effect on real frametimes requires matched cold/warm scene captures.
+
+
 ## 2026-10-27: atomic SSBO read-modify-write barrier coverage (draft)
 
 The existing InsertSsboStoreLoadBarrier pass ignored `BufferAtomic*`

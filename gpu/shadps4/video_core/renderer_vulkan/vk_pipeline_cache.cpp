@@ -2084,7 +2084,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             }
         }
 
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx, spv_hash);
+        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx, spv_hash,
+                           profile.needs_ssbo_store_load_barrier);
         std::unique_lock lk{programs_mutex};
         program->AddPermut(module, std::move(spec), spv_hash);
     } else {
