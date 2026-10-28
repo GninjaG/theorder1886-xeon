@@ -270,10 +270,16 @@ Fault: access violation at guest offset 0x1234
                         'gpu': gpu, 'driver': '621.1.0.0',
                         'summary': {'fps_median': 60 if hash_ == 'old' else 55},
                     },
-                    'settings': {'config': {'values': {
-                        **{key: '1' for key in regression_report._CROSS_SETTINGS},
-                        'upscaler': upscaler,
-                    }}},
+                    'settings': {
+                        'config': {'values': {
+                            **{key: '1' for key in regression_report._CROSS_SETTINGS},
+                            'upscaler': upscaler,
+                        }},
+                        'environment': {
+                            'THEORDER_ASYNC_SHADERS': '1',
+                            'THEORDER_READBACK_LINEAR': '0',
+                        },
+                    },
                     'frame_trace': {'fps_mean': 60 if hash_ == 'old' else 55,
                                     'frame_p95_ms': 20 if hash_ == 'old' else 22,
                                     'frame_p99_ms': 40 if hash_ == 'old' else 48,
@@ -297,6 +303,23 @@ Fault: access violation at guest offset 0x1234
             self.assertEqual(blocked['status'], 'blocked')
             self.assertEqual(blocked['performance_deltas'], {})
             self.assertIn('No FPS/frametime delta', regression_report.render_release_comparison(blocked))
+        changed_env = build('new')
+        for run in changed_env['runs']:
+            run['settings']['environment']['THEORDER_NO_MSAA'] = '1'
+        blocked_env = regression_report.compare_release_manifests(old, changed_env)
+        self.assertEqual(blocked_env['status'], 'blocked')
+        self.assertEqual(blocked_env['performance_deltas'], {})
+        self.assertEqual(next(g['status'] for g in blocked_env['checks']
+                              if g['field'] == 'runtime_environment'), 'mismatch')
+        missing_env = build('new')
+        missing_env['runs'][0]['settings'].pop('environment')
+        self.assertEqual(regression_report.compare_release_manifests(
+            old, missing_env)['status'], 'blocked')
+        inconsistent_env = build('new')
+        inconsistent_env['runs'][1]['settings']['environment']['THEORDER_READBACK_LINEAR'] = '1'
+        self.assertEqual(regression_report.compare_release_manifests(
+            old, inconsistent_env)['status'], 'blocked')
+
         missing = build('new')
         missing['runs'][0]['measurements']['game'].pop('eboot_sha256')
         blocked = regression_report.compare_release_manifests(old, missing)
@@ -425,6 +448,28 @@ Fault: access violation at guest offset 0x1234
             'THEORDER_UPLOAD_TOKEN': 'should-not-appear', 'THEORDER_FPS_LIMIT': '60',
         })
         self.assertEqual(settings, {'THEORDER_FRAME_STATS': '1', 'THEORDER_FPS_LIMIT': '60'})
+
+    def test_batch_runner_portable_default_and_redacted_env(self):
+        import os
+        source = (paths.ROOT / 'tools' / 'batch_runs.py').read_text(encoding='utf-8')
+        self.assertNotIn(r'C:\Users\Mateus\Downloads', source)
+        self.assertEqual(batch_runs.GAME_DIR,
+                         os.environ.get('THEORDER_GAME_DIR') or
+                         str(paths.ROOT.parent / 'CUSA00035'))
+        self.assertEqual(batch_runs._safe_settings({
+            'THEORDER_FPS_LIMIT': '60',
+            'THEORDER_NO_MSAA': '1',
+            'THEORDER_PROBE': r'C:\Users\Someone\port.exe',
+            'THEORDER_FRAME_CSV': 'D:/private/frames.csv',
+            'THEORDER_USER_NAME': 'Private Player',
+            'THEORDER_MODS_CONFIG': 'D:/private/mods.json',
+            'THEORDER_OUTPUT': 'D:/private/image.png',
+            'THEORDER_USER_TAG': 'safe-tag',
+        }), {
+            'THEORDER_FPS_LIMIT': '60',
+            'THEORDER_NO_MSAA': '1',
+            'THEORDER_USER_TAG': 'safe-tag',
+        })
 
     def test_run_ini_settings_preserve_comments_and_unrelated_keys(self):
         with tempfile.TemporaryDirectory() as tmp:

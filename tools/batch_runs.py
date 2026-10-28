@@ -31,7 +31,7 @@ import regression_report
 from regression_report import compare_captures, parse_log, write_reports
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME_DIR = os.environ.get('THEORDER_GAME_DIR', r'C:\Users\Mateus\Downloads\games\CUSA00035')
+GAME_DIR = os.environ.get('THEORDER_GAME_DIR') or str(ROOT.parent / 'CUSA00035')
 
 
 def kill_orphans():
@@ -89,12 +89,16 @@ def _build_info(exe):
 def _safe_settings(env):
     excluded = {'THEORDER_GAME_DIR', 'THEORDER_DATA_DIR', 'THEORDER_USER_DIR',
                 'THEORDER_GPU_USER_DIR', 'THEORDER_CONFIG', 'THEORDER_PAD_FILE',
-                'THEORDER_RESTART_COMMAND'}
+                'THEORDER_RESTART_COMMAND', 'THEORDER_PROBE', 'THEORDER_FRAME_CSV',
+                'THEORDER_USER_NAME', 'THEORDER_MODS_CONFIG', 'THEORDER_PATCHES_CONFIG'}
     return {
         key: value for key, value in sorted(env.items())
         if key.startswith('THEORDER_') and key not in excluded
-        and not key.endswith(('_DIR', '_FILE', '_PATH', '_TRIGGER'))
+        and not key.endswith(('_DIR', '_FILE', '_PATH', '_TRIGGER',
+                               '_CONFIG', '_CSV', '_LOG', '_EXE'))
         and not any(word in key.upper() for word in ('SECRET', 'TOKEN', 'PASSWORD'))
+        # Arbitrary THEORDER_* options may hold private filesystem paths.
+        and not re.search(r'(?:[A-Za-z]:[\\/]|\\\\|(?:^|\s)/[^\s]+)', str(value))
     }
 
 

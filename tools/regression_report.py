@@ -568,6 +568,12 @@ def _cross_value(manifest, field):
                             .get('values', {}).get(key) for r in runs])
     if field in ('gpu', 'driver'):
         return _consistent([r.get('measurements', {}).get(field) for r in runs])
+    if field == 'runtime_environment':
+        # Complete safe effective THEORDER_* flags, not the full OS environment.
+        # INI parity alone is insufficient: NO_MSAA and other renderer flags
+        # may change behavior without touching any of the selected INI keys.
+        return _consistent([(r.get('settings') or {}).get('environment')
+                            for r in runs])
     if field == 'scene':
         return _consistent([r.get('scene') or manifest.get('scenario') for r in runs])
     if field == 'cache_state':
@@ -611,6 +617,8 @@ def compare_release_manifests(baseline, candidate):
     for field in _CROSS_SETTINGS:
         key = 'settings.' + field
         check(key, _cross_value(baseline, key), _cross_value(candidate, key))
+    check('runtime_environment', _cross_value(baseline, 'runtime_environment'),
+          _cross_value(candidate, 'runtime_environment'))
 
     # Empty strings are intentional valid values for no pad input/extra game args.
     for item in gates:
