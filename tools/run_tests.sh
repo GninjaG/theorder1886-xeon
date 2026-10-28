@@ -17,6 +17,40 @@ if ! ninja -C out/gpu "${tests[@]/%/-test}" > out/tests-build.log 2>&1; then
     grep -E 'error:|FAILED' out/tests-build.log | head -20; echo 'test build failed (out/tests-build.log)'; exit 1
 fi
 failed=()
+skipped=()
+# Default is strict: skip hardware-bound tests only when explicitly requested
+# AND the Vulkan preflight conclusively finds no compatible ICD/device.
+vulkan_mode=${THEORDER_VULKAN_TESTS:-required}
+vulkan_unavailable=0
+case "$vulkan_mode" in
+    required) ;;
+    auto)
+        if ! clang -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/vulkan_device_probe.c -o out/vulkan-device-probe -lvulkan-1 \
+            > out/test-vulkan-probe.log 2>&1; then
+            failed+=(vulkan-probe-build)
+            tail -10 out/test-vulkan-probe.log
+        else
+            if timeout 30 out/vulkan-device-probe >> out/test-vulkan-probe.log 2>&1; then
+                echo 'Vulkan preflight: physical device available, GPU tests required'
+            else
+                result=$?
+                if [[ "$result" == 77 ]]; then
+                    vulkan_unavailable=1
+                    echo 'Vulkan preflight: ICD/device unavailable; skip only explicit GPU tests'
+                else
+                    failed+=(vulkan-probe-runtime)
+                    echo "Vulkan preflight: unexpected exit $result, not skipping GPU tests"
+                    tail -10 out/test-vulkan-probe.log
+                fi
+            fi
+        fi ;;
+    *) echo "Invalid THEORDER_VULKAN_TESTS=$vulkan_mode (required|auto)"; exit 2 ;;
+esac
+# Only these seven tests require a live Vulkan instance/physical device.
+vulkan_device_tests=(pipeline-binary-initialization async-pipeline-cache
+                     scene-resolution taa-shader camera-motion dma-barriers
+                     renderpass-barrier)
 # Dependency-free shader cache salt test: do not invalidate all warmed shaders.
 if ! clang++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
     tests/test_ssbo_barrier_cache.cpp -o out/ssbo-barrier-cache-test \
@@ -34,6 +68,16 @@ if ! clang++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread -Igpu/shim \
     tail -5 out/test-texture-reject-diag.log
 fi
 for t in "${tests[@]}"; do
+    if ((vulkan_unavailable)); then
+        for gpu_test in "${vulkan_device_tests[@]}"; do
+            if [[ "$t" == "$gpu_test" ]]; then
+                printf 'SKIP: %s requires Vulkan; no ICD/device on this runner\n' "$t" \
+                    | tee "out/test-$t.log"
+                skipped+=("$t")
+                continue 2
+            fi
+        done
+    fi
     if ! timeout 300 "out/gpu/$t-test" ${args[$t]:-} > "out/test-$t.log" 2>&1; then
         failed+=("$t"); tail -3 "out/test-$t.log"
     fi
@@ -57,4 +101,8 @@ done
 "${python:-python}" -m unittest discover -s tests > out/test-python.log 2>&1 || failed+=(python)
 tail -1 out/test-python.log
 if ((${#failed[@]})); then echo "FAILED: ${failed[*]}"; exit 1; fi
-echo "all ${#tests[@]} C/C++ tests and the Python suite passed"
+if ((${#skipped[@]})); then
+    echo "PASS: CPU/IR/C tests and Python suite; SKIPPED ${#skipped[@]} GPU tests: ${skipped[*]}"
+else
+    echo "PASS: all ${#tests[@]} native GPU/CPU tests and Python suite"
+fi

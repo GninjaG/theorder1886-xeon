@@ -36,3 +36,26 @@ external Git Bash shell). Only when neither the override nor the current
 virtual MSYS2 root is usable does the helper fall back to `C:\\msys64`.
 The native CI must verify that unit-test binaries **execute** after the build;
 compilation alone is not a passing result.
+
+## Hosted Windows: missing Vulkan ICD versus genuine regressions
+
+GitHub-hosted Windows runners can compile and link the native port without
+providing a working Vulkan physical device. Seven renderer-integration tests
+require an actual Vulkan instance: `pipeline-binary-initialization`,
+`async-pipeline-cache`, `scene-resolution`, `taa-shader`, `camera-motion`,
+`dma-barriers`, and `renderpass-barrier`.
+
+The workflow explicitly sets `THEORDER_VULKAN_TESTS=auto`. The runner first
+compiles and executes `tests/vulkan_device_probe.c` through the normal Vulkan
+loader. Only `VK_ERROR_INCOMPATIBLE_DRIVER` or an instance reporting no
+physical devices produce exit 77 and allow **those seven tests only** to be
+marked `SKIP`. Unexpected driver/loader errors, probe compilation errors,
+and all remaining CPU, IR, C++, and Python test failures stay **red**. A working
+Vulkan device means the seven tests are **required** even in `auto` mode.
+
+The default for `bash tools/run_tests.sh` is strict
+(`THEORDER_VULKAN_TESTS=required`): no automatic skipping. CI output reports
+the exact names/count of tests skipped. Successful hosted CI therefore means
+native compilation and the CPU/IR/Python suite passed; it does **not** mean
+Vulkan integration tests ran. Those tests must be executed on an actual GPU
+before claiming a graphics fix or resolving black-screen/stutter issues.

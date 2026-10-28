@@ -134,7 +134,12 @@ jobs:
             exit 1
           fi
 
-      - name: Run full C/C++ and Python test suites
+      - name: Run all CPU/IR tests and GPU tests only when a Vulkan ICD exists
+        env:
+          # GitHub-hosted Windows runners have no compatible Vulkan ICD/GPU.
+          # Preflight exits 77 ONLY for proven device absence; all other
+          # errors and all non-GPU tests remain failures.
+          THEORDER_VULKAN_TESTS: auto
         run: |
           set -euo pipefail
           bash tools/run_tests.sh
