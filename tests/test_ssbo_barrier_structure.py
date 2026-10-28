@@ -79,7 +79,7 @@ class SsboBarrierStageTests(unittest.TestCase):
         self.assertIn('../tests/test_formatted_ssbo_barriers.cpp', cmake)
         # The IR test can be followed by additional native targets; validate
         # array membership, not its accidental position at the end of the list.
-        match = re.search(r'tests=\\((.*?)\\)', runner, re.DOTALL)
+        match = re.search(r'tests=\((.*?)\)', runner, re.DOTALL)
         self.assertIsNotNone(match)
         self.assertIn('formatted-ssbo-barriers', match.group(1).split())
 
