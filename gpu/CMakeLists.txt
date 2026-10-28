@@ -401,6 +401,12 @@ add_executable(no-msaa-test EXCLUDE_FROM_ALL ../tests/test_no_msaa.cpp
 target_compile_options(no-msaa-test PRIVATE -UNDEBUG)
 target_include_directories(no-msaa-test PRIVATE shim shadps4 third_party/gcn/include)
 target_link_libraries(no-msaa-test PRIVATE Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum)
+# Pure policy test: Vulkan headers only; no physical device is created.
+add_executable(swapchain-policy-test EXCLUDE_FROM_ALL ../tests/test_swapchain_policy.cpp)
+target_compile_options(swapchain-policy-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(swapchain-policy-test PRIVATE shadps4)
+target_link_libraries(swapchain-policy-test PRIVATE Vulkan::Headers)
+
 add_executable(async-pipeline-cache-test EXCLUDE_FROM_ALL ../tests/test_async_pipeline_cache.cpp)
 target_compile_options(async-pipeline-cache-test PRIVATE -UNDEBUG)
 target_include_directories(async-pipeline-cache-test PRIVATE shadps4)
