@@ -80,6 +80,22 @@ jobs:
           test -f gpu/third_party/fsr-vulkan/CMakeLists.txt
           test -f gpu/third_party/xbyak/xbyak/xbyak.h
 
+      - name: Verify toolchain stays on the active MSYS2 installation
+        run: |
+          set -euo pipefail
+          active_clang="$(command -v clang++)"
+          active_timeout="$(command -v timeout)"
+          source ./msys2-env.sh
+          selected_clang="$(command -v clang++)"
+          selected_timeout="$(command -v timeout)"
+          echo "Compiler: $active_clang -> $selected_clang"
+          echo "Timeout: $active_timeout -> $selected_timeout"
+          if [[ "$active_clang" != "$selected_clang" ||
+                "$active_timeout" != "$selected_timeout" ]]; then
+            echo "::error::msys2-env.sh selected a different toolchain runtime"
+            exit 1
+          fi
+
       - name: Build port for Windows (no game data)
         run: |
           set -euo pipefail
