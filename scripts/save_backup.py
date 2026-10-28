@@ -28,7 +28,10 @@ def _backup_order(name):
 def list_backups(user_dir):
     """Backup names, newest first."""
     root = backups_dir(user_dir)
-    return sorted((p.name for p in root.iterdir() if p.is_dir()),
+    # Ignore incomplete, hidden staging directories from interrupted copies.
+    # Keep older manually named backups visible for backwards compatibility.
+    return sorted((p.name for p in root.iterdir()
+                   if p.is_dir() and not p.name.startswith('.savedata-backup-')),
                   key=_backup_order, reverse=True) if root.is_dir() else []
 
 
@@ -56,8 +59,19 @@ def _copy(user_dir, now):
         if stamp == base:
             n = max(n, sequence + 1)
     target = root / (base if n == 1 else f'{base}-{n}')
-    shutil.copytree(savedata, target)
-    return target
+    # Do not publish a partial timestamped backup if copying fails. A crash
+    # can leave a hidden staging folder for manual recovery, but it will not
+    # appear among the usable/restorable backups until the copy completes.
+    staging = Path(tempfile.mkdtemp(prefix='.savedata-backup-', dir=root))
+    try:
+        incoming = staging / 'payload'
+        shutil.copytree(savedata, incoming)
+        incoming.rename(target)
+        return target
+    finally:
+        # Only this operation's unique staging directory is cleaned up.
+        # Never delete staging from another interrupted backup attempt.
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def backup(user_dir, now=None, keep=KEEP):
