@@ -863,21 +863,13 @@ class Launcher:
             threading.Thread(target=self.check_update, daemon=True).start()
 
     def check_version_migration(self):
-        """Performs settings migration when upgrading between versions.
-        Ensures 100% portable mode by unconditionally purging any legacy AppData directories."""
-        # 1. Unconditionally remove legacy AppData folders if present (portable mode guarantee)
-        if WINDOWS:
-            appdata = os.environ.get('APPDATA', '')
-            if appdata:
-                for folder in ('theorder1886-launcher', 'order1886-launcher'):
-                    legacy_config_dir = Path(appdata) / folder
-                    if legacy_config_dir.is_dir():
-                        try:
-                            shutil.rmtree(legacy_config_dir, ignore_errors=True)
-                            print(f'Launcher: purged legacy AppData directory at {legacy_config_dir}', flush=True)
-                        except Exception:
-                            pass
+        """Migrate portable settings without deleting historical user files.
 
+        The launcher only reads CONFIG_DIR/DATA_DIR; it does not need to
+        remove old AppData folders to operate in portable mode. Those folders
+        may contain manually customized settings or backups that belong to
+        the user, so leave them untouched.
+        """
         last_version = self.app.get('last_version', '')
         if last_version != VERSION:
             # Shader and pipeline caches carry their own compatibility versions.
@@ -891,12 +883,9 @@ class Launcher:
                     print(f'Launcher: migrated {legacy_ini} -> {target_ini}', flush=True)
                 except Exception as e:
                     print(f'Launcher: error copying legacy ini: {e}', flush=True)
-            if legacy_ini.is_file():
-                try:
-                    legacy_ini.unlink(missing_ok=True)
-                    print(f'Launcher: removed obsolete {legacy_ini}', flush=True)
-                except Exception:
-                    pass
+            # Keep order1886.ini as a recoverable pre-migration copy, even
+            # after successful migration. Copy failures also leave it intact.
+            # No automatic deletion of historical settings occurs at startup.
 
             # 3. Update last_version
             self.app['last_version'] = VERSION
