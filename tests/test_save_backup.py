@@ -39,6 +39,34 @@ class SaveBackupTest(unittest.TestCase):
         self.assertIsNone(save_backup.backup(self.user, now=self.tick()))
         self.assertEqual(save_backup.list_backups(self.user), [])
 
+    def test_partial_backup_copy_not_published_or_restorable(self):
+        write(self.save, 'current progress')
+        from shutil import copytree as actual_copytree
+
+        def interrupt_copy(src, dest, *args, **kwargs):
+            if Path(dest).name == 'payload':
+                partial = Path(dest) / self.save.relative_to(self.user / 'savedata')
+                write(partial, 'incomplete backup')
+                raise OSError('simulated interrupted backup write')
+            return actual_copytree(src, dest, *args, **kwargs)
+
+        with mock.patch.object(save_backup.shutil, 'copytree', side_effect=interrupt_copy):
+            with self.assertRaisesRegex(OSError, 'interrupted backup write'):
+                save_backup.backup(self.user, now=self.tick())
+        self.assertEqual(self.save.read_text(), 'current progress')
+        self.assertEqual(save_backup.list_backups(self.user), [])
+        self.assertFalse(list((self.user / 'savedata_backups').glob(
+            '.savedata-backup-*')))
+
+    def test_stale_interrupted_backup_is_hidden_not_deleted(self):
+        write(self.save, 'current progress')
+        stale = (self.user / 'savedata_backups' / '.savedata-backup-old'
+                 / 'payload' / self.save.relative_to(self.user / 'savedata'))
+        write(stale, 'partial old data')
+        made = save_backup.backup(self.user, now=self.tick())
+        self.assertEqual(save_backup.list_backups(self.user), [made.name])
+        self.assertEqual(stale.read_text(encoding='utf-8'), 'partial old data')
+
     def test_same_second_gets_unique_name(self):
         write(self.save, 'v1')
         first = save_backup.backup(self.user, now=self.clock)
