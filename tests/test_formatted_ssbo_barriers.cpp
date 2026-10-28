@@ -3,6 +3,7 @@
 // resource bindings. No GPU, game data or Vulkan driver is required.
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "common/object_pool.h"
