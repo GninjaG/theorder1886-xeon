@@ -5,6 +5,14 @@ game startup and before any requested restore. A restore selects a named
 backup already present in `savedata_backups` and copies it to a unique
 `.savedata-restore-*` staging directory next to the active saves.
 
+Backup creation is also staged: new backups first copy into a uniquely
+named hidden `.savedata-backup-*` directory and become a restorable timestamp
+directory only after the copy is complete. An exception removes this operation's
+temporary folder; an abrupt process termination can leave a hidden partial
+folder behind for manual review, but it will **not** appear in the usable
+backup list or be automatically removed on the next run. Previous manually
+named backups remain visible.
+
 Restore flow:
 
 1. Create a safety backup of the current `savedata` first. If the copy fails,
