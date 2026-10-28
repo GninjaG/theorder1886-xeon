@@ -12,6 +12,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#include "video_core/renderer_vulkan/vk_swapchain_policy.h"
 
 namespace Vulkan {
 
@@ -249,11 +250,13 @@ void Swapchain::SetSurfaceProperties() {
         transform = capabilities.currentTransform;
     }
 
-    // Opaque is not supported everywhere.
-    composite_alpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-    if (!(capabilities.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)) {
-        composite_alpha = vk::CompositeAlphaFlagBitsKHR::eInherit;
-    }
+    // Only select modes the presentation surface advertises. Assuming
+    // Inherit after Opaque fails is invalid on pre/post-multiplied surfaces.
+    const auto selected_alpha = ChooseCompositeAlpha(capabilities.supportedCompositeAlpha);
+    ASSERT_MSG(selected_alpha.has_value(),
+               "Surface advertises no supported composite-alpha mode (flags={})",
+               vk::to_string(capabilities.supportedCompositeAlpha));
+    composite_alpha = *selected_alpha;
 }
 
 void Swapchain::Destroy() {
