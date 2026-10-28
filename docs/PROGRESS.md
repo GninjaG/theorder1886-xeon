@@ -2,6 +2,22 @@
 
 Short, dated state for resuming work. Newest first.
 
+## 2026-10-27: non-destructive portable settings migration (draft PR)
+
+- Source review found `Launcher.check_version_migration` was deleting both legacy
+  AppData launcher folders **on every startup**, without asking. It also
+  deleted the original `order1886.ini` after attempting a copy.
+- The launcher now leaves the historical AppData folders untouched; portable
+  mode is maintained by reading/writing only the installation's DATA_DIR.
+- On upgrade, it copies `order1886.ini` to `theorder.ini` only if the
+  destination is absent. The original remains as a recoverable backup even
+  if the copy fails. Existing portable settings are not overwritten.
+- Tests run without Windows/Tk or game files and check existing settings,
+  copied settings, failed copies, and two private sentinel files in legacy
+  AppData locations. Nothing is removed from actual machines by this PR.
+- The explicitly confirmed "Reset all cache/settings" command remains a
+  separate user-directed operation; this fix concerns startup only.
+
 ## 2026-10-27: launcher upscaler override regression fix (PR pending)
 
 - Root cause confirmed by source inspection: `game_environment(self.app)` received only
