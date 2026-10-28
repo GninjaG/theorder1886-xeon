@@ -9,6 +9,7 @@ import datetime
 from pathlib import Path
 import re
 import shutil
+import tempfile
 
 KEEP = 10
 STAMP = '%Y%m%d-%H%M%S'
@@ -73,13 +74,39 @@ def restore(user_dir, name, now=None):
         raise ValueError(f'No save backup named {name!r}')
     source = backups_dir(user_dir) / name
     savedata = Path(user_dir) / 'savedata'
-    # Pruning waits until the copy is done: the restored backup may be the oldest one.
+    # Preserve the original before any swap; never prune the source backup
+    # until the replacement has been installed successfully.
     safety = _copy(user_dir, now)
-    staging = Path(user_dir) / 'savedata.restoring'
-    shutil.rmtree(staging, ignore_errors=True)
-    shutil.copytree(source, staging)
-    shutil.rmtree(savedata, ignore_errors=True)
-    staging.rename(savedata)
+    # A unique private staging folder avoids clearing another interrupted
+    # restore's recoverable data (the old fixed savedata.restoring was deleted).
+    staging_root = Path(tempfile.mkdtemp(prefix='.savedata-restore-', dir=user_dir))
+    incoming = staging_root / 'incoming'
+    previous = staging_root / 'previous'
+    activated = False
+    try:
+        # A failed/incomplete copy leaves the active savedata untouched.
+        shutil.copytree(source, incoming)
+        if savedata.exists():
+            savedata.rename(previous)
+        try:
+            incoming.rename(savedata)
+            activated = True
+        except BaseException:
+            if previous.exists():
+                try:
+                    previous.rename(savedata)
+                except OSError as error:
+                    # The old saves are STILL in previous. Do not remove
+                    # staging_root: its path is needed for manual recovery.
+                    raise RuntimeError(
+                        f'Cannot restore savedata automatically; original saves '
+                        f'preserved at {previous}') from error
+            raise
+    finally:
+        # Only clean up when the new savedata is installed or rollback
+        # succeeded. On failed rollback, previous is the only active copy.
+        if activated or not previous.exists():
+            shutil.rmtree(staging_root, ignore_errors=True)
     _prune(user_dir)
     return safety
 
