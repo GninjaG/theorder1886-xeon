@@ -20,6 +20,7 @@
 #include "sdl_window.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/renderer_vulkan/vk_presenter.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <atomic>
@@ -436,4 +437,18 @@ extern "C" int theordergpu_text_input_poll(char *out, uint64_t size) {
     out[n] = 0;
   }
   return state;
+}
+
+namespace Libraries::GnmDriver {
+extern std::unique_ptr<Vulkan::Presenter> presenter;
+}
+
+extern "C" void theordergpu_precompile_shaders_aot(void) {
+  if (Libraries::GnmDriver::presenter) {
+    Libraries::GnmDriver::presenter->GetRasterizer().GetPipelineCache().PrecompileAllShadersAOT();
+  }
+}
+
+void PrecompileAllShadersAOT() {
+  theordergpu_precompile_shaders_aot();
 }

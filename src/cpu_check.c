@@ -1,6 +1,11 @@
 #include "cpu_check.h"
 #include <cpuid.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 CpuFeatureWords cpu_feature_words(void) {
     CpuFeatureWords words = {0, 0, 0};
@@ -55,4 +60,30 @@ unsigned cpu_missing_rewritable(CpuFeatureWords words, char *out, size_t size) {
     unsigned mask;
     missing_sets(words, rewritable_sets, sizeof rewritable_sets / sizeof *rewritable_sets, out, size, &mask);
     return mask;
+}
+
+int cpu_has_avx2(CpuFeatureWords words) {
+    return (words.leaf7_ebx & (1u << 5)) != 0;
+}
+
+int cpu_has_fma(CpuFeatureWords words) {
+    return (words.leaf1_ecx & (1u << 12)) != 0;
+}
+
+int cpu_is_haswell(CpuFeatureWords words) {
+    /* Intel Haswell-EP features: AVX2, FMA3, BMI1, F16C, MOVBE, LZCNT, SSE4.2, AVX, POPCNT */
+    return cpu_has_avx2(words) && cpu_has_fma(words) &&
+           ((words.leaf7_ebx & (1u << 3)) != 0) && ((words.leaf1_ecx & (1u << 29)) != 0) &&
+           ((words.leaf1_ecx & (1u << 22)) != 0) && ((words.ext1_ecx & (1u << 5)) != 0);
+}
+
+unsigned cpu_hardware_threads(void) {
+#ifdef _WIN32
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors ? sysinfo.dwNumberOfProcessors : 1u;
+#else
+    long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+    return nprocs > 0 ? (unsigned)nprocs : 1u;
+#endif
 }

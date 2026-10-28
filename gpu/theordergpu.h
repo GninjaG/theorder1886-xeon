@@ -50,6 +50,8 @@ typedef struct {
 void theordergpu_mouse_take(TheOrderMouse *out);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned theordergpu_symbol_count(void);
+/* Precompiles all shaders/pipelines ahead of time using all hardware threads (Xeon 28 threads) and saves cache to shader_cache/ */
+void theordergpu_precompile_shaders_aot(void);
 #ifdef __cplusplus
 }
 #endif

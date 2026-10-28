@@ -1020,6 +1020,13 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--cpu-only")) cpu_only = 1;
         else if (!strcmp(argv[i], "--strict-imports")) strict_imports = 1;
         else if (!strcmp(argv[i], "--check-imports")) check_imports = 1;
+        else if (!strcmp(argv[i], "--precompile-shaders")) {
+#ifdef _WIN32
+            _putenv_s("THEORDER_PRECOMPILE_SHADERS", "1");
+#else
+            setenv("THEORDER_PRECOMPILE_SHADERS", "1", 1);
+#endif
+        }
         else if (!strcmp(argv[i], "--content-profile") && i+1<argc) content_profile=argv[++i];
         else if (!strcmp(argv[i], "--app0") && i+1<argc) app0=argv[++i];
         else if (!strcmp(argv[i], "--user") && i+1<argc) user_dir=argv[++i];
@@ -1048,7 +1055,7 @@ int main(int argc, char **argv) {
         }
     }
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir] [--user dir] [--patches file] [--isa-rewrite file] [--mount guest=host]... [--timeout seconds] | --vulkan-only | --cpu-features | --gamepad\n", argv[0]);
+        fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--precompile-shaders] [--content-profile file] [--app0 dir] [--user dir] [--patches file] [--isa-rewrite file] [--mount guest=host]... [--timeout seconds] | --vulkan-only | --cpu-features | --gamepad\n", argv[0]);
         return 1;
     }
     if (!cpu_supported(missing, sizeof missing)) return 20;

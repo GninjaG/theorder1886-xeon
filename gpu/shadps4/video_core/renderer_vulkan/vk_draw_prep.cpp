@@ -49,11 +49,11 @@ void ForEachPacket(std::span<const u32> commands, Func&& func) {
 
 u32 DefaultWorkerCount() {
     if (const char* env = std::getenv("THEORDER_PREP_WORKERS")) {
-        return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
+        int custom = std::atoi(env);
+        if (custom >= 0) return static_cast<u32>(custom);
     }
-    // Workers are SCHED_IDLE and claim whole buffers, so more of them only use more idle
-    // cores: half the hardware threads (Steam Deck 4, 16-thread desktop 8).
-    return std::clamp<u32>(PortThreads::Available() / 2, 1, 8);
+    // Scales dynamically with available worker threads, leaving dedicated cores free
+    return PortThreads::WorkerThreads();
 }
 
 /// Flattened user data of one submission: chunks never move, so the GPU thread can read a

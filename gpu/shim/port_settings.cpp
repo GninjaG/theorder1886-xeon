@@ -95,6 +95,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.fps_limit = PortGraphics::ParseFpsLimit(i);
     } else if (key == "async_shaders") {
         v.async_shaders = i != 0;
+    } else if (key == "precompile_shaders_on_boot" || key == "precompile_shaders") {
+        v.precompile_shaders_on_boot = i != 0;
     } else if (key == "fsr1") {
         // FSR 1 left the launcher and the in-game menu: a value saved by an older version has no
         // control left to turn it off, so it stays off.
@@ -131,6 +133,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.fsr4_auto_exposure = i != 0;
     } else if (key == "fsr4_invert_jitter") {
         v.fsr4_invert_jitter = i != 0;
+    } else if (key == "enable_frame_gen" || key == "frame_gen" || key == "dlss_g") {
+        v.enable_frame_gen = i != 0;
+    } else if (key == "xeon_optimizations" || key == "use_all_cores" || key == "xeon_threads") {
+        v.xeon_optimizations = i != 0;
     } else if (key == "live_resolution") {
         v.live_resolution = value == "auto" ? -1 : std::clamp(i, 0, 1);
     } else if (key == "output_res") {
@@ -178,9 +184,11 @@ void Load() {
         {"THEORDER_REACTIVE_THRESHOLD", "reactive_threshold"}, {"THEORDER_REACTIVE_MAX", "reactive_max"},
         {"THEORDER_UPSCALE_PRESET", "preset"},            {"THEORDER_OBJECT_MOTION", "object_motion"},
         {"THEORDER_ASYNC_SHADERS", "async_shaders"},      {"THEORDER_DEFERRED_READBACK", "deferred_readback"},
+        {"THEORDER_PRECOMPILE_SHADERS", "precompile_shaders_on_boot"},
         {"THEORDER_STALE_READBACK", "stale_readback"},     {"THEORDER_FSR1", "fsr1"},
         {"THEORDER_RCAS", "rcas"},                        {"THEORDER_FRAMES_AHEAD", "frames_queued"},
-        {"THEORDER_ANISOTROPY", "anisotropy"},
+        {"THEORDER_ANISOTROPY", "anisotropy"},             {"THEORDER_FRAME_GEN", "enable_frame_gen"},
+        {"THEORDER_DLSS_G", "enable_frame_gen"},           {"THEORDER_XEON_MODE", "xeon_optimizations"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -296,13 +304,28 @@ void Save() {
                  PortGraphics::Aspects[std::clamp(v.aspect.load(), 0, int(PortGraphics::Aspects.size()) - 1)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
-    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nmouse_sensitivity_y=%d\nmouse_invert_y=%d\nanisotropy=%d\n",
+    std::fprintf(file, "fov=%d\nmouse_look=%d\nmouse_sensitivity=%d\nmouse_sensitivity_y=%d\nmouse_invert_y=%d\nanisotropy=%d\nenable_frame_gen=%d\nprecompile_shaders_on_boot=%d\nxeon_optimizations=%d\n",
                  v.fov.load(), int(v.mouse_look.load()), v.mouse_sensitivity.load(),
-                 v.mouse_sensitivity_y.load(), int(v.mouse_invert_y.load()), v.anisotropy.load());
+                 v.mouse_sensitivity_y.load(), int(v.mouse_invert_y.load()), v.anisotropy.load(),
+                 int(v.enable_frame_gen.load()), int(v.precompile_shaders_on_boot.load()),
+                 int(v.xeon_optimizations.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
     std::fclose(file);
+}
+
+void SetNvidiaFrameGeneration(bool enable) {
+    auto& v = Get();
+    v.enable_frame_gen = enable;
+}
+
+bool IsNvidiaFrameGenerationEnabled() {
+    return Get().enable_frame_gen.load();
+}
+
+bool IsNvidiaFrameGenerationActive() {
+    return Get().dlss_g_active.load();
 }
 
 namespace {

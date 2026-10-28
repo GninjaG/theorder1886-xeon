@@ -178,6 +178,12 @@ public:
     /// Loads the pipelines of earlier sessions. port: called by the presenter once the window
     /// can show a loading screen; `progress(done, total)` follows the pipelines read.
     void WarmUp(const std::function<void(u32 done, u32 total)>& progress = {});
+    /// port: Ahead-of-Time (AOT) precompilation of all known shaders and pipelines across all CPU hardware threads (Xeon 28 threads).
+    /// Pre-caches and serializes the resulting driver VkPipelineCache into shader_cache/pipeline_cache.bin.
+    void PrecompileAllShadersAOT(const std::function<void(u32 done, u32 total)>& progress = {});
+    bool SaveAOTPipelineCache(const std::filesystem::path& destination_path = "shader_cache/pipeline_cache.bin");
+    /// Dynamically sets compiler worker priorities (HIGHEST during warmup/loading, BELOW_NORMAL in gameplay)
+    void SetWarmupMode(bool warmup);
     /// port: the same load on low-priority threads while the game runs; the GPU thread takes
     /// the results a few at a time (PumpWarmUp). False when it cannot (zip archive store).
     bool StartBackgroundWarmUp();
@@ -310,7 +316,7 @@ private:
     vk::UniquePipelineLayout pipeline_layout;
     Shader::Profile profile{};
     Shader::Pools pools;
-    CompilerPool<Shader::Pools> compiler_pools{8};
+    CompilerPool<Shader::Pools> compiler_pools{28};
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
@@ -360,5 +366,7 @@ private:
                    std::vector<std::variant<GraphicsPipelineKey, ComputePipelineKey>>>
         module_related_pipelines;
 };
+
+void PrecompileAllShadersAOT(PipelineCache& cache);
 
 } // namespace Vulkan

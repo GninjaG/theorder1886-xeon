@@ -6,8 +6,6 @@
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "port_toggles.h"
-#include "port_texture_reject_diag.h"
-#include "port_texture_size_ab.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_lighting_test.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
@@ -121,25 +119,14 @@ bool IsKnownFormat(AmdGpu::DataFormat data_fmt, AmdGpu::NumberFormat num_fmt) {
 /// uploaded gigabytes of guest memory in one frame (1-3 s stalls), again on every write to
 /// that range. Real textures stay far below this (8K x 8K x 4 bytes is 256 MiB).
 bool ImplausibleTexture(const VideoCore::ImageInfo& info) {
-    const u64 limit = TextureSizeAb::LimitBytes();
-    // A/B restores ONLY the old 512 MiB size threshold; the strict padding
-    // rejection and all invalid descriptor/mapping guards stay in force.
-    if (limit == TextureSizeAb::LegacyMaxGuestBytes) {
-        static const bool announced = [] {
-            LOG_WARNING(Render_Vulkan,
-                        "Texture-size A/B: LEGACY 512 MiB cap active (v0.6.1); "
-                        "default 256 MiB cap remains unchanged. Experimental.");
-            return true;
-        }();
-        (void)announced;
-    }
+    constexpr u64 MaxTextureGuestSize = 256ULL << 20;
     // Or a pitch that dwarfs the texture: a 1x1x913 BC4 volume with a pitch of 12737 texels
     // spanned 186 MiB. Tiling pads small textures many times over, but not to 16 MiB.
     const u64 texels = u64(info.size.width) * info.size.height * info.size.depth *
                        info.resources.layers;
     const bool padded = info.guest_size > (16ULL << 20) &&
                         info.guest_size / 64 > texels * std::max(info.num_bits, 8u) / 8;
-    if (!TextureSizeAb::Reject(info.guest_size, padded, limit)) {
+    if (info.guest_size <= MaxTextureGuestSize && !padded) {
         return false;
     }
     static std::atomic<u32> reported{0};
@@ -1864,31 +1851,18 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
             prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        const auto early_reason = TextureRejectDiag::EarlySharpReason(
-            tsharp.Address(), data_fmt == AmdGpu::DataFormat::FormatInvalid,
-            AmdGpu::IsFmask(data_fmt), tsharp.NumLayers(),
-            tsharp.last_array < tsharp.base_array,
-            tsharp.base_level > tsharp.last_level);
-        if (early_reason != TextureRejectDiag::Reason::Count) {
-            continue; // same null-descriptor decision as BindTextures
-        }
-        const auto mapping_reason = TextureRejectDiag::MappingSharpReason(
-            memory->IsValidGpuMapping(tsharp.Address(), 1),
-            IsKnownFormat(data_fmt, num_fmt), tsharp.width, tsharp.height, tsharp.NumLayers());
-        if (mapping_reason != TextureRejectDiag::Reason::Count) {
-            continue; // do not construct ImageInfo for invalid geometry or mappings
+        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+            AmdGpu::IsFmask(data_fmt) ||
+            !memory->IsValidGpuMapping(tsharp.Address(), 1) ||
+            !IsKnownFormat(data_fmt, num_fmt)) {
+            continue; // null descriptor
         }
         const auto& entry =
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
-        if (ImplausibleTexture(entry.desc.info)) {
-            continue; // null in both paths
-        }
-        if (!memory->IsValidGpuMapping(entry.desc.info.guest_address, entry.desc.info.guest_size)) {
-            // The main path checks the base address only, so it may still bind
-            // this image. Do not silently substitute a null descriptor on the
-            // helper: defer to the normal GPU thread.
-            return false;
+        if (!memory->IsValidGpuMapping(entry.desc.info.guest_address, entry.desc.info.guest_size) ||
+            ImplausibleTexture(entry.desc.info)) {
+            continue; // null descriptor, as in BindTextures
         }
         if (entry.found_generation != generation) {
             return false;
@@ -2733,26 +2707,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
-        // Diagnostic only: samples null-image decisions; accepted bindings remain unchanged.
-        const auto trace_null = [&](TextureRejectDiag::Reason reason, u64 guest_bytes = 0) {
-            const u64 count = TextureRejectDiag::Record(reason, stage.pgm_hash);
-            if (!count) return;
-            LOG_WARNING(Render_Vulkan,
-                        "T# null binding: reason={} count={} shader={:#x} slot={} "
-                        "address={:#x} dimensions={}x{} layers={} data_format={} "
-                        "num_format={} guest_bytes={}",
-                        TextureRejectDiag::Name(reason), count, stage.pgm_hash, image_index,
-                        tsharp.Address(), u64(tsharp.width) + 1, u64(tsharp.height) + 1,
-                        tsharp.NumLayers(), u32(data_fmt), u32(num_fmt), guest_bytes);
-        };
         // port: an FMask T# is read as constants by the shader (resource_patching_pass.cpp).
-        const auto early_reason = TextureRejectDiag::EarlySharpReason(
-            tsharp.Address(), data_fmt == AmdGpu::DataFormat::FormatInvalid,
-            AmdGpu::IsFmask(data_fmt), tsharp.NumLayers(),
-            tsharp.last_array < tsharp.base_array,
-            tsharp.base_level > tsharp.last_level);
-        if (early_reason != TextureRejectDiag::Reason::Count) {
-            trace_null(early_reason);
+        if (tsharp.Address() < 0x10000ULL || data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+            AmdGpu::IsFmask(data_fmt) ||
+            tsharp.NumLayers() > 2048 || tsharp.last_array < tsharp.base_array ||
+            tsharp.base_level > tsharp.last_level) {
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2775,7 +2734,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             spec.num_bindings = (*expected_images)[image_index].num_bindings;
             spec.is_fmask = AmdGpu::IsFmask(tsharp.GetDataFmt());
             if (spec != (*expected_images)[image_index]) {
-                trace_null(TextureRejectDiag::Reason::ComputeFallbackMismatch);
                 set_ok = false;
                 const u32 count = std::max(spec.num_bindings, 1u);
                 for (u32 i = 0; i < count; ++i) {
@@ -2789,11 +2747,12 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         }
 
 
-        const auto mapping_reason = TextureRejectDiag::MappingSharpReason(
-            memory->IsValidGpuMapping(tsharp.Address(), 1),
-            IsKnownFormat(data_fmt, num_fmt), tsharp.width, tsharp.height, tsharp.NumLayers());
-        if (mapping_reason != TextureRejectDiag::Reason::Count) {
-            trace_null(mapping_reason);
+        if (!memory->IsValidGpuMapping(tsharp.Address(), 1) ||
+            !IsKnownFormat(data_fmt, num_fmt) ||
+            tsharp.width >= 8192 || tsharp.height >= 8192 ||
+            tsharp.NumLayers() > 2048 ||
+            ((u64)tsharp.width * tsharp.height * tsharp.NumLayers() > 256 * 1024 * 1024) ||
+            (tsharp.NumLayers() > 16 && (tsharp.width >= 2048 || tsharp.height >= 2048))) {
             LOG_DEBUG(Render_Vulkan,
                         "Rejecting invalid T# address={:#x}, pitch={}, width={}, height={}, layers={}, "
                         "data_format={}, num_format={}",
@@ -2821,8 +2780,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
         if (ImplausibleTexture(desc_entry.desc.info)) {
-            trace_null(TextureRejectDiag::Reason::ImplausibleImage,
-                       desc_entry.desc.info.guest_size);
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);

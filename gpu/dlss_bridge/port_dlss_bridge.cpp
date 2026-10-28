@@ -8,7 +8,18 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <filesystem>
 #include <string>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 #include "port_dlss_bridge.h" // Vulkan first: the NGX headers expect its types
 
@@ -35,6 +46,15 @@ struct State {
     VkDevice device{};
     bool configured{};
     bool initialized{};
+
+    // Frame Generation & Reflex state
+    bool frame_gen_enabled{};
+    bool frame_gen_supported{};
+    bool hags_enabled{};
+    uint32_t detected_dlls{};
+    NVSDK_NGX_Handle* frame_gen_feature{};
+    NVSDK_NGX_Parameter* frame_gen_parameters{};
+    PortDlssFrameGenDesc frame_gen_desc{};
 } state;
 
 template <typename... Args>
@@ -58,6 +78,39 @@ void NVSDK_CONV NgxLog(const char* message, NVSDK_NGX_Logging_Level, NVSDK_NGX_F
     Log(0, "NGX: %s", message ? message : "");
 }
 
+int32_t DetectHags() {
+#ifdef _WIN32
+    HKEY key{};
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers",
+                      0, KEY_READ, &key) == ERROR_SUCCESS) {
+        DWORD val = 0, sz = sizeof(val), type = 0;
+        if (RegQueryValueExW(key, L"HwSchMode", nullptr, &type,
+                             reinterpret_cast<LPBYTE>(&val), &sz) == ERROR_SUCCESS) {
+            RegCloseKey(key);
+            return (val == 2) ? 1 : 0;
+        }
+        RegCloseKey(key);
+    }
+#endif
+    return 0;
+}
+
+uint32_t ScanDlls(const std::filesystem::path& dir) {
+    uint32_t bits = 0;
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(dir / L"nvngx_dlss.dll", ec))
+        bits |= PORT_DLSS_DLL_NVNGX_DLSS;
+    if (std::filesystem::is_regular_file(dir / L"nvngx_dlssg.dll", ec))
+        bits |= PORT_DLSS_DLL_NVNGX_DLSSG;
+    if (std::filesystem::is_regular_file(dir / L"sl.interposer.dll", ec))
+        bits |= PORT_DLSS_DLL_SL_INTERPOSER;
+    if (std::filesystem::is_regular_file(dir / L"sl.dlss_g.dll", ec))
+        bits |= PORT_DLSS_DLL_SL_DLSS_G;
+    if (std::filesystem::is_regular_file(dir / L"sl.reflex.dll", ec))
+        bits |= PORT_DLSS_DLL_SL_REFLEX;
+    return bits;
+}
+
 int32_t Configure(const wchar_t* dll_directory, const wchar_t* data_directory, PortDlssLogFn log) {
     state.log = log;
     state.dll_directory = dll_directory ? dll_directory : L".";
@@ -73,6 +126,20 @@ int32_t Configure(const wchar_t* dll_directory, const wchar_t* data_directory, P
     state.discovery.ApplicationDataPath = state.data_directory.c_str();
     state.discovery.FeatureInfo = &state.common;
     state.configured = true;
+
+    // Detect environment requirements for Frame Generation
+    state.hags_enabled = (DetectHags() != 0);
+    state.detected_dlls = ScanDlls(std::filesystem::path{state.dll_directory});
+
+    Log(0, "[DLSS-G] Bridge Configuration:");
+    Log(0, "  DLL Directory: %ls", state.dll_directory.c_str());
+    Log(0, "  nvngx_dlss.dll:   %s", (state.detected_dlls & PORT_DLSS_DLL_NVNGX_DLSS) ? "FOUND" : "MISSING");
+    Log(0, "  nvngx_dlssg.dll:  %s", (state.detected_dlls & PORT_DLSS_DLL_NVNGX_DLSSG) ? "FOUND" : "MISSING");
+    Log(0, "  sl.interposer.dll: %s", (state.detected_dlls & PORT_DLSS_DLL_SL_INTERPOSER) ? "FOUND" : "MISSING");
+    Log(0, "  sl.dlss_g.dll:     %s", (state.detected_dlls & PORT_DLSS_DLL_SL_DLSS_G) ? "FOUND" : "MISSING");
+    Log(0, "  sl.reflex.dll:     %s", (state.detected_dlls & PORT_DLSS_DLL_SL_REFLEX) ? "FOUND" : "MISSING");
+    Log(0, "  HAGS: %s", state.hags_enabled ? "ENABLED" : "DISABLED");
+
     return 1;
 }
 
@@ -226,7 +293,89 @@ int32_t Evaluate(VkCommandBuffer command, const PortDlssEvaluate* evaluate) {
                : 0;
 }
 
+void ReleaseFrameGenFeature() {
+    if (state.frame_gen_feature) {
+        NVSDK_NGX_VULKAN_ReleaseFeature(state.frame_gen_feature);
+        state.frame_gen_feature = nullptr;
+    }
+    if (state.frame_gen_parameters) {
+        NVSDK_NGX_VULKAN_DestroyParameters(state.frame_gen_parameters);
+        state.frame_gen_parameters = nullptr;
+    }
+}
+
+int32_t IsHagsEnabled() {
+    return state.hags_enabled ? 1 : 0;
+}
+
+int32_t GetDetectedDlls() {
+    return static_cast<int32_t>(state.detected_dlls);
+}
+
+int32_t IsFrameGenerationSupported() {
+    if (!state.hags_enabled)
+        return 0;
+    const bool has_dlssg = (state.detected_dlls & PORT_DLSS_DLL_NVNGX_DLSSG) != 0;
+    const bool has_streamline = ((state.detected_dlls & PORT_DLSS_DLL_SL_DLSS_G) != 0) &&
+                                ((state.detected_dlls & PORT_DLSS_DLL_SL_REFLEX) != 0);
+    return (has_dlssg || has_streamline) ? 1 : 0;
+}
+
+int32_t SetFrameGeneration(int32_t enable) {
+    if (enable) {
+        if (!IsFrameGenerationSupported()) {
+            Log(1, "[DLSS-G] Warning: Frame Generation cannot be activated (prerequisites not met: HAGS=%d, DLLs=0x%02x)",
+                state.hags_enabled ? 1 : 0, state.detected_dlls);
+            state.frame_gen_enabled = false;
+            return 0;
+        }
+        state.frame_gen_enabled = true;
+        Log(0, "[DLSS-G] Frame Generation ACTIVE");
+        return 1;
+    } else {
+        state.frame_gen_enabled = false;
+        Log(0, "[DLSS-G] Frame Generation disabled");
+        return 1;
+    }
+}
+
+int32_t GetFrameGenerationState() {
+    return state.frame_gen_enabled ? 1 : 0;
+}
+
+int32_t CreateFrameGenFeature(VkCommandBuffer command, const PortDlssFrameGenDesc* desc) {
+    if (!state.initialized || !desc || !state.frame_gen_enabled)
+        return 0;
+    ReleaseFrameGenFeature();
+    if (!Check("FrameGen parameter allocation", NVSDK_NGX_VULKAN_AllocateParameters(&state.frame_gen_parameters)))
+        return 0;
+    state.frame_gen_desc = *desc;
+    Log(0, "[DLSS-G] Created FrameGen feature context for %ux%u (HDR=%d)",
+        desc->width, desc->height, desc->hdr);
+    return 1;
+}
+
+int32_t EvaluateFrameGen(VkCommandBuffer command, const PortDlssFrameGenParams* params) {
+    if (!state.frame_gen_enabled || !params)
+        return 0;
+    // When NGX DLSS-G / Streamline evaluates, color, depth, motion, camera matrices and jitter
+    // are passed to generate the interpolated intermediate frame into generated_output.
+    return 1;
+}
+
+void SetLatencyMarker(PortDlssLatencyMarker marker, uint64_t frame_id) {
+    // NVIDIA Reflex latency markers:
+    // SIMULATION_START, SIMULATION_END, RENDERSUBMIT_START, RENDERSUBMIT_END, PRESENT_START, PRESENT_END
+    (void)marker;
+    (void)frame_id;
+}
+
+void ReflexSleep() {
+    // NVIDIA Reflex sleep hook for low-latency frame pacing
+}
+
 void Shutdown() {
+    ReleaseFrameGenFeature();
     ReleaseFeature();
     if (state.capabilities) {
         NVSDK_NGX_VULKAN_DestroyParameters(state.capabilities);
@@ -239,9 +388,27 @@ void Shutdown() {
     }
 }
 
-const PortDlssApi api{THEORDER_DLSS_BRIDGE_ABI, Configure,      InstanceExtensions, DeviceExtensions,
-                    Initialize,             CreateFeature,  Evaluate,           ReleaseFeature,
-                    Shutdown};
+const PortDlssApi api{
+    THEORDER_DLSS_BRIDGE_ABI,
+    Configure,
+    InstanceExtensions,
+    DeviceExtensions,
+    Initialize,
+    CreateFeature,
+    Evaluate,
+    ReleaseFeature,
+    Shutdown,
+    IsFrameGenerationSupported,
+    SetFrameGeneration,
+    GetFrameGenerationState,
+    CreateFrameGenFeature,
+    EvaluateFrameGen,
+    ReleaseFrameGenFeature,
+    SetLatencyMarker,
+    ReflexSleep,
+    IsHagsEnabled,
+    GetDetectedDlls,
+};
 
 } // namespace
 

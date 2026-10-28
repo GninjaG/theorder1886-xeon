@@ -27,11 +27,12 @@ thread_local bool in_copy_thread = false;
 class Pool {
 public:
     Pool() {
-        // Copies are on the critical path (fences wait for them): normal priority, a quarter
-        // of the hardware threads available to the process (Steam Deck 2).
-        unsigned count = std::clamp(PortThreads::Available() / 4, 1u, 4u);
+        // Copies are on the critical path (fences wait for them): normal priority,
+        // scales dynamically with available threads without artificial locks.
+        unsigned count = std::max(1u, PortThreads::Available() / 4);
         if (const char* env = std::getenv("THEORDER_COPY_THREADS")) {
-            count = static_cast<unsigned>(std::clamp(std::atoi(env), 0, 16));
+            int custom = std::atoi(env);
+            if (custom > 0) count = static_cast<unsigned>(custom);
         }
         epochs.emplace_back();
         for (unsigned i = 0; i < count; ++i) {

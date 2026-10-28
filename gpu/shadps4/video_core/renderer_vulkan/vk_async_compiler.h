@@ -15,18 +15,39 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace Vulkan {
 
 // port: bounded compiler queue. Stop drains accepted work before Vulkan resources are released.
 class AsyncCompiler {
 public:
-    explicit AsyncCompiler(unsigned count, size_t capacity = 64,
+    explicit AsyncCompiler(unsigned count, size_t capacity = 1024,
                            std::function<void(unsigned)> initialize = {}) : capacity{capacity} {
         for (unsigned i = 0; i < count; ++i) {
             workers.emplace_back([this, i, initialize] {
                 worker_index = i;
                 on_worker = true;
+#ifdef _WIN32
+                HANDLE hThread = NULL;
+                if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
+                                    GetCurrentProcess(), &hThread, 0, FALSE,
+                                    DUPLICATE_SAME_ACCESS)) {
+                    std::scoped_lock lock{mutex};
+                    worker_handles.push_back(hThread);
+                }
+                SetThreadPriority(GetCurrentThread(),
+                                  is_warmup.load(std::memory_order_relaxed) ?
+                                  THREAD_PRIORITY_HIGHEST : THREAD_PRIORITY_BELOW_NORMAL);
+#endif
                 if (initialize) {
                     initialize(i);
                 }
@@ -51,6 +72,19 @@ public:
         }
     }
     ~AsyncCompiler() { Stop(); }
+
+    void SetWarmupMode(bool warmup) {
+        is_warmup.store(warmup, std::memory_order_relaxed);
+#ifdef _WIN32
+        const int prio = warmup ? THREAD_PRIORITY_HIGHEST : THREAD_PRIORITY_BELOW_NORMAL;
+        std::scoped_lock lock{mutex};
+        for (HANDLE h : worker_handles) {
+            if (h) {
+                SetThreadPriority(h, prio);
+            }
+        }
+#endif
+    }
 
     bool Submit(std::function<void()> task, bool priority = false,
                 const void* identity = nullptr) {
@@ -104,6 +138,17 @@ public:
                 worker.join();
             }
         }
+#ifdef _WIN32
+        {
+            std::scoped_lock lock{mutex};
+            for (HANDLE h : worker_handles) {
+                if (h) {
+                    CloseHandle(h);
+                }
+            }
+            worker_handles.clear();
+        }
+#endif
     }
 
 private:
@@ -119,6 +164,10 @@ private:
     static inline thread_local unsigned worker_index = 0;
     static inline thread_local bool on_worker = false;
     std::atomic<uint64_t> queue_wait_ns{};
+    std::atomic<bool> is_warmup{false};
+#ifdef _WIN32
+    std::vector<HANDLE> worker_handles;
+#endif
     bool stopping = false;
     std::vector<std::thread> workers;
 };

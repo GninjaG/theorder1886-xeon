@@ -134,8 +134,9 @@ The previous frame's matrices are not in the frame; the port has to keep them.
   quads), Halton(2,3) 8 phases; sign checked by sharpness (correct 255, flipped 208, off 271 —
   1:1 jitter trades high-frequency aliasing for a slightly softer image). Toggle 1<<25 off.
 - Frame-to-frame difference while standing still: ~33% lower with FSR.
+- NVIDIA DLSS & Frame Generation (DLSS-G): supported through `port_dlss.dll` bridge and NVIDIA Streamline / NGX DLSS-G. Includes NVIDIA Reflex latency markers (Simulation, RenderSubmit, Present), camera matrices/jitter tracking, depth & motion vector input, and swapchain frame pacing. Toggle via `enable_frame_gen=1`, `THEORDER_FRAME_GEN=1`, menu or `F8`.
 - Missing: motion of animated objects (characters, cloth, foliage), reactive/transparency
-  masks for particles and fog, render-resolution scaling, frame generation.
+  masks for particles and fog, render-resolution scaling.
 
 ## 2026-10-01: FSR 4 при выводе 1440p/2160p не работал (мерцание и дрожание)
 

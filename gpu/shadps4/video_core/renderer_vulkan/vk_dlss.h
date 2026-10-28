@@ -15,6 +15,7 @@
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#include "../../../dlss_bridge/port_dlss_bridge.h"
 
 namespace Vulkan {
 
@@ -38,6 +39,19 @@ public:
     /// Why DLSS cannot run on this system (empty when it can, or before device creation).
     [[nodiscard]] std::string Problem() const;
 
+    // NVIDIA Frame Generation (DLSS-G) & Reflex
+    void SetNvidiaFrameGeneration(bool enable);
+    [[nodiscard]] bool IsFrameGenerationEnabled() const;
+    [[nodiscard]] bool IsFrameGenerationActive() const;
+    [[nodiscard]] bool IsFrameGenerationSupported() const;
+    [[nodiscard]] std::string FrameGenProblem() const;
+
+    void SetLatencyMarker(PortDlssLatencyMarker marker, u64 frame_id);
+    void ReflexSleep();
+
+    [[nodiscard]] bool IsHagsEnabled() const;
+    [[nodiscard]] u32 GetDetectedDlls() const;
+
     struct Resource {
         vk::Image image;
         vk::ImageView view;
@@ -59,6 +73,17 @@ public:
         float sharpness;
     };
 
+    struct FrameGenData {
+        Resource color;
+        Resource depth;
+        Resource motion;
+        Resource hudless;
+        Resource output;
+        PortDlssCameraData camera;
+        u64 frame_id{};
+        bool reset{};
+    };
+
     /// DLSS quality mode for an output/render size ratio (0 DLAA .. 4 Ultra Performance).
     static int QualityForScale(float scale);
     [[nodiscard]] bool HasFeature(const FeatureDesc& desc) const;
@@ -66,6 +91,10 @@ public:
     bool CreateFeature(vk::CommandBuffer command, const FeatureDesc& desc);
     bool Evaluate(vk::CommandBuffer command, const Frame& frame);
     void ReleaseFeature();
+
+    bool CreateFrameGenFeature(vk::CommandBuffer command, u32 width, u32 height, vk::Format format, bool hdr);
+    bool EvaluateFrameGen(vk::CommandBuffer command, const FrameGenData& data);
+    void ReleaseFrameGenFeature();
 
 private:
     Dlss();

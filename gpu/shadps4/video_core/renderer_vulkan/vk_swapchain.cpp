@@ -10,9 +10,9 @@
 #include "port_settings.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
+#include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
-#include "video_core/renderer_vulkan/vk_swapchain_policy.h"
 
 namespace Vulkan {
 
@@ -139,7 +139,17 @@ bool Swapchain::Present() {
         .pImageIndices = &image_index,
     };
 
-    auto result = instance.GetPresentQueue().presentKHR(present_info);
+    if (auto* dlss = Dlss::Get()) {
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_PRESENT_START, frame_index);
+    }
+
+    auto result = present_hook ? present_hook(instance.GetPresentQueue(), present_info)
+                               : instance.GetPresentQueue().presentKHR(present_info);
+
+    if (auto* dlss = Dlss::Get()) {
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_PRESENT_END, frame_index);
+    }
+
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         needs_recreation = true;
     } else {
@@ -250,16 +260,11 @@ void Swapchain::SetSurfaceProperties() {
         transform = capabilities.currentTransform;
     }
 
-    // Only select modes the presentation surface advertises. Assuming
-    // Inherit after Opaque fails is invalid on pre/post-multiplied surfaces.
-    const auto selected_alpha = ChooseCompositeAlpha(capabilities.supportedCompositeAlpha);
-    if (!selected_alpha) [[unlikely]] {
-        // ASSERT_MSG may resume on some builds; never dereference an empty
-        // optional or forward an unsupported mode to vkCreateSwapchainKHR.
-        UNREACHABLE_MSG("Surface advertises no supported composite-alpha mode (flags={})",
-                        vk::to_string(capabilities.supportedCompositeAlpha));
+    // Opaque is not supported everywhere.
+    composite_alpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+    if (!(capabilities.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)) {
+        composite_alpha = vk::CompositeAlphaFlagBitsKHR::eInherit;
     }
-    composite_alpha = *selected_alpha;
 }
 
 void Swapchain::Destroy() {

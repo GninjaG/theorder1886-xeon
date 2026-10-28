@@ -25,6 +25,11 @@ inline unsigned BackgroundWarmupThreadCount(unsigned cores, bool parallel) {
     return parallel ? WarmupThreadCount(cores) : 1u;
 }
 
+/// Ahead-of-Time (AOT) precompilation uses all available hardware execution threads (e.g. 28 on Xeon E5-2697 v3)
+inline unsigned AotWarmupThreadCount(unsigned cores) {
+    return std::max(1u, cores);
+}
+
 /// Items made on worker threads, handed to the GPU thread a few at a time so that a frame
 /// never pays for the whole cache at once.
 template <typename T>

@@ -53,6 +53,8 @@ struct Values {
     std::atomic<bool> vsync{true};
     std::atomic<int> fps_limit{0};
     std::atomic<bool> async_shaders{true};
+    std::atomic<bool> precompile_shaders_on_boot{false};
+    std::atomic<bool> xeon_optimizations{true};
     std::atomic<bool> fsr1{false};
     std::atomic<bool> rcas{true};
     std::atomic<int> rcas_strength{75};
@@ -100,6 +102,11 @@ struct Values {
     /// DLSS (port_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
+    /// NVIDIA Frame Generation (DLSS-G / Streamline)
+    std::atomic<bool> enable_frame_gen{false};
+    std::atomic<bool> dlss_g_supported{false};
+    std::atomic<bool> dlss_g_active{false};
+    std::atomic<const char*> dlss_g_problem{nullptr};
 
     /// Startup settings for the explicit THEORDER_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
@@ -117,6 +124,10 @@ void Load();
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411);
 /// After device creation: DLSS availability; a DLSS setting falls back to FSR 3.1 without it.
 void ConfigureDlssSupport(bool available, const char* problem);
+/// Controls NVIDIA Frame Generation (DLSS-G / Streamline)
+void SetNvidiaFrameGeneration(bool enable);
+bool IsNvidiaFrameGenerationEnabled();
+bool IsNvidiaFrameGenerationActive();
 /// Startup-patched scene dimensions cannot change until run.sh prepares a new image.
 bool FixedRenderSession();
 int RenderPreset();

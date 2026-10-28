@@ -149,3 +149,25 @@ Offline region prewarming, adaptive gameplay worker tuning, driver failure
 reproduction and comparisons against v0.7.5 remain unvalidated.
 The previous precompilation plan's instant-restore and zero-stutter promises
 are superseded by these measured limitations.
+
+## Ahead-of-Time (AOT) Pre-Compilation & Persistent Driver Cache (2026-10-28)
+
+To address stutter from driver-level native ISA compilation on newly encountered pipelines,
+a complete Ahead-of-Time (AOT) precompilation system is implemented:
+
+- **AOT Engine (`PrecompileAllShadersAOT`)**:
+  Scans all known pipeline keys (`PipelineKey`), shader metadata (`ShaderMeta`), and SPIR-V
+  modules in `Storage::DataBase`. Triggers parallel compilation of all graphics and compute
+  pipelines across **all 28 threads of the Intel Xeon E5-2697 v3** (`std::thread::hardware_concurrency()`).
+- **Disk Persistence (`shader_cache/pipeline_cache.bin`)**:
+  Serializes the resulting `VkPipelineCache` into `shader_cache/pipeline_cache.bin` with
+  `DriverCacheHeader` validation (magic `IVCK`, version, XXH3_64 hash, driver UUID).
+  Loaded on next boot before rendering begins to eliminate runtime driver compilation stalls.
+- **Activation Paths**:
+  - CLI: `--precompile-shaders`
+  - Environment variable: `THEORDER_PRECOMPILE_SHADERS=1`
+  - In-game settings (`theorder.ini`): `precompile_shaders_on_boot = 1`
+  - C/C++ API: `theordergpu_precompile_shaders_aot()`, `PrecompileAllShadersAOT()`
+- **Console Feedback**:
+  Outputs `[ShaderAOT] Compilando X/Y shaders usando 28 threads...` and
+  `[ShaderAOT] Concluído com sucesso! Salvo em shader_cache/`.

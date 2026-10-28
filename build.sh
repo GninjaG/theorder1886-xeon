@@ -2,6 +2,8 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
 mkdir -p out
+# Haswell-EP (Intel Xeon E5-2697 v3: 14 Cores / 28 Threads, AVX2, FMA3) compilation flags
+HASWELL_FLAGS="-march=haswell -mtune=haswell -mavx2 -mfma -O3"
 # Windows: MSYS2 CLANG64 (packages in packaging/windows/README.md). The GPU library is static
 # there and CMake links theorder-probe.exe as well; no PGO (GCC-only flags), LTO off by default.
 case $(uname -s) in
@@ -21,20 +23,16 @@ MINGW*|MSYS*)
         fi
     done
     cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHEORDER_PGO=off \
-        -DTHEORDER_LTO="${THEORDER_LTO:-OFF}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
+        -DTHEORDER_LTO="${THEORDER_LTO:-OFF}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_C_FLAGS="$HASWELL_FLAGS" -DCMAKE_CXX_FLAGS="$HASWELL_FLAGS" >/dev/null
     echo "GPU library and loader: LTO ${THEORDER_LTO:-OFF}"
     if ! ninja -C out/gpu theorder-probe theorder-gpu-capabilities theorder-play > out/gpu-build.log 2>&1; then
         tail -40 out/gpu-build.log >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
-    # Some clean CLANG64 CI images do not expose a working MSYS2 cp executable.
-    # CMake is already a required tool and copies these Windows binaries reliably.
-    for exe in theorder-probe.exe theorder-gpu-capabilities.exe theorder-play.exe; do
-        [[ -s "out/gpu/$exe" ]] || { echo "Missing built executable: out/gpu/$exe" >&2; exit 1; }
-        cmake -E copy_if_different "out/gpu/$exe" "out/$exe"
-    done
+    cp out/gpu/theorder-probe.exe out/gpu/theorder-gpu-capabilities.exe out/gpu/theorder-play.exe out/
     # Loaded instead of FFmpeg's real librsvg, which brings GIO in (packaging/windows/rsvg_stub.c).
-    clang -shared -O2 -Wall -Wextra -Werror packaging/windows/rsvg_stub.c -o out/librsvg-2-2.dll
+    clang -shared $HASWELL_FLAGS -Wall -Wextra -Werror packaging/windows/rsvg_stub.c -o out/librsvg-2-2.dll
     echo "Built $PWD/out/theorder-probe.exe"
     exit 0
     ;;
@@ -77,7 +75,8 @@ for patch in gpu/patches/fsr-vulkan/*.patch; do
     fi
 done
 cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHEORDER_PGO="$pgo" \
-    -DTHEORDER_LTO="${THEORDER_LTO:-ON}" -DTHEORDER_PGO_DIR="$PWD/pgo" >/dev/null
+    -DTHEORDER_LTO="${THEORDER_LTO:-ON}" -DTHEORDER_PGO_DIR="$PWD/pgo" \
+    -DCMAKE_C_FLAGS="$HASWELL_FLAGS" -DCMAKE_CXX_FLAGS="$HASWELL_FLAGS" >/dev/null
 echo "GPU library: PGO $pgo, LTO ${THEORDER_LTO:-ON}"
 # A failed GPU build must stop here: an older libtheordergpu.so would otherwise be used silently.
 if ! ninja -C out/gpu theordergpu > out/gpu-build.log 2>&1; then
@@ -91,15 +90,15 @@ runtime=(src/runtime*.c)
 atrac9=(third_party/LibAtrac9/C/src/*.c)
 if [[ ! -f out/libatrac9.a || -n $(find third_party/LibAtrac9/C/src -newer out/libatrac9.a -name '*.c') ]]; then
     rm -rf out/atrac9 && mkdir -p out/atrac9
-    for source in "${atrac9[@]}"; do "$CC" -std=c99 -O2 -g -w -c "$source" -o "out/atrac9/$(basename "${source%.c}").o"; done
+    for source in "${atrac9[@]}"; do "$CC" -std=c99 $HASWELL_FLAGS -g -w -c "$source" -o "out/atrac9/$(basename "${source%.c}").o"; done
     ar rcs out/libatrac9.a out/atrac9/*.o
 fi
-# isa_emulate runs inside guest code: no XMM/YMM.
-"$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -mgeneral-regs-only -c src/isa_emulate.c -o out/isa_emulate.o
-"$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/cpu_check.c src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/theorder-probe
+# isa_emulate runs inside guest code: no XMM/YMM (-mgeneral-regs-only without vector registers).
+"$CC" -std=c11 -march=haswell -mtune=haswell -O3 -g -Wall -Wextra -Werror -mgeneral-regs-only -c src/isa_emulate.c -o out/isa_emulate.o
+"$CC" -std=c11 $HASWELL_FLAGS -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/cpu_check.c src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/theorder-probe
 echo "Built $PWD/out/theorder-probe"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
-"$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tools/gpu_capabilities.c "${libraries[@]}" -o out/theorder-gpu-capabilities
+"$CC" -std=c11 $HASWELL_FLAGS -Wall -Wextra -Werror -Igpu/shadps4 tools/gpu_capabilities.c "${libraries[@]}" -o out/theorder-gpu-capabilities
 if [[ ${1:-} == --test ]]; then
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_pad.c "${libraries[@]}" -o out/pad-test
     out/pad-test

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <vector>
 #include "common/types.h"
@@ -33,6 +34,11 @@ public:
 
     /// Presents the current image and move to the next one
     bool Present();
+
+    using PresentHookFn = std::function<vk::Result(vk::Queue queue, const vk::PresentInfoKHR& info)>;
+    void SetPresentHook(PresentHookFn hook) {
+        present_hook = std::move(hook);
+    }
 
     vk::SurfaceKHR GetSurface() const {
         return surface;
@@ -139,6 +145,7 @@ private:
     bool needs_recreation = true;
     bool needs_hdr = false;    // The game requested HDR swapchain
     bool supports_hdr = false; // SC supports HDR output
+    PresentHookFn present_hook{};
 };
 
 } // namespace Vulkan

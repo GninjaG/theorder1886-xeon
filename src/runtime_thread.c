@@ -41,6 +41,9 @@ typedef struct GuestThread {
     uint64_t *tcb;
     unsigned char *tls_block;
     pthread_t host;
+#ifdef _WIN32
+    HANDLE win32_handle;
+#endif
     GuestEntry entry;
     void *argument, *result;
     ThreadAttr attr;
@@ -108,7 +111,7 @@ static void attach(GuestThread *t) {
 static GuestThread *new_thread(void) {
     GuestThread *t=calloc(1,sizeof(*t));
     if (!t) return NULL;
-    t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=0x7f};
+    t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=~0ULL};
     return t;
 }
 static void publish(GuestThread *t) {
@@ -125,6 +128,93 @@ GuestThread *runtime_thread_current(void) {
     attach(t); publish(t);
     return t;
 }
+#ifdef _WIN32
+static DWORD_PTR host_affinity_mask_for_role(const char *name, uint64_t guest_affinity) {
+    (void)guest_affinity;
+    DWORD_PTR process_mask = 0, system_mask = 0;
+    if (!GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask) || !process_mask) {
+        process_mask = 0xFFFFFFFFFFFFFFFFULL;
+    }
+    unsigned int threads_count = 0;
+    for (int i = 0; i < 64; ++i) {
+        if ((process_mask >> i) & 1) ++threads_count;
+    }
+    if (threads_count < 8) {
+        return process_mask;
+    }
+
+    // Role-based dedicated affinity mapping:
+    // Intel Xeon E5-2697 v3 (14 Cores / 28 Threads):
+    // Dedicated threads (0..3):
+    // - Thread 0: Main Loop
+    // - Thread 1: Render Submission
+    // - Thread 2: Audio
+    // - Thread 3: I/O & Assets
+    // Worker threads (4..27): 24 dedicated threads (mask 0x0FFFFFF0)
+    if (name) {
+        if (strstr(name, "Render") || strstr(name, "Gnm") || strstr(name, "Draw") || strstr(name, "Video")) {
+            DWORD_PTR m = (1ULL << 1) & process_mask;
+            return m ? m : process_mask;
+        }
+        if (strstr(name, "main") || strstr(name, "Main")) {
+            DWORD_PTR m = (1ULL << 0) & process_mask;
+            return m ? m : process_mask;
+        }
+        if (strstr(name, "Audio") || strstr(name, "Snd") || strstr(name, "Sound") || strstr(name, "Atrac9")) {
+            DWORD_PTR m = (1ULL << 2) & process_mask;
+            return m ? m : process_mask;
+        }
+        if (strstr(name, "IO") || strstr(name, "File") || strstr(name, "Stream") || strstr(name, "Load")) {
+            DWORD_PTR m = (1ULL << 3) & process_mask;
+            return m ? m : process_mask;
+        }
+    }
+
+    if (threads_count >= 28) {
+        DWORD_PTR worker_mask = 0x0FFFFFF0ULL & process_mask;
+        return worker_mask ? worker_mask : process_mask;
+    } else if (threads_count >= 16) {
+        DWORD_PTR worker_mask = (((1ULL << threads_count) - 1ULL) & ~0x0FULL) & process_mask;
+        return worker_mask ? worker_mask : process_mask;
+    } else {
+        DWORD_PTR worker_mask = (((1ULL << threads_count) - 1ULL) & ~0x03ULL) & process_mask;
+        return worker_mask ? worker_mask : process_mask;
+    }
+}
+
+static int host_priority_for_thread(const char *name, int prio) {
+    if (name) {
+        if (strstr(name, "Render") || strstr(name, "Gnm") || strstr(name, "Draw") || strstr(name, "Video")) {
+            return THREAD_PRIORITY_ABOVE_NORMAL;
+        }
+        if (strstr(name, "Audio") || strstr(name, "Snd") || strstr(name, "Sound") || strstr(name, "Atrac9")) {
+            return THREAD_PRIORITY_ABOVE_NORMAL;
+        }
+        if (strstr(name, "Worker") || strstr(name, "Job") || strstr(name, "Compile")) {
+            return THREAD_PRIORITY_BELOW_NORMAL;
+        }
+    }
+    // PS4 priority (lower numerical value = higher priority, default is 700):
+    if (prio <= 256) return THREAD_PRIORITY_HIGHEST;
+    if (prio <= 500) return THREAD_PRIORITY_ABOVE_NORMAL;
+    if (prio >= 750) return THREAD_PRIORITY_BELOW_NORMAL;
+    return THREAD_PRIORITY_NORMAL;
+}
+
+static void apply_thread_topology(GuestThread *t) {
+    if (!t) return;
+    DWORD_PTR aff = host_affinity_mask_for_role(t->name, t->attr.affinity);
+    int prio = host_priority_for_thread(t->name, t->attr.prio);
+    if (t->win32_handle) {
+        SetThreadAffinityMask(t->win32_handle, aff);
+        SetThreadPriority(t->win32_handle, prio);
+    } else if (t == current) {
+        SetThreadAffinityMask(GetCurrentThread(), aff);
+        SetThreadPriority(GetCurrentThread(), prio);
+    }
+}
+#endif
+
 /* Host threads that call guest code (HLE decoders invoking guest callbacks) need
  * a TCB/TLS like guest threads; the record lives until process exit. */
 void runtime_thread_attach_host(const char *name) {
@@ -134,6 +224,9 @@ void runtime_thread_attach_host(const char *name) {
 void runtime_thread_attach_main(void) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"main");
+#ifdef _WIN32
+    apply_thread_topology(t);
+#endif
 }
 static GuestThread *find_thread(void *handle) {
     GuestThread *found=NULL;
@@ -159,7 +252,7 @@ static ABI int32_t attr_init(ThreadAttr **out) {
     if (!out) return ERR(22);
     ThreadAttr *a=calloc(1,sizeof(*a));
     if (!a) return ERR(12);
-    *a=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.inherit=4,.stack=DEFAULT_STACK,.guard=4096,.affinity=0x7f};
+    *a=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.inherit=4,.stack=DEFAULT_STACK,.guard=4096,.affinity=~0ULL};
     pthread_mutex_lock(&lock); a->next=attributes; attributes=a; pthread_mutex_unlock(&lock);
     *out=a; return 0;
 }
@@ -256,8 +349,18 @@ static void *host_start(void *p) {
     GuestThread *t=p;
     attach(t);
     set_host_name(t->name);
+#ifdef _WIN32
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &t->win32_handle, 0, FALSE, DUPLICATE_SAME_ACCESS);
+    apply_thread_topology(t);
+#endif
     if (!exit_setjmp(t)) t->result=t->entry(t->argument);
     runtime_thread_keys_cleanup();
+#ifdef _WIN32
+    if (t->win32_handle) {
+        CloseHandle(t->win32_handle);
+        t->win32_handle = NULL;
+    }
+#endif
     pthread_mutex_lock(&lock); t->finished=1; ++exited; pthread_mutex_unlock(&lock);
     return t->result;
 }
@@ -341,11 +444,19 @@ static ABI int32_t thread_get_prio(GuestThread *t,int *prio) {
 }
 static ABI int32_t thread_set_prio(GuestThread *t,int prio) {
     if (!find_thread(t)) return ERR(3);
-    t->attr.prio=prio; return 0;
+    t->attr.prio=prio;
+#ifdef _WIN32
+    apply_thread_topology(t);
+#endif
+    return 0;
 }
 static ABI int32_t thread_set_affinity(GuestThread *t,uint64_t mask) {
     if (!find_thread(t)) return ERR(3);
-    t->attr.affinity=mask; return 0;
+    t->attr.affinity=mask;
+#ifdef _WIN32
+    apply_thread_topology(t);
+#endif
+    return 0;
 }
 static ABI int32_t thread_get_affinity(GuestThread *t,uint64_t *mask) {
     if (!find_thread(t)) return ERR(3);
@@ -357,6 +468,9 @@ static ABI int32_t thread_rename(GuestThread *t,const char *name) {
     if (!name) return ERR(22);
     snprintf(t->name,sizeof(t->name),"%s",name);
     if (t==current) set_host_name(t->name);
+#ifdef _WIN32
+    apply_thread_topology(t);
+#endif
     return 0;
 }
 static ABI int32_t thread_equal(GuestThread *a,GuestThread *b) { return a==b; }

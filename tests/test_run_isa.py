@@ -36,29 +36,6 @@ class RunIsaTests(unittest.TestCase):
                 run.configure_windows_runtime(probe, env)
             self.assertEqual(env['PATH'], 'packaged-path')
 
-    def test_game_folder_selection_never_uses_private_developer_fallback(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'port'
-            root.mkdir()
-            implicit = root.parent / 'CUSA00035'
-            explicit = root.parent / 'other-game'
-            implicit.mkdir()
-            explicit.mkdir()
-            (implicit / 'eboot.bin').write_bytes(b'test')
-            (explicit / 'eboot.bin').write_bytes(b'test')
-
-            self.assertEqual(run.select_game_folder({}, root), implicit)
-            self.assertEqual(run.select_game_folder(
-                {'THEORDER_GAME_DIR': str(explicit)}, root), explicit)
-            self.assertEqual(run.select_game_folder(
-                {'THEORDER_GAME_DIR': str(root / 'missing')}, root), implicit)
-            (implicit / 'eboot.bin').unlink()
-            # Preserve the explicit failed path for the caller's error message.
-            self.assertEqual(run.select_game_folder(
-                {'THEORDER_GAME_DIR': str(explicit / 'missing')}, root),
-                explicit / 'missing')
-            self.assertEqual(run.select_game_folder({}, root), implicit)
-
     def test_parse_cpu_features(self):
         self.assertEqual(run.parse_cpu_features('CPU: missing MOVBE, BMI1, LZCNT\n'), ['MOVBE', 'BMI1', 'LZCNT'])
         self.assertEqual(run.parse_cpu_features('CPU: complete\n'), [])

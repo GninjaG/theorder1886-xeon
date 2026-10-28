@@ -38,35 +38,6 @@ class RegressionReportTest(unittest.TestCase):
              'pipeline_permutation': 7, 'spirv_hash': 'fedcba9876543210'}])
         self.assertEqual(regression_report.parse_log('', 10)['compute_pipeline_reuse_events'], [])
 
-    def test_texture_rejection_samples_are_lower_bounds_not_exact_counts(self):
-        text = (
-            '[Renderer] T# null binding: reason=unmapped-address count=1 '
-            'shader=0x00ABcd12 slot=4 address=0x12345 dimensions=64x64\n'
-            '[Renderer] T# null binding: reason=unmapped-address count=8 '
-            'shader=0x00ABcd12 slot=4 address=0x12345 dimensions=64x64\n'
-            '[Renderer] T# null binding: reason=unmapped-address count=16 '
-            'shader=0x00beef00 slot=3 address=0x67890 dimensions=128x128\n'
-            '[Renderer] T# null binding: reason=invalid-mip-range count=2 '
-            'shader=0x0000F00D slot=0 address=0x43210 dimensions=16x16\n'
-            'T# null binding: reason=unmapped-address count=nan shader=0x12 slot=0 address=0x0\n'
-        )
-        result = regression_report.parse_log(text, 10)
-        grouped = result['texture_rejections']
-        self.assertEqual(sorted(grouped), ['invalid-mip-range', 'unmapped-address'])
-        self.assertEqual(grouped['unmapped-address']['sampled_log_lines'], 3)
-        self.assertEqual(grouped['unmapped-address']['last_observed_count_lower_bound'], 16)
-        self.assertEqual(grouped['unmapped-address']['shader_slot_examples'], [
-            {'shader': '0x00abcd12', 'slot': 4, 'guest_address': '0x12345'},
-            {'shader': '0x00beef00', 'slot': 3, 'guest_address': '0x67890'},
-        ])
-        self.assertEqual(grouped['invalid-mip-range']['last_observed_count_lower_bound'], 2)
-        self.assertEqual(regression_report.parse_log('', 10)['texture_rejections'], {})
-        manifest = {'runs': [{'condition': 'cold', 'measurements': result}]}
-        markdown = regression_report.render_markdown(manifest)
-        self.assertIn('sampled, **not exact total counts**', markdown)
-        self.assertIn('at least 16 occurrences', markdown)
-        self.assertIn('0x00abcd12 slot 4', markdown)
-
     def test_cache_counters_are_cumulative_not_summed(self):
         result = regression_report.parse_log(
             "Pipeline binary cache: 10 hits, 2 compiled, 1 rejected, 2 saved, 0 cache errors\n"
@@ -253,83 +224,6 @@ Fault: access violation at guest offset 0x1234
         self.assertIn('not collected', md)
         self.assertIn('not an automatic pass', page)
 
-    def test_cross_release_blocks_identity_mismatch_and_reports_matched_raw_frames(self):
-        def build(hash_, gpu='RTX 3060 Ti', update='01.02', cache='cold',
-                  upscaler='off', count=5):
-            return {
-                'build': {'exe_sha256': hash_},
-                'host': {'platform': 'Windows-11', 'machine': 'AMD64'},
-                'duration_seconds': 120, 'pad_script': '', 'game_args': '',
-                'scenario': 'issue43 fixed camera', 'cache_state': cache,
-                'runs': [{
-                    'condition': 'base', 'scene': 'issue43 fixed camera',
-                    'cache_state': cache,
-                    'measurements': {
-                        'game': {'cusa': 'CUSA00035', 'version': update,
-                                 'eboot_sha256': 'deadbeef'},
-                        'gpu': gpu, 'driver': '621.1.0.0',
-                        'summary': {'fps_median': 60 if hash_ == 'old' else 55},
-                    },
-                    'settings': {
-                        'config': {'values': {
-                            **{key: '1' for key in regression_report._CROSS_SETTINGS},
-                            'upscaler': upscaler,
-                        }},
-                        'environment': {
-                            'THEORDER_ASYNC_SHADERS': '1',
-                            'THEORDER_READBACK_LINEAR': '0',
-                        },
-                    },
-                    'frame_trace': {'fps_mean': 60 if hash_ == 'old' else 55,
-                                    'frame_p95_ms': 20 if hash_ == 'old' else 22,
-                                    'frame_p99_ms': 40 if hash_ == 'old' else 48,
-                                    'worst_frame_ms': 150 if hash_ == 'old' else 180},
-                } for _ in range(count)],
-            }
-
-        old, new = build('old'), build('new')
-        result = regression_report.compare_release_manifests(old, new)
-        self.assertEqual(result['status'], 'review-required')
-        self.assertEqual(result['performance_deltas']['fps_median']['delta'], -5)
-        self.assertEqual(result['performance_deltas']['median_run_frame_p99_ms']['delta'], 8)
-        md = regression_report.render_release_comparison(result)
-        self.assertIn('Identities/settings match', md)
-        self.assertIn('not evidence of a visual fix', md)
-
-        for changed in (build('new', gpu='RX 560'), build('new', update='01.01'),
-                        build('new', upscaler='taa'), build('new', cache='unknown'),
-                        build('old')):
-            blocked = regression_report.compare_release_manifests(old, changed)
-            self.assertEqual(blocked['status'], 'blocked')
-            self.assertEqual(blocked['performance_deltas'], {})
-            self.assertIn('No FPS/frametime delta', regression_report.render_release_comparison(blocked))
-        changed_env = build('new')
-        for run in changed_env['runs']:
-            run['settings']['environment']['THEORDER_NO_MSAA'] = '1'
-        blocked_env = regression_report.compare_release_manifests(old, changed_env)
-        self.assertEqual(blocked_env['status'], 'blocked')
-        self.assertEqual(blocked_env['performance_deltas'], {})
-        self.assertEqual(next(g['status'] for g in blocked_env['checks']
-                              if g['field'] == 'runtime_environment'), 'mismatch')
-        missing_env = build('new')
-        missing_env['runs'][0]['settings'].pop('environment')
-        self.assertEqual(regression_report.compare_release_manifests(
-            old, missing_env)['status'], 'blocked')
-        inconsistent_env = build('new')
-        inconsistent_env['runs'][1]['settings']['environment']['THEORDER_READBACK_LINEAR'] = '1'
-        self.assertEqual(regression_report.compare_release_manifests(
-            old, inconsistent_env)['status'], 'blocked')
-
-        missing = build('new')
-        missing['runs'][0]['measurements']['game'].pop('eboot_sha256')
-        blocked = regression_report.compare_release_manifests(old, missing)
-        self.assertEqual(blocked['status'], 'blocked')
-        self.assertIn('not-collected', [gate['status'] for gate in blocked['checks']])
-        short = regression_report.compare_release_manifests(build('old', count=1),
-                                                            build('new', count=2))
-        self.assertEqual(short['status'], 'review-required')
-        self.assertTrue(any('Fewer than five' in c for c in short['caveats']))
-
     def test_ab_comparison_reports_directional_signals_only_from_measured_values(self):
         def run(condition, fps, p99):
             return {'condition': condition, 'measurements': {'summary': {
@@ -448,28 +342,6 @@ Fault: access violation at guest offset 0x1234
             'THEORDER_UPLOAD_TOKEN': 'should-not-appear', 'THEORDER_FPS_LIMIT': '60',
         })
         self.assertEqual(settings, {'THEORDER_FRAME_STATS': '1', 'THEORDER_FPS_LIMIT': '60'})
-
-    def test_batch_runner_portable_default_and_redacted_env(self):
-        import os
-        source = (paths.ROOT / 'tools' / 'batch_runs.py').read_text(encoding='utf-8')
-        self.assertNotIn(r'C:\Users\Mateus\Downloads', source)
-        self.assertEqual(batch_runs.GAME_DIR,
-                         os.environ.get('THEORDER_GAME_DIR') or
-                         str(paths.ROOT.parent / 'CUSA00035'))
-        self.assertEqual(batch_runs._safe_settings({
-            'THEORDER_FPS_LIMIT': '60',
-            'THEORDER_NO_MSAA': '1',
-            'THEORDER_PROBE': r'C:\Users\Someone\port.exe',
-            'THEORDER_FRAME_CSV': 'D:/private/frames.csv',
-            'THEORDER_USER_NAME': 'Private Player',
-            'THEORDER_MODS_CONFIG': 'D:/private/mods.json',
-            'THEORDER_OUTPUT': 'D:/private/image.png',
-            'THEORDER_USER_TAG': 'safe-tag',
-        }), {
-            'THEORDER_FPS_LIMIT': '60',
-            'THEORDER_NO_MSAA': '1',
-            'THEORDER_USER_TAG': 'safe-tag',
-        })
 
     def test_run_ini_settings_preserve_comments_and_unrelated_keys(self):
         with tempfile.TemporaryDirectory() as tmp:

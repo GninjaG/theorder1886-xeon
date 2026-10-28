@@ -376,6 +376,16 @@ void ImageTab() {
             InfoRow("FSR 4 Status", s.fsr4_problem ? s.fsr4_problem.load() : "FSR 4 not supported on this GPU.");
         }
 
+        CheckRow("NVIDIA Frame Generation (DLSS-G) (F8)", s.enable_frame_gen,
+                 "Generate interpolated frames using NVIDIA Optical Flow (RTX 40 series+, HAGS and Reflex required).");
+        if (s.enable_frame_gen) {
+            if (s.dlss_g_active) {
+                InfoRow("Frame Gen Status", "ACTIVE (DLSS-G + Reflex)");
+            } else {
+                InfoRow("Frame Gen Status", s.dlss_g_problem ? s.dlss_g_problem.load() : "Requirements not met (RTX 40+, HAGS, or DLLs missing)");
+            }
+        }
+
         ImGui::BeginDisabled(s.upscaler == PortSettings::UpscalerOff);
         static const char* const preset_labels[] = {
             "Native AA (1.0x)", "Quality (1.5x)", "Balanced (1.7x)", "Performance (2.0x)", "Ultra Performance (3.0x)"

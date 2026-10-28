@@ -10,10 +10,23 @@
 typedef struct { uint32_t leaf1_ecx, leaf7_ebx, ext1_ecx; } CpuFeatureWords;
 
 CpuFeatureWords cpu_feature_words(void);
-enum { CPU_SET_MOVBE = 1u << 0, CPU_SET_BMI1 = 1u << 1, CPU_SET_LZCNT = 1u << 2, CPU_SET_F16C = 1u << 3 };
+enum {
+    CPU_SET_MOVBE = 1u << 0,
+    CPU_SET_BMI1  = 1u << 1,
+    CPU_SET_LZCNT = 1u << 2,
+    CPU_SET_F16C  = 1u << 3,
+    CPU_SET_AVX2  = 1u << 4,
+    CPU_SET_FMA3  = 1u << 5,
+};
 /* Fatal sets the host lacks (SSE4.2, POPCNT, AVX), comma separated in out; returns how many. */
 int cpu_missing_fatal(CpuFeatureWords words, char *out, size_t size);
 /* Rewritable sets the host lacks (MOVBE, F16C, BMI1, LZCNT): CPU_SET_* mask; names in out. */
 unsigned cpu_missing_rewritable(CpuFeatureWords words, char *out, size_t size);
+
+/* Haswell-EP (Intel Xeon E5-2697 v3) feature and topology detection */
+int cpu_has_avx2(CpuFeatureWords words);
+int cpu_has_fma(CpuFeatureWords words);
+int cpu_is_haswell(CpuFeatureWords words);
+unsigned cpu_hardware_threads(void);
 
 #endif

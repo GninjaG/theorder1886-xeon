@@ -208,6 +208,11 @@ bool WindowSDL::PollEvents() {
                 s.mouse_look = !s.mouse_look;
                 PortSettings::Save();
             }
+            if (event.key.key == SDLK_F8 && !event.key.repeat) {
+                auto& s = PortSettings::Get();
+                PortSettings::SetNvidiaFrameGeneration(!s.enable_frame_gen);
+                PortSettings::Save();
+            }
             break;
         case SDL_EVENT_WINDOW_FOCUS_GAINED:
         case SDL_EVENT_WINDOW_FOCUS_LOST:

@@ -253,14 +253,15 @@ def heading_text(text, every_language=False):
 # launcher's own settings.json (passed to run.py as environment variables).
 
 INI_FLAGS = {'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
-             'stale_readback'}
+             'stale_readback', 'enable_frame_gen', 'precompile_shaders_on_boot', 'xeon_optimizations'}
 # The graphics keys are also in the in-game menu (Insert / R3+L2); run.py reads the startup ones.
 INI_DEFAULTS = {'upscaler': 'off', 'preset': '1',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
                 'aspect_ratio': 'original', 'engine_fps': '120',
-                'frames_queued': '1', 'anisotropy': '0'}
+                'frames_queued': '1', 'anisotropy': '0',
+                'enable_frame_gen': '0', 'precompile_shaders_on_boot': '0', 'xeon_optimizations': '1'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
@@ -701,11 +702,8 @@ def game_environment(s):
     env = dict(os.environ)
     env['THEORDER_GAME_DIR'] = s['game_dir']
     env.pop('THEORDER_PATCH_DIR', None)
-    # The upscaler is saved in theorder.ini, not settings.json. A launcher override here
-    # used to force 'off' on every start, shadowing the saved DLSS/FSR/TAA selection.
-    # Drop even an inherited environment value so the selected INI setting wins.
-    # Direct run.py invocations may still use THEORDER_UPSCALER for A/B testing.
-    env.pop('THEORDER_UPSCALER', None)
+    upscaler_choice = s.get('upscaler', 'off')
+    env['THEORDER_UPSCALER'] = upscaler_choice
     env['THEORDER_EXPERIMENTAL_UPSCALER'] = '0'  # legacy launcher switch
     if s.get('update_dir'):
         env['THEORDER_PATCH_DIR'] = s['update_dir']
@@ -760,6 +758,17 @@ def game_environment(s):
     pad_style = s.get('pad_style', 'playstation')
     env['THEORDER_GLYPHS'] = pad_style
     env['THEORDER_PAD_STYLE'] = pad_style
+    if s.get('enable_frame_gen') in ('1', True, 1):
+        env['THEORDER_FRAME_GEN'] = '1'
+        env['THEORDER_DLSS_G'] = '1'
+    if s.get('precompile_shaders_on_boot') in ('1', True, 1):
+        env['THEORDER_PRECOMPILE_SHADERS'] = '1'
+    if s.get('xeon_optimizations', '1') in ('1', True, 1):
+        env['THEORDER_XEON_MODE'] = '1'
+        env['THEORDER_WORKER_THREADS'] = '24'
+    else:
+        env['THEORDER_XEON_MODE'] = '0'
+        env['THEORDER_WORKER_THREADS'] = '4'
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -863,13 +872,21 @@ class Launcher:
             threading.Thread(target=self.check_update, daemon=True).start()
 
     def check_version_migration(self):
-        """Migrate portable settings without deleting historical user files.
+        """Performs settings migration when upgrading between versions.
+        Ensures 100% portable mode by unconditionally purging any legacy AppData directories."""
+        # 1. Unconditionally remove legacy AppData folders if present (portable mode guarantee)
+        if WINDOWS:
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                for folder in ('theorder1886-launcher', 'order1886-launcher'):
+                    legacy_config_dir = Path(appdata) / folder
+                    if legacy_config_dir.is_dir():
+                        try:
+                            shutil.rmtree(legacy_config_dir, ignore_errors=True)
+                            print(f'Launcher: purged legacy AppData directory at {legacy_config_dir}', flush=True)
+                        except Exception:
+                            pass
 
-        The launcher only reads CONFIG_DIR/DATA_DIR; it does not need to
-        remove old AppData folders to operate in portable mode. Those folders
-        may contain manually customized settings or backups that belong to
-        the user, so leave them untouched.
-        """
         last_version = self.app.get('last_version', '')
         if last_version != VERSION:
             # Shader and pipeline caches carry their own compatibility versions.
@@ -883,9 +900,12 @@ class Launcher:
                     print(f'Launcher: migrated {legacy_ini} -> {target_ini}', flush=True)
                 except Exception as e:
                     print(f'Launcher: error copying legacy ini: {e}', flush=True)
-            # Keep order1886.ini as a recoverable pre-migration copy, even
-            # after successful migration. Copy failures also leave it intact.
-            # No automatic deletion of historical settings occurs at startup.
+            if legacy_ini.is_file():
+                try:
+                    legacy_ini.unlink(missing_ok=True)
+                    print(f'Launcher: removed obsolete {legacy_ini}', flush=True)
+                except Exception:
+                    pass
 
             # 3. Update last_version
             self.app['last_version'] = VERSION
@@ -1109,8 +1129,8 @@ class Launcher:
 
     TAB_KEYS = {
         'home': ['display_mode', 'fps_limit', 'engine_fps', 'aspect_ratio'],
-        'graphics': ['display_mode', 'vsync', 'output_res', 'aspect_ratio', 'anisotropy', 'hdr', 'show_fps'],
-        'performance': ['fps_limit', 'frames_queued', 'engine_fps', 'pipeline_binary_cache', 'background_warmup', 'async_shaders', 'parallel_warmup', 'gpu_id', 'stream_memory', 'stale_readback', 'deferred_readback', 'draw_pipe', 'readbacks', 'no_msaa'],
+        'graphics': ['display_mode', 'vsync', 'output_res', 'aspect_ratio', 'anisotropy', 'hdr', 'show_fps', 'enable_frame_gen'],
+        'performance': ['fps_limit', 'frames_queued', 'engine_fps', 'xeon_optimizations', 'precompile_shaders_on_boot', 'pipeline_binary_cache', 'background_warmup', 'async_shaders', 'parallel_warmup', 'gpu_id', 'stream_memory', 'stale_readback', 'deferred_readback', 'draw_pipe', 'readbacks', 'no_msaa'],
         'game': ['language', 'mods_enabled', 'pad_style'],
         'advanced': ['ui_language', 'close_on_play', 'check_updates', 'vk_validation', 'frame_capture_key', 'perf_diag', 'frame_stats', 'gpu_profile', 'desktop_integration', 'gamemode', 'mangohud'],
     }
@@ -1363,7 +1383,6 @@ class Launcher:
         self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
                  _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
                    'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'), key='preset')
-        self.section(f, _('Output resolution', 'Разрешение вывода'))
         self.row(f, _('Output resolution', 'Разрешение вывода'),
                  self.choice(f, 'output_res', 'ini', NATIVE_OUTPUTS, preserve_unknown=True),
                                  _('Host render/output target, not the monitor desktop mode. On launch the window requests this size; '
@@ -1372,6 +1391,10 @@ class Launcher:
                                      'Размер целевого рендера/вывода, а не режим монитора. При запуске окно запрашивает этот размер; '
                                      'изменение в игре не меняет режим рабочего стола и не гарантирует изменение окна. Проверяйте '
                                      'разрешение рендера и окна в игровом меню. Пропорция 32:9 и разрешение 32:9 задаются отдельно.'))
+        if hasattr(self, 'check'):
+            self.check(f, 'enable_frame_gen', 'ini', _('NVIDIA Frame Generation (DLSS-G)', 'Генерация кадров NVIDIA (DLSS-G)'),
+                       _('Interpolates additional frames using AI and Optical Flow (RTX 40/50 series). Automatically enables NVIDIA Reflex for low latency. Can also be toggled with F8 in-game.',
+                         'Интерполяция кадров с помощью ИИ (RTX 40/50). Автоматически включает NVIDIA Reflex. Переключается также клавишей F8 в игре.'))
         self.add_tab_reset_bar(f, 'graphics')
 
     def build_display(self, f):
@@ -1401,7 +1424,14 @@ class Launcher:
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
         self.row(f, _('Engine frame rate'), self.choice(f, 'engine_fps', 'ini', ENGINE_FPS_CHOICES),
                  _('The highest frame rate the game itself runs at (a game patch).'), restart=True)
+        self.section(f, _('CPU & Multithreading (Xeon E5-2697 v3)', 'Процессор и многопоточность'))
+        self.check(f, 'xeon_optimizations', 'ini', _('Use all Xeon threads (28 Threads & AVX2)', 'Использовать все потоки Xeon (28 потоков и AVX2)'),
+                   _('Unlocks all 28 logical threads (14 cores / 28 threads) on Intel Xeon E5-2697 v3. Configures 4 dedicated threads (Main, Render, Audio, I/O) and 24 worker threads with core affinity and AVX2/FMA3.',
+                     'Задействует все 28 потоков Intel Xeon E5-2697 v3 с привязкой ядер и приоритетами потоков.'))
         self.section(f, _('Shaders'))
+        self.check(f, 'precompile_shaders_on_boot', 'ini', _('Precompile all shaders on boot (AOT)', 'Предкомпиляция всех шейдеров (AOT)'),
+                   _('Ahead-of-Time shader pre-caching using all 28 CPU threads before gameplay to eliminate in-game compilation stutter completely.',
+                     'Полная предварительная компиляция всех шейдеров перед игрой на всех 28 потоках Xeon для устранения статтеров.'))
         self.check(f, 'pipeline_binary_cache', 'app', _('Use pipeline binary cache (A/B test)'),
                    _('Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. '
                      'Takes effect on the next launch; saved caches are preserved.'))

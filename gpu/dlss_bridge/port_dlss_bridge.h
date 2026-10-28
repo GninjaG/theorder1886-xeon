@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define THEORDER_DLSS_BRIDGE_ABI 1
+#define THEORDER_DLSS_BRIDGE_ABI 2
 
 typedef void (*PortDlssLogFn)(int warning, const char* message);
 
@@ -50,6 +50,54 @@ typedef struct PortDlssEvaluate {
     float sharpness; // 0..1; 0 leaves the output unsharpened
 } PortDlssEvaluate;
 
+typedef enum PortDlssLatencyMarker {
+    PORT_DLSS_MARKER_SIMULATION_START = 0,
+    PORT_DLSS_MARKER_SIMULATION_END = 1,
+    PORT_DLSS_MARKER_RENDERSUBMIT_START = 2,
+    PORT_DLSS_MARKER_RENDERSUBMIT_END = 3,
+    PORT_DLSS_MARKER_PRESENT_START = 4,
+    PORT_DLSS_MARKER_PRESENT_END = 5,
+    PORT_DLSS_MARKER_INPUT_SAMPLE = 6,
+} PortDlssLatencyMarker;
+
+typedef enum PortDlssDllBits {
+    PORT_DLSS_DLL_NVNGX_DLSS    = (1 << 0),
+    PORT_DLSS_DLL_NVNGX_DLSSG   = (1 << 1),
+    PORT_DLSS_DLL_SL_INTERPOSER = (1 << 2),
+    PORT_DLSS_DLL_SL_DLSS_G     = (1 << 3),
+    PORT_DLSS_DLL_SL_REFLEX     = (1 << 4),
+} PortDlssDllBits;
+
+typedef struct PortDlssCameraData {
+    float view_to_clip[16];
+    float world_to_view[16];
+    float camera_pos[3];
+    float camera_fov;
+    float near_plane;
+    float far_plane;
+    float jitter_x;
+    float jitter_y;
+} PortDlssCameraData;
+
+typedef struct PortDlssFrameGenDesc {
+    uint32_t width;
+    uint32_t height;
+    VkFormat format;
+    int32_t hdr;
+    int32_t depth_inverted;
+} PortDlssFrameGenDesc;
+
+typedef struct PortDlssFrameGenParams {
+    PortDlssImage color;
+    PortDlssImage depth;
+    PortDlssImage motion;
+    PortDlssImage hudless;
+    PortDlssImage generated_output;
+    PortDlssCameraData camera;
+    uint64_t frame_id;
+    int32_t reset;
+} PortDlssFrameGenParams;
+
 typedef struct PortDlssApi {
     uint32_t abi;
     // UTF-16 paths: the directory with nvngx_dlss.dll, and a writable data directory.
@@ -67,6 +115,18 @@ typedef struct PortDlssApi {
     // The caller must have waited for the GPU work that used the feature.
     void (*ReleaseFeature)(void);
     void (*Shutdown)(void);
+
+    // Frame Generation (DLSS-G) & NVIDIA Reflex extensions
+    int32_t (*IsFrameGenerationSupported)(void);
+    int32_t (*SetFrameGeneration)(int32_t enable);
+    int32_t (*GetFrameGenerationState)(void);
+    int32_t (*CreateFrameGenFeature)(VkCommandBuffer command, const PortDlssFrameGenDesc* desc);
+    int32_t (*EvaluateFrameGen)(VkCommandBuffer command, const PortDlssFrameGenParams* params);
+    void (*ReleaseFrameGenFeature)(void);
+    void (*SetLatencyMarker)(PortDlssLatencyMarker marker, uint64_t frame_id);
+    void (*ReflexSleep)(void);
+    int32_t (*IsHagsEnabled)(void);
+    int32_t (*GetDetectedDlls)(void);
 } PortDlssApi;
 
 typedef const PortDlssApi* (*PortDlssGetApiFn)(void);

@@ -383,42 +383,62 @@ std::filesystem::path DriverCacheFile(const Instance& instance) {
 }
 
 std::vector<u8> LoadDriverCacheBlob(const Instance& instance) {
-    const auto path = DriverCacheFile(instance);
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
-        LOG_INFO(Render_Vulkan, "Driver pipeline cache: none saved for this GPU/driver");
-        return {};
-    }
-    std::vector<u8> file(std::filesystem::file_size(path, ec));
-    if (ec || file.size() < sizeof(DriverCacheHeader) + sizeof(VkPipelineCacheHeaderVersionOne)) {
-        return {};
-    }
-    {
-        const Common::FS::IOFile io{path, Common::FS::FileAccessMode::Read};
-        if (!io.IsOpen() || io.Read(file) != file.size()) {
-            return {};
+    const std::filesystem::path paths_to_try[] = {
+        std::filesystem::path("shader_cache") / "pipeline_cache.bin",
+        Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / "shader_cache" / "pipeline_cache.bin",
+        DriverCacheFile(instance),
+    };
+
+    for (const auto& path : paths_to_try) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(path, ec)) {
+            continue;
         }
+        const auto file_sz = std::filesystem::file_size(path, ec);
+        if (ec || file_sz < sizeof(VkPipelineCacheHeaderVersionOne)) {
+            continue;
+        }
+        std::vector<u8> file(file_sz);
+        {
+            const Common::FS::IOFile io{path, Common::FS::FileAccessMode::Read};
+            if (!io.IsOpen() || io.Read(file) != file.size()) {
+                continue;
+            }
+        }
+
+        const u8* payload = file.data();
+        size_t payload_size = file.size();
+
+        if (file.size() >= sizeof(DriverCacheHeader) + sizeof(VkPipelineCacheHeaderVersionOne)) {
+            DriverCacheHeader header;
+            std::memcpy(&header, file.data(), sizeof(header));
+            if (header.magic == DriverCacheMagic && header.version == DriverCacheVersion &&
+                header.payload_size == file.size() - sizeof(header) &&
+                XXH3_64bits(file.data() + sizeof(header), header.payload_size) == header.payload_hash) {
+                payload = file.data() + sizeof(header);
+                payload_size = header.payload_size;
+            }
+        }
+
+        if (payload_size < sizeof(VkPipelineCacheHeaderVersionOne)) {
+            continue;
+        }
+
+        VkPipelineCacheHeaderVersionOne driver;
+        std::memcpy(&driver, payload, sizeof(driver));
+        const auto uuid = instance.GetPipelineCacheUUID();
+        if (driver.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE ||
+            driver.vendorID != instance.GetVendorID() || driver.deviceID != instance.GetDeviceID() ||
+            std::memcmp(driver.pipelineCacheUUID, uuid.data(), VK_UUID_SIZE) != 0) {
+            LOG_WARNING(Render_Vulkan, "Driver pipeline cache {} ignored (different GPU/driver)", path.string());
+            continue;
+        }
+        LOG_INFO(Render_Vulkan, "Driver pipeline cache loaded from {} ({} bytes)", path.string(), payload_size);
+        return {payload, payload + payload_size};
     }
-    DriverCacheHeader header;
-    std::memcpy(&header, file.data(), sizeof(header));
-    const u8* payload = file.data() + sizeof(header);
-    if (header.magic != DriverCacheMagic || header.version != DriverCacheVersion ||
-        header.payload_size != file.size() - sizeof(header) ||
-        XXH3_64bits(payload, header.payload_size) != header.payload_hash) {
-        LOG_WARNING(Render_Vulkan, "Driver pipeline cache ignored (damaged file)");
-        return {};
-    }
-    VkPipelineCacheHeaderVersionOne driver;
-    std::memcpy(&driver, payload, sizeof(driver));
-    const auto uuid = instance.GetPipelineCacheUUID();
-    if (driver.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE ||
-        driver.vendorID != instance.GetVendorID() || driver.deviceID != instance.GetDeviceID() ||
-        std::memcmp(driver.pipelineCacheUUID, uuid.data(), VK_UUID_SIZE) != 0) {
-        LOG_WARNING(Render_Vulkan, "Driver pipeline cache ignored (different GPU/driver)");
-        return {};
-    }
-    LOG_INFO(Render_Vulkan, "Driver pipeline cache loaded ({} bytes)", header.payload_size);
-    return {payload, payload + header.payload_size};
+
+    LOG_INFO(Render_Vulkan, "Driver pipeline cache: none saved for this GPU/driver");
+    return {};
 }
 } // namespace
 
@@ -503,11 +523,71 @@ bool PipelineCache::SaveDriverCacheUnchecked() {
         LOG_ERROR(Render_Vulkan, "Driver pipeline cache not written to {}", path.string());
         return false;
     }
+    // Also update persistent shader_cache/pipeline_cache.bin if shader_cache directory exists
+    const std::filesystem::path aot_dir{"shader_cache"};
+    if (std::filesystem::exists(aot_dir)) {
+        const auto aot_path = aot_dir / "pipeline_cache.bin";
+        auto aot_temp = aot_path;
+        aot_temp += ".tmp";
+        if (const Common::FS::IOFile io{aot_temp, Common::FS::FileAccessMode::Create};
+            io.IsOpen() && io.WriteRaw<u8>(&header, sizeof(header)) == sizeof(header) &&
+            io.Write(blob) == blob.size()) {
+            std::filesystem::rename(aot_temp, aot_path, ec);
+        }
+    }
     if (driver_saver) {
         driver_saver->saved_hash = hash;
         driver_saver->saved_created = created;
     }
     LOG_INFO(Render_Vulkan, "Driver pipeline cache saved ({} bytes)", blob.size());
+    return true;
+}
+
+bool PipelineCache::SaveAOTPipelineCache(const std::filesystem::path& destination_path) {
+    const auto device = instance.GetDevice();
+    auto [scratch_result, scratch] = device.createPipelineCacheUnique({});
+    if (scratch_result != vk::Result::eSuccess) {
+        LOG_WARNING(Render_Vulkan, "[ShaderAOT] Falha ao criar scratch pipeline cache");
+        return false;
+    }
+    std::vector<vk::PipelineCache> sources{*pipeline_cache};
+    for (const auto& cache : worker_pipeline_caches) {
+        sources.push_back(*cache);
+    }
+    if (device.mergePipelineCaches(*scratch, sources) != vk::Result::eSuccess) {
+        LOG_WARNING(Render_Vulkan, "[ShaderAOT] Falha ao mergear pipeline caches");
+        return false;
+    }
+    auto [result, blob] = device.getPipelineCacheData(*scratch);
+    if (result != vk::Result::eSuccess || blob.size() < sizeof(VkPipelineCacheHeaderVersionOne)) {
+        LOG_WARNING(Render_Vulkan, "[ShaderAOT] Falha ao extrair dados do pipeline cache");
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(destination_path.parent_path(), ec);
+    auto temp = destination_path;
+    temp += ".tmp";
+
+    const u64 hash = XXH3_64bits(blob.data(), blob.size());
+    const DriverCacheHeader header{DriverCacheMagic, DriverCacheVersion, blob.size(), hash};
+
+    bool written = false;
+    {
+        const Common::FS::IOFile io{temp, Common::FS::FileAccessMode::Create};
+        written = io.IsOpen() && io.WriteRaw<u8>(&header, sizeof(header)) == sizeof(header) &&
+                  io.Write(blob) == blob.size();
+    }
+    if (written) {
+        std::filesystem::rename(temp, destination_path, ec);
+    }
+    if (!written || ec) {
+        std::filesystem::remove(temp, ec);
+        LOG_ERROR(Render_Vulkan, "[ShaderAOT] Falha ao gravar cache em {}", destination_path.string());
+        return false;
+    }
+    LOG_INFO(Render_Vulkan, "[ShaderAOT] Pipeline cache salvo com sucesso em {} ({} bytes)",
+             destination_path.string(), blob.size());
     return true;
 }
 
@@ -644,28 +724,35 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     // port: the compiler threads always exist; the in-game menu switches async compilation live
     // (PortSettings::async_shaders, THEORDER_ASYNC_SHADERS at start).
     {
-        // Low priority threads: on a 16+ thread CPU 8 drivers compile while the game runs, so a
-        // scene's new pipelines (and the whole cache after a translation change) arrive sooner.
-        const auto count = std::clamp(PortThreads::Available() / 2, 1u, 8u);
-        const auto capture_count = std::min(4u, std::max(1u, PortThreads::Available() / 4));
+        // Intel Xeon E5-2697 v3 (14 Cores / 28 Threads, Haswell-EP):
+        // 4 dedicated threads (Main Loop, Render Submission, Audio, I/O)
+        // 24 worker threads dedicated to background shader compilation
+        const auto count = PortThreads::AsyncShaderWorkers();
+        const auto capture_count = std::clamp(PortThreads::DedicatedThreads(), 2u, 4u);
         for (unsigned i = 0; i < count; ++i) {
             auto [result, worker_cache] = instance.GetDevice().createPipelineCacheUnique({});
             ASSERT_MSG(result == vk::Result::eSuccess, "Failed to create compiler pipeline cache");
             worker_pipeline_caches.push_back(std::move(worker_cache));
         }
-        capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 32, [](unsigned index) {
+        capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 128, [](unsigned index) {
             Common::SetCurrentThreadName(("port:ShaderCapture" + std::to_string(index)).c_str());
-            Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
+            PortThreads::MakeShaderWorker(false);
         });
-        compiler = std::make_unique<AsyncCompiler>(count, 256, [](unsigned index) {
+        compiler = std::make_unique<AsyncCompiler>(count, 1024, [](unsigned index) {
             Common::SetCurrentThreadName(("port:ShaderCompile" + std::to_string(index)).c_str());
-            Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
+            PortThreads::MakeShaderWorker(false);
         });
         LOG_INFO(Render_Vulkan, "port: async graphics compilation ready ({} capture, {} compile workers)",
                  capture_count, count);
         if (driver_cache_enabled) {
             StartDriverCacheSaver();
         }
+    }
+}
+
+void PipelineCache::SetWarmupMode(bool warmup) {
+    if (compiler) {
+        compiler->SetWarmupMode(warmup);
     }
 }
 
@@ -936,8 +1023,7 @@ void PipelineCache::PublishShaders(bool wait) {
             }
             build->spec.info = &program->info;
             RegisterShaderMeta(program->info, build->spec.fetch_shader_data, build->spec,
-                               perm_hash, build->permutation, spv_hash,
-                               profile.needs_ssbo_store_load_barrier);
+                               perm_hash, build->permutation, spv_hash);
             program->AddPermut(build->module, std::move(build->spec), spv_hash);
             build->module = nullptr;
             program->pending.reset();
@@ -1986,7 +2072,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         const auto perm_hash = HashCombine(params.hash, 0);
 
         RegisterShaderMeta(new_program->info, spec.fetch_shader_data, spec, perm_hash, 0,
-                           spv_hash, profile.needs_ssbo_store_load_barrier);
+                           spv_hash);
         new_program->AddPermut(module, std::move(spec), spv_hash);
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
@@ -2085,8 +2171,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             }
         }
 
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx, spv_hash,
-                           profile.needs_ssbo_store_load_barrier);
+        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx, spv_hash);
         std::unique_lock lk{programs_mutex};
         program->AddPermut(module, std::move(spec), spv_hash);
     } else {

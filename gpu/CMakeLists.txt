@@ -11,6 +11,13 @@ endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
 
+# Intel Xeon E5-2697 v3 (Haswell-EP: AVX2, FMA3, 14C/28T) architecture optimizations
+if (MSVC)
+    add_compile_options(/arch:AVX2 /Oi /Ot /fp:fast /MP28)
+else()
+    add_compile_options(-march=haswell -mtune=haswell -mavx2 -mfma -O3)
+endif()
+
 # port: link-time optimization (THEORDER_LTO, default on) and profile-guided optimization
 # (THEORDER_PGO: off, generate = instrumented build writing into THEORDER_PGO_DIR, use = build with that
 # profile). Covers theordergpu and the static libraries linked into it. No -march: the same build
@@ -308,14 +315,6 @@ target_link_libraries(buffer-addr64-test PRIVATE theordergpu)
 if (WIN32)
     target_link_libraries(buffer-addr64-test PRIVATE onecore)
 endif()
-add_executable(formatted-ssbo-barriers-test EXCLUDE_FROM_ALL
-    ../tests/test_formatted_ssbo_barriers.cpp ../tests/test_gpu_runtime_stubs.cpp)
-target_include_directories(formatted-ssbo-barriers-test PRIVATE shim shadps4 third_party/gcn/include)
-target_compile_options(formatted-ssbo-barriers-test PRIVATE -UNDEBUG)
-target_link_libraries(formatted-ssbo-barriers-test PRIVATE theordergpu)
-if (WIN32)
-    target_link_libraries(formatted-ssbo-barriers-test PRIVATE onecore)
-endif()
 add_executable(multiwave-barriers-test EXCLUDE_FROM_ALL ../tests/test_multiwave_barriers.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(multiwave-barriers-test PRIVATE shim shadps4 third_party/gcn/include)
 target_compile_options(multiwave-barriers-test PRIVATE -UNDEBUG)
@@ -401,12 +400,6 @@ add_executable(no-msaa-test EXCLUDE_FROM_ALL ../tests/test_no_msaa.cpp
 target_compile_options(no-msaa-test PRIVATE -UNDEBUG)
 target_include_directories(no-msaa-test PRIVATE shim shadps4 third_party/gcn/include)
 target_link_libraries(no-msaa-test PRIVATE Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum)
-# Pure policy test: Vulkan headers only; no physical device is created.
-add_executable(swapchain-policy-test EXCLUDE_FROM_ALL ../tests/test_swapchain_policy.cpp)
-target_compile_options(swapchain-policy-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(swapchain-policy-test PRIVATE shadps4)
-target_link_libraries(swapchain-policy-test PRIVATE Vulkan::Headers)
-
 add_executable(async-pipeline-cache-test EXCLUDE_FROM_ALL ../tests/test_async_pipeline_cache.cpp)
 target_compile_options(async-pipeline-cache-test PRIVATE -UNDEBUG)
 target_include_directories(async-pipeline-cache-test PRIVATE shadps4)

@@ -167,6 +167,37 @@ std::array<std::array<float, 4>, 3> CameraMotion::TaaDepthParameters() const noe
             {transform[8], transform[9], transform[10], transform[11]}};
 }
 
+void CameraMotion::FillCameraData(PortDlssCameraData& camera) const {
+    std::memset(&camera, 0, sizeof(camera));
+    if (current.valid) {
+        camera.world_to_view[0] = current.view[0];
+        camera.world_to_view[1] = current.view[1];
+        camera.world_to_view[2] = current.view[2];
+        camera.world_to_view[3] = current.view[3];
+        camera.world_to_view[4] = current.view[4];
+        camera.world_to_view[5] = current.view[5];
+        camera.world_to_view[6] = current.view[6];
+        camera.world_to_view[7] = current.view[7];
+        camera.world_to_view[8] = current.view[8];
+        camera.world_to_view[9] = current.view[9];
+        camera.world_to_view[10] = current.view[10];
+        camera.world_to_view[11] = current.view[11];
+        camera.world_to_view[15] = 1.0f;
+
+        camera.view_to_clip[0] = current.proj[0];
+        camera.view_to_clip[5] = current.proj[1];
+        camera.view_to_clip[10] = current.proj[2];
+        camera.view_to_clip[14] = current.proj[3];
+        camera.view_to_clip[11] = 1.0f;
+
+        camera.camera_fov = VerticalFov();
+        camera.near_plane = Near();
+        camera.far_plane = 3000.0f;
+        camera.jitter_x = jitter[0];
+        camera.jitter_y = jitter[1];
+    }
+}
+
 vk::ImageView CameraMotion::ObjectMotionView() const noexcept {
     return object_motion && object_motion->Enabled() ? object_motion->View() : vk::ImageView{};
 }

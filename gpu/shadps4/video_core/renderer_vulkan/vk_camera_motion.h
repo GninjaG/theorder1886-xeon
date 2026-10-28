@@ -12,6 +12,7 @@
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/texture_cache/image.h"
+#include "../../../dlss_bridge/port_dlss_bridge.h"
 
 namespace VideoCore {
 class TextureCache;
@@ -63,6 +64,9 @@ public:
     [[nodiscard]] float Near() const noexcept;
     // Current projection, previous projection, and row Z of previous-view * inverse-view.
     [[nodiscard]] std::array<std::array<float, 4>, 3> TaaDepthParameters() const noexcept;
+
+    /// Fills camera matrix, jitter and clip plane parameters for Frame Generation (DLSS-G).
+    void FillCameraData(PortDlssCameraData& camera) const;
 
     /// Records the motion vector pass: `depth_view` (depth aspect, General layout) into
     /// `motion_view` (RG16F storage, General), pixels, previous minus current.

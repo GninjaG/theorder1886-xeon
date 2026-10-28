@@ -15,6 +15,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Frontend {
@@ -100,6 +101,8 @@ public:
     Frame* PrepareBlankFrame(bool present_thread);
 
     void Present(Frame* frame, bool is_reusing_frame = false, bool is_game_frame = true);
+    /// port: generates and presents an interpolated frame using NVIDIA DLSS-G / Streamline
+    void PresentGeneratedFrame(Frame* real_frame);
     /// port: a black frame with the loading screen (PortOverlay::SetLoading) only.
     void PresentLoadingFrame();
     Frame* PrepareLastFrame();
@@ -142,6 +145,10 @@ private:
     std::condition_variable free_cv;
     std::condition_variable_any frame_cv;
     std::vector<VAddr> vo_buffers_addr;
+
+    Frame generated_frame{};
+    bool has_generated_frame{false};
+    void EnsureGeneratedFrame(u32 width, u32 height);
 };
 
 } // namespace Vulkan

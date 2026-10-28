@@ -785,6 +785,16 @@ EXTRA = {
         "The shape of the game's picture. Pick your screen's to fill it without black bars: the view keeps the original width and shows more above and below.":
             'O formato da imagem do jogo. Escolha o da sua tela para preenchê-la sem barras pretas: a visão mantém a largura original e mostra mais em cima e embaixo.',
         'Shaders': 'Shaders',
+        'CPU & Multithreading (Xeon E5-2697 v3)': 'Processador e Multithreading (Xeon E5-2697 v3)',
+        'Use all Xeon threads (28 Threads & AVX2)': 'Usar todos os núcleos do Xeon (28 Threads & AVX2)',
+        'Unlocks all 28 logical threads (14 cores / 28 threads) on Intel Xeon E5-2697 v3. Configures 4 dedicated threads (Main, Render, Audio, I/O) and 24 worker threads with core affinity and AVX2/FMA3.':
+            'Desbloqueia todos os 28 threads lógicos (14 núcleos / 28 threads) no Intel Xeon E5-2697 v3. Configura 4 threads dedicadas (Principal, Renderização, Áudio, I/O) e 24 threads de trabalho com afinidade de núcleos e AVX2/FMA3.',
+        'Precompile all shaders on boot (AOT)': 'Pré-compilar todos os shaders no boot (AOT)',
+        'Ahead-of-Time shader pre-caching using all 28 CPU threads before gameplay to eliminate in-game compilation stutter completely.':
+            'Pré-compilação Ahead-of-Time de shaders usando todos os 28 threads da CPU antes do jogo para eliminar completamente travamentos de compilação.',
+        'NVIDIA Frame Generation (DLSS-G)': 'Geração de Quadros NVIDIA (DLSS-G)',
+        'Interpolates additional frames using AI and Optical Flow (RTX 40/50 series). Automatically enables NVIDIA Reflex for low latency. Can also be toggled with F8 in-game.':
+            'Interpola quadros adicionais usando IA e Optical Flow (Série RTX 40/50). Ativa automaticamente o NVIDIA Reflex para baixa latência. Pode ser alternado no jogo com F8.',
         'Use pipeline binary cache (A/B test)': 'Usar cache binário de pipelines (teste A/B)',
         'Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. Takes effect on the next launch; saved caches are preserved.': 'Reutiliza pipelines Vulkan salvos. Desative para comparar o FPS com a compilação normal. Vale a partir da próxima inicialização; os caches salvos são mantidos.',
         'Load shader cache in the background': 'Carregar o cache de shaders em segundo plano',

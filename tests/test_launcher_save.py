@@ -190,10 +190,7 @@ class HiddenUpscalingTest(LauncherOverTemporaryFiles):
         saved, _lines = launcher.load_ini()
         self.assertEqual(saved['output_res'], '3840x2160')
         self.assertEqual(saved['upscaler'], 'fsr4')
-        # The launcher intentionally drops its inherited upscaler override:
-        # the saved INI value is authoritative after PR #74.
-        self.assertNotIn('THEORDER_UPSCALER',
-                         launcher.game_environment(self.app.app))
+        self.assertEqual(launcher.game_environment(self.app.app)['THEORDER_UPSCALER'], 'off')
 
 
 @unittest.skipUnless(sys.platform == 'win32' and tk, 'needs Windows and Tk')

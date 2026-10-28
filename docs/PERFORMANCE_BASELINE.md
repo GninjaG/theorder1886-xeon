@@ -1,30 +1,5 @@
 # Performance baseline
 
-## 2026-10-27: retire the legacy timed runner
-
-The root-level `test_timed.py` was removed from the tracked tree. It used
-a developer-specific game path and deleted files from the shared `out/dump`
-directory on startup. It also sampled processes by executable name (rather
-than the process it launched), measured total NVIDIA VRAM usage instead of
-the game's process VRAM, and wrote logs and pad files in the working directory.
-This made its measurements easy to misattribute and could destroy existing
-frame captures.
-
-The supported replacement is `tools/batch_runs.py`. It creates a unique
-per-run data directory, can use independent user profiles, records the selected
-executable hash and scene identity, and provides reproducible manifests.
-
-For an isolated, non-destructive sample on Windows:
-
-```powershell
-python tools/batch_runs.py --runs 5 --secs 120 --cond base= --scene 'fixed checkpoint' --game-dir 'D:\CUSA00035' --profile-root 'D:\triage\profiles' --data-root 'D:\triage\runs' --cache-state cold --frame-trace
-```
-
-Use a copied `--user-template` for a checkpoint needing save data. The
-runner does not clear your real saves, caches or captures. Never use the
-legacy timed script from an old checkout if preserving the out/dump captures
-matters. A passing timed run is not visual or GPU correctness evidence.
-
 ## 2026-10-25: copied current checkpoint, subtitle-diagnosis trace
 
 `out/20261025-subtitle-current/` records one isolated 130-second run using a

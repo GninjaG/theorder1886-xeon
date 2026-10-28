@@ -170,6 +170,28 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
     PortOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
 
+    const bool aot_requested = PortSettings::Get().precompile_shaders_on_boot.load(std::memory_order_relaxed) ||
+        (std::getenv("THEORDER_PRECOMPILE_SHADERS") &&
+         std::strcmp(std::getenv("THEORDER_PRECOMPILE_SHADERS"), "0") != 0 &&
+         std::strcmp(std::getenv("THEORDER_PRECOMPILE_SHADERS"), "off") != 0 &&
+         std::strcmp(std::getenv("THEORDER_PRECOMPILE_SHADERS"), "false") != 0);
+
+    if (aot_requested) {
+        PortOverlay::SetLoading(true, 0, 0);
+        PresentLoadingFrame();
+        auto last = std::chrono::steady_clock::now();
+        rasterizer->GetPipelineCache().PrecompileAllShadersAOT([&](u32 done, u32 total) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last < std::chrono::milliseconds(200) || done == total) {
+                last = now;
+                PortOverlay::SetLoading(true, done, total);
+                PresentLoadingFrame();
+            }
+        });
+        PortOverlay::SetLoading(false, 0, 0);
+        return;
+    }
+
     const bool binary_cache = EmulatorSettingsImpl::Flag("THEORDER_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
     const bool capture_only = EmulatorSettingsImpl::Flag("THEORDER_PIPELINE_BINARY_ISOLATED", false) &&
@@ -415,6 +437,13 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
     PortStats::flips.fetch_add(1, std::memory_order_relaxed);
+    if (auto* dlss = Dlss::Get()) {
+        dlss->ReflexSleep();
+        const u64 flip_id = PortStats::flips.load();
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_SIMULATION_START, flip_id);
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_SIMULATION_END, flip_id);
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_RENDERSUBMIT_START, flip_id);
+    }
     // port: THEORDER_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
     // guest display buffer and presented image are written to THEORDER_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
@@ -580,6 +609,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // Flush frame creation commands.
     frame->ready_semaphore = draw_scheduler.GetWorkSemaphore()->Handle();
     frame->ready_tick = draw_scheduler.CurrentTick();
+    if (auto* dlss = Dlss::Get()) {
+        dlss->SetLatencyMarker(PORT_DLSS_MARKER_RENDERSUBMIT_END, PortStats::flips.load());
+    }
     SubmitInfo info{};
     draw_scheduler.Flush(info);
 
@@ -752,6 +784,15 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (window.IsMinimized() || window.GetWidth() == 0 || window.GetHeight() == 0) {
         free_frame();
         return;
+    }
+
+    // NVIDIA DLSS-G / Streamline Frame Generation: interpolate and present generated frame
+    if (is_game_frame && !is_reusing_frame) {
+        if (auto* dlss = Dlss::Get()) {
+            if (dlss->IsFrameGenerationActive()) {
+                PresentGeneratedFrame(frame);
+            }
+        }
     }
 
     // Recreate the swapchain if the window was resized.
@@ -965,6 +1006,175 @@ void Presenter::SetExpectedGameSize(s32 width, s32 height) {
     }
     expected_frame_width = static_cast<u32>(std::max(1L, std::lround(fit_width / picture[2])));
     expected_frame_height = static_cast<u32>(std::max(1L, std::lround(fit_height / picture[3])));
+}
+
+void Presenter::EnsureGeneratedFrame(u32 width, u32 height) {
+    if (has_generated_frame && generated_frame.width == width && generated_frame.height == height) {
+        return;
+    }
+    const vk::Device device = instance.GetDevice();
+    if (has_generated_frame) {
+        if (generated_frame.image_view) {
+            device.destroyImageView(generated_frame.image_view);
+            generated_frame.image_view = VK_NULL_HANDLE;
+        }
+        if (generated_frame.image) {
+            vmaDestroyImage(instance.GetAllocator(), generated_frame.image, generated_frame.allocation);
+            generated_frame.image = VK_NULL_HANDLE;
+        }
+        has_generated_frame = false;
+    }
+
+    generated_frame.width = width;
+    generated_frame.height = height;
+    const vk::Format format = swapchain.GetSurfaceFormat().format;
+    const vk::ImageCreateInfo image_info = {
+        .flags = vk::ImageCreateFlagBits::eMutableFormat,
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst |
+                 vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled |
+                 vk::ImageUsageFlagBits::eStorage,
+    };
+    const VmaAllocationCreateInfo alloc_info = {
+        .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+    VkImage unsafe_image{};
+    VkImageCreateInfo unsafe_image_info = static_cast<VkImageCreateInfo>(image_info);
+    VkResult result = vmaCreateImage(instance.GetAllocator(), &unsafe_image_info, &alloc_info,
+                                     &unsafe_image, &generated_frame.allocation, nullptr);
+    if (result == VK_SUCCESS) {
+        generated_frame.image = vk::Image{unsafe_image};
+        SetObjectName(device, generated_frame.image, "Generated Frame image");
+        auto [view_res, view] = device.createImageView({
+            .image = generated_frame.image,
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .levelCount = 1,
+                .layerCount = 1,
+            },
+        });
+        if (view_res == vk::Result::eSuccess) {
+            generated_frame.image_view = view;
+            has_generated_frame = true;
+        }
+    }
+}
+
+void Presenter::PresentGeneratedFrame(Frame* real_frame) {
+    if (window.IsMinimized() || window.GetWidth() == 0 || window.GetHeight() == 0) {
+        return;
+    }
+    EnsureGeneratedFrame(real_frame->width, real_frame->height);
+    if (!has_generated_frame) {
+        return;
+    }
+
+    // Acquire next swapchain image for generated frame presentation
+    if (!swapchain.AcquireNextImage()) {
+        swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        if (!swapchain.AcquireNextImage()) {
+            return;
+        }
+    }
+
+    auto& scheduler = present_scheduler;
+    const auto cmdbuf = scheduler.CommandBuffer();
+    const vk::Image swapchain_image = swapchain.Image();
+    const vk::Extent2D extent = swapchain.GetExtent();
+    const vk::ImageSubresourceRange color_range{
+        .aspectMask = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = VK_REMAINING_ARRAY_LAYERS,
+    };
+
+    // Evaluate DLSS-G / Frame Generation
+    if (auto* dlss = Dlss::Get()) {
+        PortDlssCameraData camera{};
+        if (rasterizer && rasterizer->GetCameraMotion()) {
+            rasterizer->GetCameraMotion()->FillCameraData(camera);
+        }
+        Dlss::FrameGenData fg_data{
+            .color = {real_frame->image, real_frame->image_view, swapchain.GetSurfaceFormat().format,
+                      vk::ImageAspectFlagBits::eColor, real_frame->width, real_frame->height},
+            .depth = {},
+            .motion = {},
+            .hudless = {},
+            .output = {generated_frame.image, generated_frame.image_view, swapchain.GetSurfaceFormat().format,
+                       vk::ImageAspectFlagBits::eColor, generated_frame.width, generated_frame.height},
+            .camera = camera,
+            .frame_id = PortStats::flips.load(),
+            .reset = false,
+        };
+        dlss->EvaluateFrameGen(cmdbuf, fg_data);
+    }
+
+    // Transition barriers and blit generated frame to swapchain
+    const std::array pre_barriers{
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eNone,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = swapchain_image,
+            .subresourceRange = color_range,
+        },
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eMemoryWrite,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = generated_frame.image,
+            .subresourceRange = color_range,
+        },
+    };
+    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                           vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
+                           {}, {}, pre_barriers);
+
+    // Blit from generated frame to swapchain image
+    cmdbuf.blitImage(generated_frame.image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
+                     vk::ImageLayout::eTransferDstOptimal,
+                     MakeImageBlitPicture(s32(generated_frame.width), s32(generated_frame.height), picture,
+                                          s32(extent.width), s32(extent.height)),
+                     vk::Filter::eLinear);
+
+    const vk::ImageMemoryBarrier to_present{
+        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .dstAccessMask = vk::AccessFlagBits::eNone,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::ePresentSrcKHR,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = swapchain_image,
+        .subresourceRange = color_range,
+    };
+    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                           vk::PipelineStageFlagBits::eBottomOfPipe,
+                           vk::DependencyFlagBits::eByRegion, {}, {}, to_present);
+
+    SubmitInfo info{};
+    info.AddWait(swapchain.GetImageAcquiredSemaphore());
+    info.AddSignal(swapchain.GetPresentReadySemaphore());
+    scheduler.Flush(info);
+
+    {
+        std::scoped_lock submit_lock{Scheduler::submit_mutex};
+        swapchain.Present();
+    }
 }
 
 } // namespace Vulkan

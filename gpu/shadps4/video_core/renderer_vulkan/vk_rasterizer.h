@@ -54,6 +54,10 @@ public:
         return *upscaler;
     }
 
+    [[nodiscard]] CameraMotion* GetCameraMotion() noexcept {
+        return camera_motion.get();
+    }
+
     [[nodiscard]] VideoCore::TextureCache& GetTextureCache() noexcept {
         return texture_cache;
     }

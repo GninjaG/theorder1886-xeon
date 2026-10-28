@@ -31,7 +31,6 @@
 #include "bb_face_depth_fix.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
-#include "shader_recompiler/ssbo_barrier_cache_version.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -68,8 +67,7 @@ u32 CurrentShaderBinaryVersion() {
 // port: a translation fix that only some shaders meet raises their version alone, so only they
 // are translated again (a ShaderBinaryVersion bump rebuilds every pipeline: a cold-cache session).
 u32 ShaderBinaryVersionFor(const Shader::Info& info,
-                           const Shader::StageSpecialization& spec,
-                           bool needs_ssbo_barriers) {
+                           const Shader::StageSpecialization& spec) {
     u32 version = CurrentShaderBinaryVersion();
     if (info.uses_buffer_atomic_float_min_max || info.uses_image_atomic_float_min_max) {
         version += 1u << 16; // the float atomic min/max fallback runs one atomic (2026-10-18)
@@ -78,9 +76,6 @@ u32 ShaderBinaryVersionFor(const Shader::Info& info,
         spec.runtime_info.hw.vs.motion_vectors) {
         version += 1u << 17; // motion addresses moved from specialization constants to push data
     }
-    // These extra barriers only run on NVIDIA profiles. Do not retranslate
-    // writable shaders on AMD/Intel, where IR and SPIR-V are unaffected.
-    version += Shader::SsboBarrierCacheSalt(needs_ssbo_barriers, info.buffers);
     return version;
 }
 } // namespace
@@ -627,10 +622,18 @@ struct PipelineCache::WarmupPool {
     explicit WarmupPool(u32 count, bool low_priority = false) {
         for (u32 i = 0; i < count; ++i) {
             threads.emplace_back([this, low_priority] {
+                Common::SetCurrentThreadName("Port:ShaderWarmup");
                 if (low_priority) {
-                    Common::SetCurrentThreadName("Port:ShaderWarmup");
                     Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
+                } else {
+                    Common::SetCurrentThreadPriority(Common::ThreadPriority::VeryHigh);
                 }
+#ifdef _WIN32
+                DWORD_PTR mask = PortThreads::WorkerAffinityMask();
+                if (mask) {
+                    SetThreadAffinityMask(GetCurrentThread(), mask);
+                }
+#endif
                 Run();
             });
         }
@@ -679,7 +682,7 @@ struct PipelineCache::WarmupPool {
             return 0;
         }
         const u32 cores = std::max(1u, std::thread::hardware_concurrency());
-        return std::clamp(cores > 2 ? cores - 2 : 1u, 1u, 6u);
+        return cores > 4 ? (cores - 4) : (cores > 2 ? cores - 2 : 1u);
     }
 
     std::atomic<u32> built{0};
@@ -761,7 +764,7 @@ void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
 void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash,
-                        size_t perm_idx, u64 spv_hash, bool needs_ssbo_barriers) {
+                        size_t perm_idx, u64 spv_hash) {
     if (!Storage::DataBase::Instance().IsOpened()) {
         return;
     }
@@ -770,7 +773,7 @@ void RegisterShaderMeta(const Shader::Info& info,
     Serialization::Writer meta{ar};
 
     meta.Write(Serialization::ShaderMetaVersion);
-    meta.Write(ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers));
+    meta.Write(ShaderBinaryVersionFor(info, spec));
 
     meta.Write(perm_hash);
     meta.Write(perm_idx);
@@ -800,8 +803,7 @@ u64 RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) 
 }
 
 bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
-                    Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash,
-                    bool needs_ssbo_barriers) {
+                    Shader::StageSpecialization& spec, size_t& perm_idx, u64& spv_hash) {
     Serialization::Reader meta{ar};
 
     u32 meta_version{};
@@ -824,7 +826,7 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
-    if (binary_version != ShaderBinaryVersionFor(info, spec, needs_ssbo_barriers)) {
+    if (binary_version != ShaderBinaryVersionFor(info, spec)) {
         return false;
     }
     return true;
@@ -994,8 +996,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     spec.info = &program->info;
     size_t perm_idx{};
     u64 spv_hash{};
-    if (!LoadShaderMeta(ar, program->info, spec, perm_idx, spv_hash,
-                        profile.needs_ssbo_store_load_barrier)) {
+    if (!LoadShaderMeta(ar, program->info, spec, perm_idx, spv_hash)) {
         return false;
     }
 
@@ -1099,8 +1100,7 @@ bool PipelineCache::LoadCachedProgram(u64 pgm_hash, Shader::HwStage stage) {
         Shader::StageSpecialization spec{};
         size_t perm_idx{};
         u64 spv_hash{};
-        if (!LoadShaderMeta(meta_ar, *info, spec, perm_idx, spv_hash,
-                            profile.needs_ssbo_store_load_barrier)) {
+        if (!LoadShaderMeta(meta_ar, *info, spec, perm_idx, spv_hash)) {
             stop = "meta version";
             break;
         }
@@ -1196,6 +1196,7 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
     if (!CheckCacheProfile()) {
         return;
     }
+    SetWarmupMode(true);
 
     u32 num_pipelines{};
     u32 num_total_pipelines{};
@@ -1278,6 +1279,154 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
     }
 
     Storage::DataBase::Instance().FinishPreload();
+    SetWarmupMode(false);
+}
+
+void PipelineCache::PrecompileAllShadersAOT(const std::function<void(u32, u32)>& progress) {
+    if (!CheckCacheProfile()) {
+        return;
+    }
+
+    auto& db = Storage::DataBase::Instance();
+    db.Open();
+
+    const u32 aot_threads = AotWarmupThreadCount(std::thread::hardware_concurrency());
+
+    // 1. Scan all known pipeline keys
+    std::vector<std::vector<u8>> key_blobs;
+    db.ForEachBlob(Storage::BlobType::PipelineKey, [&](std::vector<u8>&& data) {
+        key_blobs.push_back(std::move(data));
+    });
+
+    // 2. Scan any shader binaries
+    std::vector<std::vector<u32>> spv_blobs;
+    db.ForEachBlob(Storage::BlobType::ShaderBinary, [&](std::vector<u8>&& raw_data) {
+        if (raw_data.size() >= 4 && (raw_data.size() % 4 == 0)) {
+            std::vector<u32> spv(raw_data.size() / 4);
+            std::memcpy(spv.data(), raw_data.data(), raw_data.size());
+            spv_blobs.push_back(std::move(spv));
+        }
+    });
+
+    const u32 total_shaders = key_blobs.empty() ? static_cast<u32>(spv_blobs.size())
+                                                : static_cast<u32>(key_blobs.size());
+
+    std::printf("[ShaderAOT] Compilando 0/%u shaders usando %u threads...\n", total_shaders, aot_threads);
+    std::fflush(stdout);
+    LOG_INFO(Render_Vulkan, "[ShaderAOT] Compilando 0/{} shaders usando {} threads...", total_shaders, aot_threads);
+
+    const auto started = std::chrono::steady_clock::now();
+    u32 num_compiled = 0;
+
+    std::unique_ptr<WarmupPool> pool;
+    if (aot_threads) {
+        pool = std::make_unique<WarmupPool>(aot_threads, false);
+        warmup_pool = pool.get();
+    }
+
+    u32 last_logged = 0;
+    const auto report = [&] {
+        const u32 done = pool ? (pool->built.load() + pool->failed.load()) : total_shaders;
+        if (done != last_logged && (done - last_logged >= 25 || done == total_shaders)) {
+            std::printf("[ShaderAOT] Compilando %u/%u shaders usando %u threads...\n", done, total_shaders, aot_threads);
+            std::fflush(stdout);
+            last_logged = done;
+        }
+        if (progress) {
+            progress(done, total_shaders);
+        }
+    };
+
+    for (auto& data : key_blobs) {
+        Serialization::Archive ar{std::move(data)};
+        Serialization::Reader pldata{ar};
+
+        u32 version{};
+        pldata.Read(version);
+        if (version != Serialization::PipelineKeyVersion) {
+            continue;
+        }
+
+        u32 is_compute{};
+        pldata.Read(is_compute);
+
+        bool result = false;
+        if (is_compute) {
+            result = LoadComputePipeline(ar);
+        } else {
+            result = LoadGraphicsPipeline(ar);
+        }
+
+        if (result) {
+            ++num_compiled;
+        }
+    }
+
+    if (pool) {
+        pool->Wait(report);
+        warmup_pool = nullptr;
+
+        for (auto& [key, pipeline] : warmup_graphics) {
+            graphics_pipelines[key] = std::move(pipeline);
+        }
+        for (auto& [key, pipeline] : warmup_compute) {
+            compute_pipelines[key] = std::move(pipeline);
+        }
+        for (auto it = graphics_pipelines.begin(); it != graphics_pipelines.end();) {
+            it = it->second ? std::next(it) : graphics_pipelines.erase(it);
+        }
+        for (auto it = compute_pipelines.begin(); it != compute_pipelines.end();) {
+            it = it->second ? std::next(it) : compute_pipelines.erase(it);
+        }
+        warmup_graphics.clear();
+        warmup_compute.clear();
+        pool.reset();
+    }
+
+    // Parallel compilation of raw SPIR-V shader modules if present
+    if (!spv_blobs.empty()) {
+        const auto device = instance.GetDevice();
+        std::atomic<size_t> next_spv{0};
+        std::vector<std::jthread> spv_workers;
+        for (u32 t = 0; t < aot_threads; ++t) {
+            spv_workers.emplace_back([&] {
+                while (true) {
+                    const size_t idx = next_spv.fetch_add(1, std::memory_order_relaxed);
+                    if (idx >= spv_blobs.size()) {
+                        break;
+                    }
+                    try {
+                        auto module = CompileSPV(spv_blobs[idx], device);
+                        if (module) {
+                            device.destroyShaderModule(module);
+                        }
+                    } catch (...) {}
+                }
+            });
+        }
+        for (auto& t : spv_workers) {
+            if (t.joinable()) t.join();
+        }
+    }
+
+    // 3. Serialize and save the compiled Vulkan VkPipelineCache to shader_cache/pipeline_cache.bin
+    const std::filesystem::path aot_cache_file = "shader_cache/pipeline_cache.bin";
+    SaveAOTPipelineCache(aot_cache_file);
+    SaveDriverCache();
+
+    db.FinishPreload();
+
+    const double elapsed_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    std::printf("[ShaderAOT] Concluído com sucesso! Salvo em shader_cache/\n");
+    std::fflush(stdout);
+    LOG_INFO(Render_Vulkan, "[ShaderAOT] Concluído com sucesso! Salvo em shader_cache/ ({:.2f} s)",
+             elapsed_s);
+}
+
+void PrecompileAllShadersAOT(PipelineCache& cache,
+                             const std::function<void(u32 done, u32 total)>& progress) {
+    cache.PrecompileAllShadersAOT(progress);
 }
 
 void PipelineCache::StartOnDemand() {
@@ -1572,7 +1721,7 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
             if (!meta_blob.empty()) {
                 Serialization::Archive meta_ar{std::move(meta_blob)};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->spec, stage->perm_idx,
-                                   stage->spv_hash, profile.needs_ssbo_store_load_barrier)) {
+                                   stage->spv_hash)) {
                     if (!stage->spec.fetch_shader_data.Empty()) {
                         stage->fetch = stage->spec.fetch_shader_data;
                     }
@@ -1848,6 +1997,7 @@ void PipelineCache::PumpWarmUp() {
     warm.finished = true;
     PortOverlay::SetBackgroundLoading(0, 0);
     Storage::DataBase::Instance().FinishPreload();
+    SetWarmupMode(false);
 }
 
 void PipelineCache::StopWarmUp() {
