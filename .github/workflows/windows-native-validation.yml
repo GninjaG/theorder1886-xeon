@@ -98,6 +98,26 @@ jobs:
           test -s out/theorder-probe.exe
           test -s out/theorder-gpu-capabilities.exe
 
+      - name: Diagnose executable invocation before full suite
+        run: |
+          set -uo pipefail
+          command -v timeout || true
+          command -v clang++ || true
+          ninja -C out/gpu buffer-addr64-test
+          set +e
+          ./out/gpu/buffer-addr64-test.exe
+          direct=$?
+          timeout 10 ./out/gpu/buffer-addr64-test.exe
+          timed_exe=$?
+          timeout 10 out/gpu/buffer-addr64-test
+          timed_name=$?
+          set -e
+          echo "Native test exit codes: direct=$direct timed-exe=$timed_exe timed-name=$timed_name"
+          if [[ "$direct" -ne 0 || "$timed_exe" -ne 0 || "$timed_name" -ne 0 ]]; then
+            echo "::error::Native C++ tests are not starting; inspect the numeric exit codes and Windows DLL environment."
+            exit 1
+          fi
+
       - name: Run full C/C++ and Python test suites
         run: |
           set -euo pipefail
