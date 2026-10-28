@@ -57,6 +57,11 @@ static std::vector<Opcode> Apply(Opcode write, Opcode read, bool same_binding,
 }
 
 int main() {
+#ifdef _WIN32
+    // CRT assertions must report to stderr rather than raising a modal
+    // dialog and waiting for user input on unattended Windows runners.
+    _set_error_mode(_OUT_TO_STDERR);
+#endif
     const auto formatted_write = Opcode::StoreBufferFormatF32;
     const auto formatted_read = Opcode::LoadBufferFormatF32;
     const auto raw_write = Opcode::StoreBufferF32;
@@ -76,8 +81,11 @@ int main() {
     // after earlier stores on the same binding.
     assert((Apply(atomic, raw_read, true, true) ==
             std::vector<Opcode>{atomic, barrier, raw_read}));
+    // An atomic is a load here, so the preceding ordinary store needs a
+    // barrier. The atomic itself needs no post-barrier without a subsequent
+    // ordinary load: adding one would undo the atomic-only optimization.
     assert((Apply(raw_write, atomic, true, true) ==
-            std::vector<Opcode>{raw_write, barrier, atomic, barrier}));
+            std::vector<Opcode>{raw_write, barrier, atomic}));
     // Two standalone atomic RMWs need no additional non-atomic coherence
     // barrier. The pass does not try to replace the atomicity guarantee.
     assert((Apply(atomic, atomic, true, true) ==
