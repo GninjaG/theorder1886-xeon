@@ -253,9 +253,12 @@ void Swapchain::SetSurfaceProperties() {
     // Only select modes the presentation surface advertises. Assuming
     // Inherit after Opaque fails is invalid on pre/post-multiplied surfaces.
     const auto selected_alpha = ChooseCompositeAlpha(capabilities.supportedCompositeAlpha);
-    ASSERT_MSG(selected_alpha.has_value(),
-               "Surface advertises no supported composite-alpha mode (flags={})",
-               vk::to_string(capabilities.supportedCompositeAlpha));
+    if (!selected_alpha) [[unlikely]] {
+        // ASSERT_MSG may resume on some builds; never dereference an empty
+        // optional or forward an unsupported mode to vkCreateSwapchainKHR.
+        UNREACHABLE_MSG("Surface advertises no supported composite-alpha mode (flags={})",
+                        vk::to_string(capabilities.supportedCompositeAlpha));
+    }
     composite_alpha = *selected_alpha;
 }
 
