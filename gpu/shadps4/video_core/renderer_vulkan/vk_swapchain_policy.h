@@ -13,9 +13,9 @@ namespace Vulkan {
 [[nodiscard]] constexpr std::optional<vk::CompositeAlphaFlagBitsKHR> ChooseCompositeAlpha(
     vk::CompositeAlphaFlagsKHR supported) noexcept {
     for (const auto candidate : {vk::CompositeAlphaFlagBitsKHR::eOpaque,
+                                 vk::CompositeAlphaFlagBitsKHR::eInherit,
                                  vk::CompositeAlphaFlagBitsKHR::ePreMultiplied,
-                                 vk::CompositeAlphaFlagBitsKHR::ePostMultiplied,
-                                 vk::CompositeAlphaFlagBitsKHR::eInherit}) {
+                                 vk::CompositeAlphaFlagBitsKHR::ePostMultiplied}) {
         if (supported & candidate) {
             return candidate;
         }

@@ -10,8 +10,9 @@ exposed `ePreMultiplied` or `ePostMultiplied`. Vulkan requires the selected
 bit can cause validation errors, failed swapchain creation, or loss of
 presentation on some window/driver configurations.
 
-The renderer now chooses in preference order: Opaque, PreMultiplied,
-PostMultiplied, Inherit, **only when advertised**. If none are supported it
+The renderer now chooses in preference order: Opaque, Inherit,
+PreMultiplied, PostMultiplied, **only when advertised**. This preserves
+its historical preference for Inherit whenever Opaque is absent. If none are supported it
 reports an explicit assertion instead of sending an invalid bit to the driver.
 The pure policy helper is tested for all four modes, combinations and an empty
 capability mask without a GPU. It is part of the Windows native suite and a

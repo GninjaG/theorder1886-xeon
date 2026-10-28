@@ -20,7 +20,9 @@ static_assert(ChooseCompositeAlpha(Alpha::eOpaque | Alpha::ePreMultiplied) ==
 static_assert(ChooseCompositeAlpha(Alpha::ePreMultiplied | Alpha::ePostMultiplied) ==
               Alpha::ePreMultiplied);
 static_assert(ChooseCompositeAlpha(Alpha::ePostMultiplied | Alpha::eInherit) ==
-              Alpha::ePostMultiplied);
+              Alpha::eInherit);
+static_assert(ChooseCompositeAlpha(Alpha::ePreMultiplied | Alpha::eInherit) ==
+              Alpha::eInherit);
 
 int main() {
     constexpr std::array<Flags, 7> supported = {
