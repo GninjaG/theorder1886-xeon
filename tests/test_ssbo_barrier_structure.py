@@ -77,7 +77,11 @@ class SsboBarrierStageTests(unittest.TestCase):
         runner = (ROOT / 'tools/run_tests.sh').read_text(encoding='utf-8')
         self.assertIn('add_executable(formatted-ssbo-barriers-test ', cmake)
         self.assertIn('../tests/test_formatted_ssbo_barriers.cpp', cmake)
-        self.assertIn('multiwave-barriers formatted-ssbo-barriers)', runner)
+        # The IR test can be followed by additional native targets; validate
+        # array membership, not its accidental position at the end of the list.
+        match = re.search(r'tests=\((.*?)\)', runner, re.DOTALL)
+        self.assertIsNotNone(match)
+        self.assertIn('formatted-ssbo-barriers', match.group(1).split())
 
 
 if __name__ == '__main__':

@@ -1,5 +1,30 @@
 # Graphics regression checkpoint
 
+## 2026-10-27: swapchain composite-alpha surface compatibility (draft)
+
+The old `Swapchain::SetSurfaceProperties` selected `eOpaque` whenever
+supported, otherwise **unconditionally `eInherit`**, even if the surface only
+exposed `ePreMultiplied` or `ePostMultiplied`. Vulkan requires the selected
+`VkSwapchainCreateInfoKHR::compositeAlpha` bit to be one of
+`VkSurfaceCapabilitiesKHR::supportedCompositeAlpha`. Passing an unsupported
+bit can cause validation errors, failed swapchain creation, or loss of
+presentation on some window/driver configurations.
+
+The renderer now chooses in preference order: Opaque, Inherit,
+PreMultiplied, PostMultiplied, **only when advertised**. This preserves
+its historical preference for Inherit whenever Opaque is absent. If none are supported it
+reports an explicit assertion instead of sending an invalid bit to the driver.
+The pure policy helper is tested for all four modes, combinations and an empty
+capability mask without a GPU. It is part of the Windows native suite and a
+lightweight Linux header-based check.
+
+This addresses a real capability-negotiation defect. **The same unverified
+Inherit fallback existed in windows-v0.6.1 and windows-v0.7.0**, so this
+cannot independently explain the reported v0.6.1 → v0.7.x black-screen
+regression. It has **not been established** as the cause of #10's Intel
+fullscreen alt-tab error, #43/#47 black output or #68's stutters. GPU-backed
+validation on affected hardware is still required.
+
 ## 2026-10-27: profile-gate the selective SSBO shader cache revisions (draft)
 
 The prior #80/#81 revisions salted disk shader versions for every formatted
