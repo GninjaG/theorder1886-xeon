@@ -1,0 +1,36 @@
+name: Swapchain supported composite alpha
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/swapchain-composite-alpha.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_policy.h'
+      - 'tests/test_swapchain_policy.cpp'
+      - 'gpu/CMakeLists.txt'
+      - 'tools/run_tests.sh'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/swapchain-composite-alpha.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_policy.h'
+      - 'tests/test_swapchain_policy.cpp'
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Verify swapchain alpha fallback (no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan headers
+        run: sudo apt-get update -qq && sudo apt-get install -y libvulkan-dev
+      - name: Compile and run constexpr policy coverage
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
+            tests/test_swapchain_policy.cpp -o /tmp/swapchain-policy-test
+          /tmp/swapchain-policy-test
